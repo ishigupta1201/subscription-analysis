@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Fixed Universal Client with Gemini NLP for Subscription Analytics
-Key fixes: Better Gemini prompting, improved formatting, debugging support
+Complete Fixed Universal Client with SSL fixes and proper async context management
 """
 import asyncio
 import aiohttp
 import os
 import json
 import sys
+import ssl
+import certifi
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 from google import genai
@@ -28,7 +29,7 @@ class QueryResult:
     parameters: Optional[Dict] = None
 
 class ResultFormatter:
-    """Format results in a beautiful, user-friendly way - FIXED VERSION"""
+    """Format results in a beautiful, user-friendly way"""
     
     @staticmethod
     def safe_int(value) -> int:
@@ -60,7 +61,7 @@ class ResultFormatter:
     
     @staticmethod
     def format_single_result(result: QueryResult) -> str:
-        """Format a single result for display - FIXED VERSION"""
+        """Format a single result for display"""
         if not result.success:
             return f"❌ ERROR: {result.error}"
         
@@ -69,10 +70,6 @@ class ResultFormatter:
             return f"❌ No data returned from {result.tool_used}"
         
         output = []
-        
-        # DEBUG: Show raw data
-        print(f"🔍 DEBUG - Tool: {result.tool_used}")
-        print(f"🔍 DEBUG - Raw data: {json.dumps(data, indent=2)}")
         
         # Format based on tool type
         if 'subscription' in result.tool_used and 'summary' not in result.tool_used:
@@ -99,10 +96,6 @@ class ResultFormatter:
                 churn_rate = (cancelled / new_subs) * 100
                 output.append(f"📊 Retention Rate: {retention_rate:.1f}%")
                 output.append(f"📉 Churn Rate: {churn_rate:.1f}%")
-            
-            # Add debug info if present
-            if 'debug_info' in data:
-                output.append(f"🔍 Debug: {data['debug_info']}")
         
         elif 'payment' in result.tool_used and 'summary' not in result.tool_used:
             # This is get_payment_success_rate_in_last_days
@@ -135,10 +128,6 @@ class ResultFormatter:
             if successful > 0:
                 avg_transaction = total_revenue / successful
                 output.append(f"📊 Average Transaction: ${avg_transaction:.2f}")
-            
-            # Add debug info if present
-            if 'debug_info' in data:
-                output.append(f"🔍 Debug: {data['debug_info']}")
         
         elif 'database' in result.tool_used:
             # Safely convert database metrics
@@ -210,7 +199,7 @@ class ResultFormatter:
     
     @staticmethod
     def format_multi_result(results: List[QueryResult], original_query: str) -> str:
-        """Format multiple results for display - FIXED VERSION"""
+        """Format multiple results for display"""
         output = []
         output.append(f"🎯 RESULTS FOR: '{original_query}'")
         output.append("=" * 80)
@@ -300,7 +289,7 @@ class ResultFormatter:
         return "\n".join(output)
 
 class GeminiNLPProcessor:
-    """Uses Gemini API for natural language understanding - FIXED VERSION"""
+    """Uses Gemini API for natural language understanding"""
     
     def __init__(self, api_key: str):
         self.client = genai.Client(api_key=api_key)
@@ -379,7 +368,7 @@ class GeminiNLPProcessor:
         ]
     
     def parse_query(self, user_query: str) -> List[Dict]:
-        """Use Gemini to understand the query and return tool calls - FIXED VERSION"""
+        """Use Gemini to understand the query and return tool calls"""
         print(f"🤖 Asking Gemini to understand: '{user_query}'")
         
         # Convert tools to Gemini format
@@ -397,7 +386,7 @@ class GeminiNLPProcessor:
         ]
         
         try:
-            # IMPROVED prompt for better understanding
+            # Enhanced prompt for better understanding
             enhanced_query = f"""
             You are an expert in subscription analytics. Analyze this user query: "{user_query}"
             
@@ -466,7 +455,7 @@ class GeminiNLPProcessor:
             return self._improved_fallback_parse(user_query)
     
     def _improved_fallback_parse(self, query: str) -> List[Dict]:
-        """Improved fallback parsing - FIXED VERSION"""
+        """Improved fallback parsing"""
         import re
         
         query_lower = query.lower()
@@ -535,7 +524,7 @@ class GeminiNLPProcessor:
         return results
 
 class UniversalClient:
-    """Universal Client with Gemini NLP and HTTP API backend - FIXED VERSION"""
+    """Universal Client with SSL fixes and proper async context management"""
     
     def __init__(self, config_path: Optional[str] = None, **kwargs):
         self.config = self._load_config(config_path, **kwargs)
@@ -583,9 +572,14 @@ class UniversalClient:
         return config
     
     async def __aenter__(self):
-        """Async context manager entry"""
+        """Async context manager entry with SSL fix"""
+        # Create SSL context with proper certificates
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        
         self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.config.get('timeout', 30))
+            timeout=aiohttp.ClientTimeout(total=self.config.get('timeout', 30)),
+            connector=connector
         )
         return self
     
@@ -595,7 +589,7 @@ class UniversalClient:
             await self.session.close()
     
     async def call_tool(self, tool_name: str, parameters: Dict = None) -> QueryResult:
-        """Execute a tool on the HTTP API server - WITH DEBUG"""
+        """Execute a tool on the HTTP API server"""
         if not self.session:
             raise RuntimeError("Client not initialized. Use 'async with' context manager.")
         
@@ -683,12 +677,12 @@ class UniversalClient:
             return self.formatter.format_single_result(result)
 
 # ==================================================
-# COMMAND LINE AND INTERACTIVE MODES - Same as before
+# COMMAND LINE AND INTERACTIVE MODES
 # ==================================================
 
 async def interactive_mode():
     """Interactive mode for users"""
-    print("✨ SUBSCRIPTION ANALYTICS - GEMINI POWERED (FIXED VERSION)")
+    print("✨ SUBSCRIPTION ANALYTICS - GEMINI POWERED (COMPLETE FIXED VERSION)")
     print("=" * 60)
     
     # Try to load configuration
@@ -816,7 +810,14 @@ def main():
     """Main function"""
     if len(sys.argv) > 1:
         if sys.argv[1] in ['--help', '-h', 'help']:
-            print("Fixed Universal Client - Use for debugging subscription analytics")
+            print("Complete Fixed Universal Client - SSL and async context manager fixes")
+            print("\nUsage:")
+            print("  python universal_client.py                    # Interactive mode")
+            print("  python universal_client.py 'your query'       # Single query mode")
+            print("  python universal_client.py --help             # Show help")
+            print("\nExample queries:")
+            print("  python universal_client.py 'database status'")
+            print("  python universal_client.py 'compare 7 vs 30 days'")
             return
         
         # Single query mode
