@@ -18,15 +18,28 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Database Configuration ---
+# DEBUG: Print all environment variables related to database
+print("🔍 === DATABASE DEBUG INFO ===")
+print(f"DB_HOST: '{os.getenv('DB_HOST')}'")
+print(f"DB_PORT: '{os.getenv('DB_PORT')}'")
+print(f"DB_USER: '{os.getenv('DB_USER')}'")
+print(f"DB_NAME: '{os.getenv('DB_NAME')}'")
+print(f"DB_PASSWORD exists: {bool(os.getenv('DB_PASSWORD'))}")
+print("🔍 === END DEBUG INFO ===")
+
+# Your existing DB_CONFIG
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
+    'port': int(os.getenv('DB_PORT', '3306')),
     'database': os.getenv('DB_NAME', 'SUBS_STAGING'),
     'user': os.getenv('DB_USER', 'root'),
     'password': os.getenv('DB_PASSWORD', '12345678'),
     'autocommit': True
 }
 
+print(f"🔍 Final DB_CONFIG port: {DB_CONFIG['port']}")
+
+# --- Database Configuration -
 # --- API Models ---
 class ToolRequest(BaseModel):
     tool_name: str = Field(..., description="Name of the tool to execute")
