@@ -313,25 +313,33 @@ def get_user_payment_history(merchant_user_id: str, days: int = 90) -> Dict:
 # --- Authentication ---
 class APIKeyManager:
     def __init__(self):
-        # Load environment variables from .env file
+        # Load environment variables from .env file (for local development)
         load_dotenv()
         
-        # Get API keys from environment variables
+        # Get API keys from environment variables (works for both local .env and Railway)
         api_key_1 = os.getenv('API_KEY_1')
         api_key_2 = os.getenv('API_KEY_2')
         
-        # If no API keys in .env, generate new ones
+        # If no API keys found, generate new ones (only for local development)
         if not api_key_1 or not api_key_2:
-            logger.warning("API keys not found in .env file, generating new ones...")
-            api_key_1 = 'sub_analytics_' + secrets.token_urlsafe(32)
-            api_key_2 = 'sub_analytics_' + secrets.token_urlsafe(32)
-            
-            # Update .env file with new keys
-            with open('.env', 'a') as f:
-                f.write(f"\nAPI_KEY_1={api_key_1}")
-                f.write(f"\nAPI_KEY_2={api_key_2}")
-            
-            logger.info(f"Generated new API keys and saved to .env file")
+            # Check if running on Railway (Railway sets PORT automatically)
+            if os.getenv('PORT'):
+                # Running on Railway - API keys should be set as environment variables
+                logger.error("API keys not found in environment variables!")
+                logger.error("Please set API_KEY_1 and API_KEY_2 in Railway dashboard")
+                raise ValueError("Missing API keys in production environment")
+            else:
+                # Running locally - generate new keys and save to .env
+                logger.warning("API keys not found in .env file, generating new ones...")
+                api_key_1 = 'sub_analytics_' + secrets.token_urlsafe(32)
+                api_key_2 = 'sub_analytics_' + secrets.token_urlsafe(32)
+                
+                # Update .env file with new keys (only for local development)
+                with open('.env', 'a') as f:
+                    f.write(f"\nAPI_KEY_1={api_key_1}")
+                    f.write(f"\nAPI_KEY_2={api_key_2}")
+                
+                logger.info(f"Generated new API keys and saved to .env file")
         
         self.api_keys = {api_key_1, api_key_2}
         logger.info(f"Initialized with {len(self.api_keys)} API keys")
@@ -343,33 +351,6 @@ class APIKeyManager:
         new_key = 'sub_analytics_' + secrets.token_urlsafe(32)
         self.api_keys.add(new_key)
         return new_key
-
-# Initialize API key manager
-api_key_manager = APIKeyManager()
-logger.info(f"Loaded API keys: {api_key_manager.api_keys}")
-
-def verify_api_key(authorization: str = Header(None)) -> str:
-    """Verify API key from Authorization header"""
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header"
-        )
-    
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Authorization header format. Use 'Bearer <api_key>'"
-        )
-    
-    api_key = authorization.split(" ")[1]
-    if not api_key_manager.is_valid_key(api_key):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
-        )
-    
-    return api_key
 
 # --- Tool Registry ---
 TOOL_REGISTRY = {
