@@ -1,3 +1,4 @@
+# 1. IMPORTS
 import datetime
 import os
 import secrets
@@ -47,7 +48,7 @@ class APIStatus(BaseModel):
     available_tools: int
     database_status: str
 
-# --- Database Connection ---
+# 2. DATABASE FUNCTIONS
 def get_db_connection():
     """Create and return a database connection"""
     try:
@@ -58,7 +59,6 @@ def get_db_connection():
         logger.error(f"Error connecting to MySQL: {e}")
         return None
 
-# --- Your Original MCP Tools (Adapted) ---
 def get_subscriptions_in_last_days(days: int) -> Dict:
     """Get subscription data for the last x days"""
     connection = get_db_connection()
@@ -310,7 +310,7 @@ def get_user_payment_history(merchant_user_id: str, days: int = 90) -> Dict:
             cursor.close()
             connection.close()
 
-# --- Authentication ---
+# 3. APIKEYMANAGER CLASS
 class APIKeyManager:
     def __init__(self):
         # Load environment variables from .env file (for local development)
@@ -351,6 +351,34 @@ class APIKeyManager:
         new_key = 'sub_analytics_' + secrets.token_urlsafe(32)
         self.api_keys.add(new_key)
         return new_key
+
+# 4. INITIALIZE API_KEY_MANAGER
+api_key_manager = APIKeyManager()
+logger.info(f"Loaded API keys: {api_key_manager.api_keys}")
+
+# 5. VERIFY_API_KEY FUNCTION (BEFORE ROUTES)
+def verify_api_key(authorization: str = Header(None)) -> str:
+    """Verify API key from Authorization header"""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header"
+        )
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format. Use 'Bearer <api_key>'"
+        )
+    
+    api_key = authorization.split(" ")[1]
+    if not api_key_manager.is_valid_key(api_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key"
+        )
+    
+    return api_key
 
 # --- Tool Registry ---
 TOOL_REGISTRY = {
@@ -435,7 +463,7 @@ TOOL_REGISTRY = {
     }
 }
 
-# --- FastAPI App ---
+# 6. FASTAPI APP CREATION
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -465,7 +493,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- API Routes ---
+# 7. ROUTES THAT USE VERIFY_API_KEY
 @app.get("/", response_model=APIStatus)
 async def root():
     """API status and basic information"""
