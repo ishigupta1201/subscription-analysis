@@ -164,6 +164,60 @@ class UniversalClientMCPServer:
                     },
                     "required": ["periods"]
                 }
+            ),
+            Tool(
+                name="get_subscriptions_by_date_range",
+                description="Get subscription statistics for a specific date range",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "start_date": {
+                            "type": "string",
+                            "description": "Start date in YYYY-MM-DD format"
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "description": "End date in YYYY-MM-DD format"
+                        }
+                    },
+                    "required": ["start_date", "end_date"]
+                }
+            ),
+            Tool(
+                name="get_payments_by_date_range",
+                description="Get payment statistics for a specific date range",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "start_date": {
+                            "type": "string",
+                            "description": "Start date in YYYY-MM-DD format"
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "description": "End date in YYYY-MM-DD format"
+                        }
+                    },
+                    "required": ["start_date", "end_date"]
+                }
+            ),
+            Tool(
+                name="get_analytics_by_date_range",
+                description="Get comprehensive analytics for a specific date range",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "start_date": {
+                            "type": "string",
+                            "description": "Start date in YYYY-MM-DD format"
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "description": "End date in YYYY-MM-DD format"
+                        }
+                    },
+                    "required": ["start_date", "end_date"]
+                }
             )
         ]
         

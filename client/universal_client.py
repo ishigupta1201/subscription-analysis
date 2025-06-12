@@ -188,6 +188,127 @@ class ResultFormatter:
                 else:
                     revenue_float = ResultFormatter.safe_float(revenue)
                     output.append(f"   💰 Revenue: ${revenue_float:,.2f}")
+        # Add this case to your format_single_result method in ResultFormatter class
+# Insert this after the existing elif statements and before the final else:
+
+        elif 'date_range' in result.tool_used or 'analytics_by_date_range' in result.tool_used:
+            # This is get_analytics_by_date_range or similar date range tools
+            start_date = data.get('start_date', 'unknown')
+            end_date = data.get('end_date', 'unknown')
+            period_days = data.get('period_days', 'unknown')
+            
+            output.append(f"📊 ANALYTICS REPORT ({period_days} days)")
+            output.append(f"📅 Period: {start_date} to {end_date}")
+            
+            # Show subscription data if available
+            if 'subscriptions' in data:
+                subs = data['subscriptions']
+                new_subs = ResultFormatter.safe_int(subs.get('new_subscriptions', 0))
+                active_subs = ResultFormatter.safe_int(subs.get('active_subscriptions', 0))
+                cancelled_subs = ResultFormatter.safe_int(subs.get('cancelled_subscriptions', 0))
+                
+                output.append(f"\n📈 SUBSCRIPTION ANALYTICS:")
+                output.append(f"   🆕 New Subscriptions: {new_subs:,}")
+                output.append(f"   ✅ Active: {active_subs:,}")
+                output.append(f"   ❌ Cancelled: {cancelled_subs:,}")
+                
+                if new_subs > 0:
+                    retention_rate = (active_subs / new_subs) * 100
+                    churn_rate = (cancelled_subs / new_subs) * 100
+                    output.append(f"   📊 Retention Rate: {retention_rate:.1f}%")
+                    output.append(f"   📉 Churn Rate: {churn_rate:.1f}%")
+            
+            # Show payment data if available
+            if 'payments' in data:
+                payments = data['payments']
+                total_payments = ResultFormatter.safe_int(payments.get('total_payments', 0))
+                successful_payments = ResultFormatter.safe_int(payments.get('successful_payments', 0))
+                failed_payments = ResultFormatter.safe_int(payments.get('failed_payments', 0))
+                
+                output.append(f"\n💳 PAYMENT ANALYTICS:")
+                output.append(f"   📊 Total Payments: {total_payments:,}")
+                output.append(f"   ✅ Successful: {successful_payments:,}")
+                output.append(f"   ❌ Failed: {failed_payments:,}")
+                output.append(f"   📈 Success Rate: {payments.get('success_rate', '0%')}")
+                output.append(f"   📉 Failure Rate: {payments.get('failure_rate', '0%')}")
+                
+                # Handle revenue safely
+                total_revenue = payments.get('total_revenue', '$0.00')
+                lost_revenue = payments.get('lost_revenue', '$0.00')
+                
+                if isinstance(total_revenue, str) and total_revenue.startswith('$'):
+                    output.append(f"   💰 Total Revenue: {total_revenue}")
+                else:
+                    revenue_float = ResultFormatter.safe_float(total_revenue)
+                    output.append(f"   💰 Total Revenue: ${revenue_float:,.2f}")
+                
+                if isinstance(lost_revenue, str) and lost_revenue.startswith('$'):
+                    output.append(f"   💸 Lost Revenue: {lost_revenue}")
+                else:
+                    lost_float = ResultFormatter.safe_float(lost_revenue)
+                    output.append(f"   💸 Lost Revenue: ${lost_float:,.2f}")
+                
+                # Calculate average transaction
+                if successful_payments > 0:
+                    revenue_val = ResultFormatter.safe_float(total_revenue)
+                    avg_transaction = revenue_val / successful_payments
+                    output.append(f"   📊 Average Transaction: ${avg_transaction:.2f}")
+            
+            # Show summary if available
+            if 'summary' in data:
+                output.append(f"\n📝 SUMMARY:")
+                output.append(f"   {data['summary']}")
+
+        elif 'subscriptions_by_date_range' in result.tool_used:
+            # This is get_subscriptions_by_date_range
+            start_date = data.get('date_range', {}).get('start', 'unknown')
+            end_date = data.get('date_range', {}).get('end', 'unknown')
+            period_days = data.get('period_days', 'unknown')
+            
+            new_subs = ResultFormatter.safe_int(data.get('new_subscriptions', 0))
+            active_subs = ResultFormatter.safe_int(data.get('active_subscriptions', 0))
+            cancelled_subs = ResultFormatter.safe_int(data.get('cancelled_subscriptions', 0))
+            
+            output.append(f"📈 SUBSCRIPTION ANALYTICS ({period_days} days)")
+            output.append(f"📅 Period: {start_date} to {end_date}")
+            output.append(f"🆕 New Subscriptions: {new_subs:,}")
+            output.append(f"✅ Active: {active_subs:,}")
+            output.append(f"❌ Cancelled: {cancelled_subs:,}")
+            
+            if new_subs > 0:
+                retention_rate = (active_subs / new_subs) * 100
+                churn_rate = (cancelled_subs / new_subs) * 100
+                output.append(f"📊 Retention Rate: {retention_rate:.1f}%")
+                output.append(f"📉 Churn Rate: {churn_rate:.1f}%")
+
+        elif 'payments_by_date_range' in result.tool_used:
+            # This is get_payments_by_date_range
+            start_date = data.get('date_range', {}).get('start', 'unknown')
+            end_date = data.get('date_range', {}).get('end', 'unknown')
+            period_days = data.get('period_days', 'unknown')
+            
+            total_payments = ResultFormatter.safe_int(data.get('total_payments', 0))
+            successful_payments = ResultFormatter.safe_int(data.get('successful_payments', 0))
+            failed_payments = ResultFormatter.safe_int(data.get('failed_payments', 0))
+            
+            output.append(f"💳 PAYMENT ANALYTICS ({period_days} days)")
+            output.append(f"📅 Period: {start_date} to {end_date}")
+            output.append(f"📊 Total Payments: {total_payments:,}")
+            output.append(f"✅ Successful: {successful_payments:,}")
+            output.append(f"❌ Failed: {failed_payments:,}")
+            output.append(f"📈 Success Rate: {data.get('success_rate', '0%')}")
+            output.append(f"📉 Failure Rate: {data.get('failure_rate', '0%')}")
+            
+            total_revenue = data.get('total_revenue', '$0.00')
+            lost_revenue = data.get('lost_revenue', '$0.00')
+            
+            output.append(f"💰 Total Revenue: {total_revenue}")
+            output.append(f"💸 Lost Revenue: {lost_revenue}")
+            
+            if successful_payments > 0:
+                revenue_val = ResultFormatter.safe_float(total_revenue)
+                avg_transaction = revenue_val / successful_payments
+                output.append(f"📊 Average Transaction: ${avg_transaction:.2f}")
         
         else:
             # Unknown tool type - show raw data
@@ -492,12 +613,108 @@ class GeminiNLPProcessor:
             return self._improved_fallback_parse(user_query)
     
     def _improved_fallback_parse(self, query: str) -> List[Dict]:
-        """Improved fallback parsing"""
+        """Improved fallback parsing with date range support"""
         import re
+        from datetime import datetime
         
         query_lower = query.lower()
+        today = datetime.now().strftime("%Y-%m-%d")
+        current_year = datetime.now().year
         
-        # Extract ALL numbers
+        print(f"🔍 Fallback parsing query: '{query}'")
+        print(f"🗓️ Today's date: {today}")
+        
+        # Check for date range indicators
+        has_date_range = any(phrase in query_lower for phrase in [
+            'between', 'from', 'to', 'june', 'may', 'april', 'march', 
+            'january', 'february', 'july', 'august', 'september', 
+            'october', 'november', 'december', 'today', 'yesterday',
+            'this month', 'last month', 'this year', 'last year'
+        ])
+        
+        # Month name to number mapping
+        months = {
+            'january': '01', 'jan': '01',
+            'february': '02', 'feb': '02', 
+            'march': '03', 'mar': '03',
+            'april': '04', 'apr': '04',
+            'may': '05',
+            'june': '06', 'jun': '06',
+            'july': '07', 'jul': '07',
+            'august': '08', 'aug': '08',
+            'september': '09', 'sep': '09', 'sept': '09',
+            'october': '10', 'oct': '10',
+            'november': '11', 'nov': '11',
+            'december': '12', 'dec': '12'
+        }
+        
+        results = []
+        
+        # Try to handle date range queries
+        if has_date_range:
+            print("🗓️ Detected date range query")
+            
+            # Pattern 1: "between X and Y" or "from X to Y"
+            date_patterns = [
+                r'between\s+(.+?)\s+and\s+(.+?)(?:\s|$)',
+                r'from\s+(.+?)\s+to\s+(.+?)(?:\s|$)',
+                r'(.+?)\s+to\s+(.+?)(?:\s|$)',
+                r'(.+?)\s+and\s+(.+?)(?:\s|$)'
+            ]
+            
+            for pattern in date_patterns:
+                match = re.search(pattern, query_lower)
+                if match:
+                    start_phrase = match.group(1).strip()
+                    end_phrase = match.group(2).strip()
+                    print(f"🔍 Found date pattern: '{start_phrase}' to '{end_phrase}'")
+                    
+                    # Parse start date
+                    start_date = self._parse_date_phrase(start_phrase, current_year, months)
+                    # Parse end date
+                    end_date = self._parse_date_phrase(end_phrase, current_year, months, today)
+                    
+                    if start_date and end_date:
+                        print(f"📅 Parsed dates: {start_date} to {end_date}")
+                        return [{
+                            'tool': 'get_analytics_by_date_range',
+                            'parameters': {
+                                'start_date': start_date,
+                                'end_date': end_date
+                            },
+                            'original_query': query
+                        }]
+            
+            # Pattern 2: Single month mentions
+            for month_name, month_num in months.items():
+                if month_name in query_lower:
+                    if 'today' in query_lower or 'now' in query_lower:
+                        # "june to today" or "since june"
+                        start_date = f"{current_year}-{month_num}-01"
+                        end_date = today
+                        print(f"📅 Month to today: {start_date} to {end_date}")
+                        return [{
+                            'tool': 'get_analytics_by_date_range',
+                            'parameters': {
+                                'start_date': start_date,
+                                'end_date': end_date
+                            },
+                            'original_query': query
+                        }]
+                    elif 'this month' in query_lower and month_name == datetime.now().strftime('%B').lower():
+                        # "this month" and it matches current month
+                        start_date = f"{current_year}-{month_num}-01"
+                        end_date = today
+                        return [{
+                            'tool': 'get_analytics_by_date_range',
+                            'parameters': {
+                                'start_date': start_date,
+                                'end_date': end_date
+                            },
+                            'original_query': query
+                        }]
+        
+        # Extract ALL numbers for "last X days" queries
         numbers = []
         # Look for patterns like "10 days", "7 days", "2 weeks", etc.
         day_matches = re.findall(r'(\d+)\s*days?', query_lower)
@@ -523,8 +740,6 @@ class GeminiNLPProcessor:
         has_payment = any(word in query_lower for word in ['payment', 'pay', 'rate', 'success'])
         has_summary = any(word in query_lower for word in ['summary', 'overview', 'performance', 'stats', 'statistics'])
         has_database = any(word in query_lower for word in ['database', 'db', 'status'])
-        
-        results = []
         
         # For comparison queries, use summary tool
         if has_compare or (len(numbers) > 1):
@@ -559,6 +774,48 @@ class GeminiNLPProcessor:
         
         print(f"🔧 Fallback parser suggests: {[r['tool'] + str(r['parameters']) for r in results]}")
         return results
+
+    def _parse_date_phrase(self, phrase: str, current_year: int, months: dict, today: str = None) -> str:
+        """Parse a date phrase into YYYY-MM-DD format"""
+        phrase = phrase.strip()
+        
+        # Handle "today"
+        if phrase == 'today' or phrase == 'now':
+            return today if today else datetime.now().strftime("%Y-%m-%d")
+        
+        # Handle "1st june", "june 1st", "june 1", etc.
+        for month_name, month_num in months.items():
+            if month_name in phrase:
+                # Look for day number
+                day_match = re.search(r'(\d+)', phrase)
+                if day_match:
+                    day = int(day_match.group(1))
+                    if 1 <= day <= 31:
+                        return f"{current_year}-{month_num}-{day:02d}"
+                else:
+                    # Just month name, assume 1st
+                    return f"{current_year}-{month_num}-01"
+        
+        # Handle YYYY-MM-DD format
+        if re.match(r'\d{4}-\d{2}-\d{2}', phrase):
+            return phrase
+        
+        # Handle MM/DD/YYYY or DD/MM/YYYY
+        date_match = re.match(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', phrase)
+        if date_match:
+            # Assume MM/DD/YYYY format (US style)
+            month, day, year = date_match.groups()
+            return f"{year}-{int(month):02d}-{int(day):02d}"
+        
+        # Handle relative terms
+        if 'yesterday' in phrase:
+            from datetime import datetime, timedelta
+            yesterday = datetime.now() - timedelta(days=1)
+            return yesterday.strftime("%Y-%m-%d")
+        
+        # If we can't parse it, return None
+        print(f"⚠️ Could not parse date phrase: '{phrase}'")
+        return None
 
 class UniversalClient:
     """Universal Client with SSL fixes and proper async context management"""
