@@ -880,7 +880,8 @@ class UniversalClient:
             'api_key': os.getenv('SUBSCRIPTION_API_KEY') or os.getenv('API_KEY_1'),
             'gemini_api_key': os.getenv('GEMINI_API_KEY'),
             'timeout': int(os.getenv('SUBSCRIPTION_API_TIMEOUT', '30')),
-            'retry_attempts': int(os.getenv('SUBSCRIPTION_API_RETRIES', '3'))
+            'retry_attempts': int(os.getenv('SUBSCRIPTION_API_RETRIES', '3')),
+            'debug': os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
         }
         
         for key, value in env_config.items():
@@ -901,18 +902,29 @@ class UniversalClient:
         """Async context manager entry with enhanced SSL handling"""
         import ssl
         
-        # Create SSL context
-        try:
-            # Try to use proper SSL first
-            ssl_context = ssl.create_default_context(cafile=certifi.where())
-        except Exception as e:
-            logger.warning(f"Could not create proper SSL context: {e}, falling back to disabled SSL")
-            # Fallback: Disable SSL verification for testing
-            ssl_context = ssl.create_default_context()
+        # Create SSL context with debug option from config
+        ssl_context = ssl.create_default_context()
+        
+        # Check if we should disable SSL verification (for development only)
+        if self.config.get('debug', False):
+            logger.warning("⚠️ Running in debug mode with SSL verification disabled")
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
+        else:
+            try:
+                # Try to use system CA certificates
+                ssl_context = ssl.create_default_context(cafile=certifi.where())
+                logger.info("✓ Using system CA certificates for SSL verification")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load system CA certificates: {e}")
+                logger.warning("⚠️ Falling back to default SSL context (less secure)")
         
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        # Configure connection pooling
+        connector = aiohttp.TCPConnector(
+            ssl=ssl_context,
+            limit=10,  # Max number of simultaneous connections
+            keepalive_timeout=30  # Keep connections alive for 30 seconds
+        )
         
         self.session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=self.config.get('timeout', 30)),
