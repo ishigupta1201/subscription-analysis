@@ -30,7 +30,7 @@ class QueryResult:
     parameters: Optional[Dict] = None
 
 class ResultFormatter:
-    """Format results in a beautiful, user-friendly way"""
+    """Format results in a beautiful, user-friendly way - FIXED VERSION"""
     
     @staticmethod
     def safe_int(value) -> int:
@@ -190,125 +190,6 @@ class ResultFormatter:
                     revenue_float = ResultFormatter.safe_float(revenue)
                     output.append(f"   💰 Revenue: ${revenue_float:,.2f}")
 
-        elif 'analytics_by_date_range' in result.tool_used:
-            # This is get_analytics_by_date_range
-            start_date = data.get('start_date', 'unknown')
-            end_date = data.get('end_date', 'unknown')
-            period_days = data.get('period_days', 'unknown')
-            
-            output.append(f"📊 ANALYTICS REPORT ({period_days} days)")
-            output.append(f"📅 Period: {start_date} to {end_date}")
-            
-            # Show subscription data if available
-            if 'subscriptions' in data:
-                subs = data['subscriptions']
-                new_subs = ResultFormatter.safe_int(subs.get('new_subscriptions', 0))
-                active_subs = ResultFormatter.safe_int(subs.get('active_subscriptions', 0))
-                cancelled_subs = ResultFormatter.safe_int(subs.get('cancelled_subscriptions', 0))
-                
-                output.append(f"\n📈 SUBSCRIPTION ANALYTICS:")
-                output.append(f"   🆕 New Subscriptions: {new_subs:,}")
-                output.append(f"   ✅ Active: {active_subs:,}")
-                output.append(f"   ❌ Cancelled: {cancelled_subs:,}")
-                
-                if new_subs > 0:
-                    retention_rate = (active_subs / new_subs) * 100
-                    churn_rate = (cancelled_subs / new_subs) * 100
-                    output.append(f"   📊 Retention Rate: {retention_rate:.1f}%")
-                    output.append(f"   📉 Churn Rate: {churn_rate:.1f}%")
-            
-            # Show payment data if available
-            if 'payments' in data:
-                payments = data['payments']
-                total_payments = ResultFormatter.safe_int(payments.get('total_payments', 0))
-                successful_payments = ResultFormatter.safe_int(payments.get('successful_payments', 0))
-                failed_payments = ResultFormatter.safe_int(payments.get('failed_payments', 0))
-                
-                output.append(f"\n💳 PAYMENT ANALYTICS:")
-                output.append(f"   📊 Total Payments: {total_payments:,}")
-                output.append(f"   ✅ Successful: {successful_payments:,}")
-                output.append(f"   ❌ Failed: {failed_payments:,}")
-                output.append(f"   📈 Success Rate: {payments.get('success_rate', '0%')}")
-                output.append(f"   📉 Failure Rate: {payments.get('failure_rate', '0%')}")
-                
-                # Handle revenue safely
-                total_revenue = payments.get('total_revenue', '$0.00')
-                lost_revenue = payments.get('lost_revenue', '$0.00')
-                
-                if isinstance(total_revenue, str) and total_revenue.startswith('$'):
-                    output.append(f"   💰 Total Revenue: {total_revenue}")
-                else:
-                    revenue_float = ResultFormatter.safe_float(total_revenue)
-                    output.append(f"   💰 Total Revenue: ${revenue_float:,.2f}")
-                
-                if isinstance(lost_revenue, str) and lost_revenue.startswith('$'):
-                    output.append(f"   💸 Lost Revenue: {lost_revenue}")
-                else:
-                    lost_float = ResultFormatter.safe_float(lost_revenue)
-                    output.append(f"   💸 Lost Revenue: ${lost_float:,.2f}")
-                
-                # Calculate average transaction
-                if successful_payments > 0:
-                    revenue_val = ResultFormatter.safe_float(total_revenue)
-                    avg_transaction = revenue_val / successful_payments
-                    output.append(f"   📊 Average Transaction: ${avg_transaction:.2f}")
-            
-            # Show summary if available
-            if 'summary' in data:
-                output.append(f"\n📝 SUMMARY:")
-                output.append(f"   {data['summary']}")
-
-        elif 'subscriptions_by_date_range' in result.tool_used:
-            # This is get_subscriptions_by_date_range
-            start_date = data.get('date_range', {}).get('start', 'unknown')
-            end_date = data.get('date_range', {}).get('end', 'unknown')
-            period_days = data.get('period_days', 'unknown')
-            
-            new_subs = ResultFormatter.safe_int(data.get('new_subscriptions', 0))
-            active_subs = ResultFormatter.safe_int(data.get('active_subscriptions', 0))
-            cancelled_subs = ResultFormatter.safe_int(data.get('cancelled_subscriptions', 0))
-            
-            output.append(f"📈 SUBSCRIPTION ANALYTICS ({period_days} days)")
-            output.append(f"📅 Period: {start_date} to {end_date}")
-            output.append(f"🆕 New Subscriptions: {new_subs:,}")
-            output.append(f"✅ Active: {active_subs:,}")
-            output.append(f"❌ Cancelled: {cancelled_subs:,}")
-            
-            if new_subs > 0:
-                retention_rate = (active_subs / new_subs) * 100
-                churn_rate = (cancelled_subs / new_subs) * 100
-                output.append(f"📊 Retention Rate: {retention_rate:.1f}%")
-                output.append(f"📉 Churn Rate: {churn_rate:.1f}%")
-
-        elif 'payments_by_date_range' in result.tool_used:
-            # This is get_payments_by_date_range
-            start_date = data.get('date_range', {}).get('start', 'unknown')
-            end_date = data.get('date_range', {}).get('end', 'unknown')
-            period_days = data.get('period_days', 'unknown')
-            
-            total_payments = ResultFormatter.safe_int(data.get('total_payments', 0))
-            successful_payments = ResultFormatter.safe_int(data.get('successful_payments', 0))
-            failed_payments = ResultFormatter.safe_int(data.get('failed_payments', 0))
-            
-            output.append(f"💳 PAYMENT ANALYTICS ({period_days} days)")
-            output.append(f"📅 Period: {start_date} to {end_date}")
-            output.append(f"📊 Total Payments: {total_payments:,}")
-            output.append(f"✅ Successful: {successful_payments:,}")
-            output.append(f"❌ Failed: {failed_payments:,}")
-            output.append(f"📈 Success Rate: {data.get('success_rate', '0%')}")
-            output.append(f"📉 Failure Rate: {data.get('failure_rate', '0%')}")
-            
-            total_revenue = data.get('total_revenue', '$0.00')
-            lost_revenue = data.get('lost_revenue', '$0.00')
-            
-            output.append(f"💰 Total Revenue: {total_revenue}")
-            output.append(f"💸 Lost Revenue: {lost_revenue}")
-            
-            if successful_payments > 0:
-                revenue_val = ResultFormatter.safe_float(total_revenue)
-                avg_transaction = revenue_val / successful_payments
-                output.append(f"📊 Average Transaction: ${avg_transaction:.2f}")
-        
         else:
             # Unknown tool type - show raw data
             output.append(f"📊 RESULTS FROM {result.tool_used.upper()}")
@@ -319,7 +200,7 @@ class ResultFormatter:
     
     @staticmethod
     def format_multi_result(results: List[QueryResult], original_query: str) -> str:
-        """Format multiple results for display"""
+        """Format multiple results for display - FIXED VERSION"""
         output = []
         output.append(f"🎯 RESULTS FOR: '{original_query}'")
         output.append("=" * 80)
@@ -339,75 +220,93 @@ class ResultFormatter:
             output.append(f"\n🔍 SIDE-BY-SIDE COMPARISON")
             output.append("=" * 50)
             
-            # Create a comparison table
+            # Create a comparison table - FIXED TO HANDLE MISSING DATA
             comparison_data = []
             for i, result in enumerate(results, 1):
                 if result.success and result.data:
                     data = result.data
                     days = result.parameters.get('days', 'unknown') if result.parameters else 'unknown'
                     
-                    # Extract key metrics based on tool type
+                    # Initialize comparison item with defaults
+                    comparison_item = {
+                        'period': f"{days} days",
+                        'tool_type': result.tool_used,
+                        'new_subs': 0,
+                        'active': 0,
+                        'total_payments': 0,
+                        'success_rate': '0%'
+                    }
+                    
+                    # Extract data based on tool type - with safe handling
                     if 'subscription' in result.tool_used and 'summary' not in result.tool_used:
-                        new_subs = ResultFormatter.safe_int(data.get('new_subscriptions', 0))
-                        active = ResultFormatter.safe_int(data.get('active_subscriptions', 0))
-                        comparison_data.append({
-                            'period': f"{days} days",
-                            'new_subs': new_subs,
-                            'active': active,
-                            'type': 'subscription'
+                        # get_subscriptions_in_last_days - only has subscription data
+                        comparison_item.update({
+                            'new_subs': ResultFormatter.safe_int(data.get('new_subscriptions', 0)),
+                            'active': ResultFormatter.safe_int(data.get('active_subscriptions', 0)),
+                            'type': 'subscription_only'
                         })
                     elif 'payment' in result.tool_used and 'summary' not in result.tool_used:
-                        total_payments = ResultFormatter.safe_int(data.get('total_payments', 0))
-                        success_rate = data.get('success_rate', '0%')
-                        comparison_data.append({
-                            'period': f"{days} days",
-                            'total_payments': total_payments,
-                            'success_rate': success_rate,
-                            'type': 'payment'
+                        # get_payment_success_rate_in_last_days - only has payment data
+                        comparison_item.update({
+                            'total_payments': ResultFormatter.safe_int(data.get('total_payments', 0)),
+                            'success_rate': data.get('success_rate', '0%'),
+                            'type': 'payment_only'
                         })
                     elif 'summary' in result.tool_used:
-                        # Extract from summary data
+                        # get_subscription_summary - has both subscription and payment data
                         if 'subscriptions' in data:
-                            new_subs = ResultFormatter.safe_int(data['subscriptions'].get('new_subscriptions', 0))
-                            active = ResultFormatter.safe_int(data['subscriptions'].get('active_subscriptions', 0))
-                        else:
-                            new_subs = active = 0
+                            comparison_item.update({
+                                'new_subs': ResultFormatter.safe_int(data['subscriptions'].get('new_subscriptions', 0)),
+                                'active': ResultFormatter.safe_int(data['subscriptions'].get('active_subscriptions', 0))
+                            })
                         
                         if 'payments' in data:
-                            total_payments = ResultFormatter.safe_int(data['payments'].get('total_payments', 0))
-                            success_rate = data['payments'].get('success_rate', '0%')
-                        else:
-                            total_payments = 0
-                            success_rate = '0%'
+                            comparison_item.update({
+                                'total_payments': ResultFormatter.safe_int(data['payments'].get('total_payments', 0)),
+                                'success_rate': data['payments'].get('success_rate', '0%')
+                            })
                         
-                        comparison_data.append({
-                            'period': f"{days} days",
-                            'new_subs': new_subs,
-                            'active': active,
-                            'total_payments': total_payments,
-                            'success_rate': success_rate,
-                            'type': 'summary'
-                        })
+                        comparison_item['type'] = 'summary'
+                    
+                    comparison_data.append(comparison_item)
             
-            # Display comparison
-            if comparison_data:
-                if comparison_data[0]['type'] == 'subscription':
-                    output.append("📈 SUBSCRIPTION COMPARISON:")
-                    for item in comparison_data:
+            # Display comparison - group by data type available
+            subscription_data = [item for item in comparison_data if item.get('new_subs', 0) > 0 or item['type'] in ['subscription_only', 'summary']]
+            payment_data = [item for item in comparison_data if item.get('total_payments', 0) > 0 or item['type'] in ['payment_only', 'summary']]
+            
+            if subscription_data:
+                output.append("📈 SUBSCRIPTION COMPARISON:")
+                for item in subscription_data:
+                    if item['type'] == 'subscription_only':
                         output.append(f"   {item['period']}: {item['new_subs']:,} new, {item['active']:,} active")
-                elif comparison_data[0]['type'] == 'payment':
-                    output.append("💳 PAYMENT COMPARISON:")
-                    for item in comparison_data:
+                    elif item['type'] == 'summary':
+                        output.append(f"   {item['period']}: {item['new_subs']:,} new, {item['active']:,} active")
+            
+            if payment_data:
+                output.append("💳 PAYMENT COMPARISON:")
+                for item in payment_data:
+                    if item['type'] == 'payment_only':
                         output.append(f"   {item['period']}: {item['total_payments']:,} payments, {item['success_rate']} success")
-                elif comparison_data[0]['type'] == 'summary':
-                    output.append("📋 COMPREHENSIVE COMPARISON:")
-                    for item in comparison_data:
-                        output.append(f"   {item['period']}:")
-                        output.append(f"     📈 Subscriptions: {item['new_subs']:,} new, {item['active']:,} active")
-                        output.append(f"     💳 Payments: {item['total_payments']:,} total, {item['success_rate']} success")
+                    elif item['type'] == 'summary':
+                        output.append(f"   {item['period']}: {item['total_payments']:,} payments, {item['success_rate']} success")
+            
+            # If we have mixed data types, show a combined summary
+            if subscription_data and payment_data:
+                output.append("📊 COMBINED OVERVIEW:")
+                # Create a table showing all metrics side by side
+                for item in comparison_data:
+                    if item['type'] == 'summary':
+                        output.append(f"   {item['period']} (Complete):")
+                        output.append(f"     📈 {item['new_subs']:,} new subs, {item['active']:,} active")
+                        output.append(f"     💳 {item['total_payments']:,} payments, {item['success_rate']} success")
+                    elif item['type'] == 'subscription_only':
+                        output.append(f"   {item['period']} (Subscriptions Only):")
+                        output.append(f"     📈 {item['new_subs']:,} new subs, {item['active']:,} active")
+                    elif item['type'] == 'payment_only':
+                        output.append(f"   {item['period']} (Payments Only):")
+                        output.append(f"     💳 {item['total_payments']:,} payments, {item['success_rate']} success")
         
         return "\n".join(output)
-
 class GeminiNLPProcessor:
     """Uses Gemini API for natural language understanding"""
     
