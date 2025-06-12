@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Complete Fixed Universal Client with SSL fixes and proper async context management
+Enhanced version with better error handling and date range support
 """
 import asyncio
 import aiohttp
@@ -72,7 +73,7 @@ class ResultFormatter:
         output = []
         
         # Format based on tool type
-        if 'subscription' in result.tool_used and 'summary' not in result.tool_used:
+        if 'subscription' in result.tool_used and 'summary' not in result.tool_used and 'date_range' not in result.tool_used:
             # This is get_subscriptions_in_last_days
             period = data.get('period_days', 'unknown')
             date_range = data.get('date_range', {})
@@ -97,7 +98,7 @@ class ResultFormatter:
                 output.append(f"📊 Retention Rate: {retention_rate:.1f}%")
                 output.append(f"📉 Churn Rate: {churn_rate:.1f}%")
         
-        elif 'payment' in result.tool_used and 'summary' not in result.tool_used:
+        elif 'payment' in result.tool_used and 'summary' not in result.tool_used and 'date_range' not in result.tool_used:
             # This is get_payment_success_rate_in_last_days
             period = data.get('period_days', 'unknown')
             date_range = data.get('date_range', {})
@@ -188,11 +189,9 @@ class ResultFormatter:
                 else:
                     revenue_float = ResultFormatter.safe_float(revenue)
                     output.append(f"   💰 Revenue: ${revenue_float:,.2f}")
-        # Add this case to your format_single_result method in ResultFormatter class
-# Insert this after the existing elif statements and before the final else:
 
-        elif 'date_range' in result.tool_used or 'analytics_by_date_range' in result.tool_used:
-            # This is get_analytics_by_date_range or similar date range tools
+        elif 'analytics_by_date_range' in result.tool_used:
+            # This is get_analytics_by_date_range
             start_date = data.get('start_date', 'unknown')
             end_date = data.get('end_date', 'unknown')
             period_days = data.get('period_days', 'unknown')
@@ -486,7 +485,6 @@ class GeminiNLPProcessor:
                     "required": ["merchant_user_id"]
                 }
             },
-            # Add to self.available_tools in GeminiNLPProcessor
             {
                 "name": "get_subscriptions_by_date_range",
                 "description": "Get subscription statistics for a specific date range",
@@ -529,6 +527,11 @@ class GeminiNLPProcessor:
         """Use Gemini to understand the query and return tool calls"""
         print(f"🤖 Asking Gemini to understand: '{user_query}'")
         
+        # Get current date for context
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        current_year = datetime.now().year
+        
         # Convert tools to Gemini format
         gemini_tools = [
             types.Tool(
@@ -544,32 +547,33 @@ class GeminiNLPProcessor:
         ]
         
         try:
-            # Enhanced prompt for better understanding
+            # Enhanced prompt with current date context
             enhanced_query = f"""
-            You are an expert in subscription analytics. Analyze this user query: "{user_query}"
+            You are an expert in subscription analytics. Today's date is {today}.
+            
+            Analyze this user query: "{user_query}"
             
             IMPORTANT RULES:
-            1. For comparison queries with multiple time periods, ALWAYS call get_subscription_summary for each period
-            2. If the user wants to "compare" different time periods, use get_subscription_summary for comprehensive data
-            3. Extract ALL numbers mentioned in the query (like "10 days", "7 days")
-            4. Convert time periods: "1 week" = 7 days, "2 weeks" = 14 days, "1 month" = 30 days
+            1. For date range queries, use get_analytics_by_date_range or get_subscriptions_by_date_range
+            2. Convert relative dates like "1st June" to "2024-06-01" (assume current year {current_year} if not specified)
+            3. "today" means {today}
+            4. For comparison queries with multiple time periods, use get_subscription_summary for each period
+            5. Extract ALL numbers and dates mentioned
             
-            QUERY ANALYSIS:
-            - Query: "{user_query}"
-            - Contains "compare": {"yes" if "compar" in user_query.lower() else "no"}
-            - Time periods mentioned: Look for numbers followed by "day", "week", "month"
+            DATE PARSING EXAMPLES:
+            - "1st June to today" → start_date: "2024-06-01", end_date: "{today}"
+            - "between May 15 and June 30" → start_date: "2024-05-15", end_date: "2024-06-30"
+            - "from January 1st to March 31st" → start_date: "2024-01-01", end_date: "2024-03-31"
             
-            TOOL SELECTION LOGIC:
-            - For "compare X days vs Y days" or "compare X and Y" → call get_subscription_summary(days=X) AND get_subscription_summary(days=Y)
-            - For "subscription performance" or "statistics" → use get_subscription_summary
-            - For specific metrics only → use the specific tool
+            TOOL SELECTION:
+            - For date ranges: use get_analytics_by_date_range(start_date, end_date)
+            - For comparisons: use get_subscription_summary for each period
+            - For general queries: use appropriate specific tools
             
-            EXAMPLES:
-            - "compare 10 days vs 7 days" → get_subscription_summary(days=10) AND get_subscription_summary(days=7)
-            - "compare the statistics for 10 days vs 7 days" → get_subscription_summary(days=10) AND get_subscription_summary(days=7)
-            - "show me subscription performance for 10 days and 7 days" → get_subscription_summary(days=10) AND get_subscription_summary(days=7)
+            Current query: "{user_query}"
+            Today's date: {today}
             
-            Please call the appropriate tool(s) for this query. Make sure to use get_subscription_summary for comparison queries.
+            Please call the appropriate tool(s) for this query.
             """
             
             response = self.client.models.generate_content(
@@ -777,6 +781,9 @@ class GeminiNLPProcessor:
 
     def _parse_date_phrase(self, phrase: str, current_year: int, months: dict, today: str = None) -> str:
         """Parse a date phrase into YYYY-MM-DD format"""
+        import re
+        from datetime import datetime, timedelta
+        
         phrase = phrase.strip()
         
         # Handle "today"
@@ -809,7 +816,6 @@ class GeminiNLPProcessor:
         
         # Handle relative terms
         if 'yesterday' in phrase:
-            from datetime import datetime, timedelta
             yesterday = datetime.now() - timedelta(days=1)
             return yesterday.strftime("%Y-%m-%d")
         
@@ -839,8 +845,34 @@ class UniversalClient:
                 raise ValueError(f"Missing required configuration: {key}")
     
     def _load_config(self, config_path: Optional[str] = None, **kwargs) -> Dict:
-        """Load configuration from file or environment variables"""
+        """Load configuration from file or environment variables with enhanced fallbacks"""
         config = {}
+        
+        # Try to load from .env file
+        try:
+            from dotenv import load_dotenv
+            
+            # Try multiple .env locations
+            env_paths = [
+                '.env',
+                '../.env',
+                os.path.join(os.getcwd(), '.env'),
+                os.path.join(os.path.dirname(__file__), '.env') if '__file__' in globals() else None
+            ]
+            
+            env_loaded = False
+            for env_path in env_paths:
+                if env_path and os.path.exists(env_path):
+                    load_dotenv(env_path)
+                    env_loaded = True
+                    logger.debug(f"Loaded .env from: {env_path}")
+                    break
+            
+            if not env_loaded:
+                logger.warning("No .env file found, using environment variables only")
+                
+        except ImportError:
+            logger.warning("python-dotenv not available, using environment variables only")
         
         # Override with environment variables
         env_config = {
@@ -861,18 +893,24 @@ class UniversalClient:
         # Set defaults
         config.setdefault('timeout', 30)
         config.setdefault('retry_attempts', 3)
-        config.setdefault('server_url', 'http://localhost:8000')
+        config.setdefault('server_url', 'https://subscription-analysis-production.up.railway.app')
         
         return config
     
     async def __aenter__(self):
-        """Async context manager entry with SSL disabled for testing"""
+        """Async context manager entry with enhanced SSL handling"""
         import ssl
         
-        # TEMPORARY: Disable SSL verification for testing
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
+        # Create SSL context
+        try:
+            # Try to use proper SSL first
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+        except Exception as e:
+            logger.warning(f"Could not create proper SSL context: {e}, falling back to disabled SSL")
+            # Fallback: Disable SSL verification for testing
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
         
         connector = aiohttp.TCPConnector(ssl=ssl_context)
         
@@ -888,7 +926,7 @@ class UniversalClient:
             await self.session.close()
     
     async def call_tool(self, tool_name: str, parameters: Dict = None) -> QueryResult:
-        """Execute a tool on the HTTP API server"""
+        """Execute a tool on the HTTP API server with enhanced error handling"""
         if not self.session:
             raise RuntimeError("Client not initialized. Use 'async with' context manager.")
         
@@ -911,8 +949,17 @@ class UniversalClient:
                 ) as response:
                     
                     print(f"📡 Response status: {response.status}")
-                    data = await response.json()
-                    print(f"📊 Response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+                    
+                    # Handle different response types
+                    content_type = response.headers.get('content-type', '').lower()
+                    if 'application/json' in content_type:
+                        data = await response.json()
+                        print(f"📊 Response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+                    else:
+                        # Handle non-JSON responses
+                        text_data = await response.text()
+                        print(f"📊 Response (text): {text_data[:200]}...")
+                        data = {"error": f"Non-JSON response: {text_data[:200]}"}
                     
                     if response.status == 200 and data.get('success'):
                         print(f"✅ Tool {tool_name} succeeded")
@@ -925,6 +972,8 @@ class UniversalClient:
                     else:
                         error_msg = data.get('error', f"HTTP {response.status}")
                         print(f"❌ Tool failed: {error_msg}")
+                        
+                        # For final attempt, return the error
                         if attempt == self.config.get('retry_attempts', 3) - 1:
                             return QueryResult(
                                 success=False,
@@ -932,6 +981,8 @@ class UniversalClient:
                                 tool_used=tool_name,
                                 parameters=parameters
                             )
+                        
+                        # Wait before retry
                         await asyncio.sleep(2 ** attempt)
                         
             except aiohttp.ClientError as e:
@@ -940,6 +991,16 @@ class UniversalClient:
                     return QueryResult(
                         success=False,
                         error=f"Network error: {str(e)}",
+                        tool_used=tool_name,
+                        parameters=parameters
+                    )
+                await asyncio.sleep(2 ** attempt)
+            except Exception as e:
+                print(f"🚨 Unexpected error: {e}")
+                if attempt == self.config.get('retry_attempts', 3) - 1:
+                    return QueryResult(
+                        success=False,
+                        error=f"Unexpected error: {str(e)}",
                         tool_used=tool_name,
                         parameters=parameters
                     )
@@ -980,28 +1041,37 @@ class UniversalClient:
 # ==================================================
 
 async def interactive_mode():
-    """Interactive mode for users"""
-    print("✨ SUBSCRIPTION ANALYTICS - GEMINI POWERED (COMPLETE FIXED VERSION)")
+    """Interactive mode for users with enhanced error handling"""
+    print("✨ SUBSCRIPTION ANALYTICS - GEMINI POWERED (ENHANCED VERSION)")
     print("=" * 60)
     
     # Try to load configuration
+    config = {}
     try:
         from dotenv import load_dotenv
         load_dotenv()
         
         config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'http://localhost:8000'),
+            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
             'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
             'gemini_api_key': os.getenv('GEMINI_API_KEY')
         }
         
+        # Check for missing keys
+        missing_keys = []
         if not config['api_key']:
-            print("⚠️ No API key found in environment variables.")
-            config['api_key'] = input("🔑 Enter your API key: ").strip()
-        
+            missing_keys.append('API_KEY_1 or SUBSCRIPTION_API_KEY')
         if not config['gemini_api_key']:
-            print("⚠️ No Gemini API key found in environment variables.")
-            config['gemini_api_key'] = input("🤖 Enter your Gemini API key: ").strip()
+            missing_keys.append('GEMINI_API_KEY')
+        
+        if missing_keys:
+            print(f"⚠️ Missing environment variables: {', '.join(missing_keys)}")
+            
+            # Interactive fallback
+            if not config['api_key']:
+                config['api_key'] = input("🔑 Enter your API key: ").strip()
+            if not config['gemini_api_key']:
+                config['gemini_api_key'] = input("🤖 Enter your Gemini API key: ").strip()
         
         if not config['api_key'] or not config['gemini_api_key']:
             print("❌ Both API keys are required.")
@@ -1009,10 +1079,9 @@ async def interactive_mode():
             
     except ImportError:
         print("📝 Environment configuration not available. Please enter manually:")
-        config = {}
-        config['server_url'] = input("🔗 Enter API server URL (default: http://localhost:8000): ").strip()
+        config['server_url'] = input("🔗 Enter API server URL (default: https://subscription-analysis-production.up.railway.app): ").strip()
         if not config['server_url']:
-            config['server_url'] = 'http://localhost:8000'
+            config['server_url'] = 'https://subscription-analysis-production.up.railway.app'
         
         config['api_key'] = input("🔑 Enter your API key: ").strip()
         config['gemini_api_key'] = input("🤖 Enter your Gemini API key: ").strip()
@@ -1025,53 +1094,63 @@ async def interactive_mode():
     print(f"🔑 Using API key: {config['api_key'][:20]}...")
     print(f"🤖 Using Gemini API: {config['gemini_api_key'][:20]}...")
     
-    async with UniversalClient(**config) as client:
-        print("\n💬 Enter your queries in natural language (or 'quit' to exit):")
-        
-        while True:
-            try:
-                query = input("\n🎯 Your query: ").strip()
-                
-                if query.lower() in ['quit', 'exit', 'q', 'bye']:
-                    print("👋 Goodbye!")
-                    break
-                
-                if not query:
-                    continue
-                
-                if query.lower() in ['help', 'h']:
-                    print("\n📚 You can ask anything in natural language!")
-                    print("  • Time periods: 'last 7 days', 'past 2 weeks', 'this month'")
-                    print("  • Metrics: 'subscriptions', 'payments', 'success rates'")
-                    print("  • Comparisons: 'compare X and Y', 'X versus Y'")
-                    print("  • Multiple queries: 'show me X and also Y'")
-                    continue
-                
-                if query.lower() in ['debug', 'test']:
-                    print("🔍 Running debug test...")
-                    debug_result = await client.query_formatted("database status")
-                    print(debug_result)
-                    continue
-                
-                print("\n🔄 Processing with Gemini AI...")
-                formatted_output = await client.query_formatted(query)
-                print("\n" + formatted_output)
+    try:
+        async with UniversalClient(**config) as client:
+            print("\n💬 Enter your queries in natural language (or 'quit' to exit):")
+            print("📚 Examples:")
+            print("  • 'database status'")
+            print("  • 'subscription performance for last 7 days'")
+            print("  • 'compare 7 days vs 30 days'")
+            print("  • 'analytics from June 1st to today'")
+            
+            while True:
+                try:
+                    query = input("\n🎯 Your query: ").strip()
                     
-            except KeyboardInterrupt:
-                print("\n👋 Goodbye!")
-                break
-            except Exception as e:
-                print(f"❌ Error: {e}")
-                logger.exception("Error in interactive mode")
+                    if query.lower() in ['quit', 'exit', 'q', 'bye']:
+                        print("👋 Goodbye!")
+                        break
+                    
+                    if not query:
+                        continue
+                    
+                    if query.lower() in ['help', 'h']:
+                        print("\n📚 You can ask anything in natural language!")
+                        print("  • Time periods: 'last 7 days', 'past 2 weeks', 'this month'")
+                        print("  • Metrics: 'subscriptions', 'payments', 'success rates'")
+                        print("  • Comparisons: 'compare X and Y', 'X versus Y'")
+                        print("  • Date ranges: 'from June 1st to today', 'between May 15 and June 30'")
+                        print("  • Database: 'database status', 'db health'")
+                        continue
+                    
+                    if query.lower() in ['debug', 'test']:
+                        print("🔍 Running debug test...")
+                        debug_result = await client.query_formatted("database status")
+                        print(debug_result)
+                        continue
+                    
+                    print("\n🔄 Processing with Gemini AI...")
+                    formatted_output = await client.query_formatted(query)
+                    print("\n" + formatted_output)
+                        
+                except KeyboardInterrupt:
+                    print("\n👋 Goodbye!")
+                    break
+                except Exception as e:
+                    print(f"❌ Error processing query: {e}")
+                    logger.exception("Error in interactive mode")
+    except Exception as e:
+        print(f"❌ Failed to initialize client: {e}")
+        logger.exception("Client initialization error")
 
 async def single_query_mode(query: str):
-    """Single query mode"""
+    """Single query mode with enhanced error handling"""
     try:
         from dotenv import load_dotenv
         load_dotenv()
         
         config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'http://localhost:8000'),
+            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
             'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
             'gemini_api_key': os.getenv('GEMINI_API_KEY')
         }
@@ -1084,6 +1163,9 @@ async def single_query_mode(query: str):
         
         if missing_keys:
             print(f"❌ Missing environment variables: {', '.join(missing_keys)}")
+            print("Please set the following environment variables:")
+            for key in missing_keys:
+                print(f"  - {key}")
             return 1
             
     except ImportError:
@@ -1097,13 +1179,14 @@ async def single_query_mode(query: str):
             return 0
     except Exception as e:
         print(f"❌ Error: {e}")
+        logger.exception("Single query mode error")
         return 1
 
 def main():
-    """Main function"""
+    """Main function with enhanced help and error handling"""
     if len(sys.argv) > 1:
         if sys.argv[1] in ['--help', '-h', 'help']:
-            print("Complete Fixed Universal Client - SSL and async context manager fixes")
+            print("Enhanced Universal Client - Subscription Analytics")
             print("\nUsage:")
             print("  python universal_client.py                    # Interactive mode")
             print("  python universal_client.py 'your query'       # Single query mode")
@@ -1111,6 +1194,11 @@ def main():
             print("\nExample queries:")
             print("  python universal_client.py 'database status'")
             print("  python universal_client.py 'compare 7 vs 30 days'")
+            print("  python universal_client.py 'analytics from June 1st to today'")
+            print("\nEnvironment variables needed:")
+            print("  - API_KEY_1 or SUBSCRIPTION_API_KEY")
+            print("  - GEMINI_API_KEY")
+            print("  - SUBSCRIPTION_API_URL (optional, defaults to production)")
             return
         
         # Single query mode

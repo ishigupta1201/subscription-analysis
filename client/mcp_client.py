@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-MCP Client for Universal Client - FIXED VERSION
-Provides an MCP-compatible interface for the universal client
+MCP Client for Universal Client - ENHANCED FIXED VERSION
+Provides an MCP-compatible interface for the universal client with full date range support
 """
 
 import asyncio
@@ -28,13 +28,21 @@ except ImportError:
 
 # Add parent directory to path to allow importing from the client module
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
 
 # Import your existing universal client
 try:
     from universal_client import UniversalClient, QueryResult
 except ImportError:
-    print("❌ Universal client not found. Make sure it's in your PYTHONPATH")
-    sys.exit(1)
+    try:
+        # Try alternative import paths
+        sys.path.insert(0, os.getcwd())
+        from universal_client import UniversalClient, QueryResult
+    except ImportError:
+        print("❌ Universal client not found. Make sure universal_client.py is in the same directory or PYTHONPATH")
+        print(f"Current working directory: {os.getcwd()}")
+        print(f"Script directory: {Path(__file__).parent}")
+        sys.exit(1)
 
 # Set up logging
 logging.basicConfig(
@@ -44,7 +52,7 @@ logging.basicConfig(
 logger = logging.getLogger("mcp-universal-client")
 
 class UniversalClientMCPServer:
-    """MCP Server wrapper for your Universal Client - FIXED"""
+    """MCP Server wrapper for your Universal Client - ENHANCED FIXED VERSION"""
     
     def __init__(self):
         self.server = Server("subscription-analytics")
@@ -225,17 +233,44 @@ class UniversalClientMCPServer:
         self._register_handlers()
     
     def _load_config(self) -> Dict[str, Any]:
-        """Load configuration for universal client"""
+        """Load configuration for universal client with enhanced error handling"""
         from dotenv import load_dotenv
-        load_dotenv()
+        
+        # Try to load .env from multiple locations
+        env_paths = [
+            '.env',
+            '../.env',
+            os.path.join(os.getcwd(), '.env'),
+            os.path.join(Path(__file__).parent, '.env'),
+            os.path.join(Path(__file__).parent.parent, '.env')
+        ]
+        
+        env_loaded = False
+        for env_path in env_paths:
+            if os.path.exists(env_path):
+                load_dotenv(env_path)
+                env_loaded = True
+                logger.info(f"Loaded .env from: {env_path}")
+                break
+        
+        if not env_loaded:
+            logger.warning("No .env file found, using environment variables only")
         
         config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'http://localhost:8000'),
+            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
             'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
             'gemini_api_key': os.getenv('GEMINI_API_KEY'),
             'timeout': int(os.getenv('SUBSCRIPTION_API_TIMEOUT', '30')),
             'retry_attempts': int(os.getenv('SUBSCRIPTION_API_RETRIES', '3'))
         }
+        
+        # DEBUG: Print configuration (sanitized)
+        logger.info(f"🔍 MCP Client Configuration:")
+        logger.info(f"  Working Directory: {os.getcwd()}")
+        logger.info(f"  Script Directory: {Path(__file__).parent}")
+        logger.info(f"  URL: {config['server_url']}")
+        logger.info(f"  API Key: {'SET (' + config['api_key'][:20] + '...)' if config['api_key'] else 'MISSING'}")
+        logger.info(f"  Gemini Key: {'SET' if config['gemini_api_key'] else 'MISSING'}")
         
         # Validate required config
         required_keys = ['server_url', 'api_key']
@@ -246,10 +281,13 @@ class UniversalClientMCPServer:
         
         if missing_keys:
             logger.error(f"Missing required configuration: {missing_keys}")
-            logger.error("Please set environment variables: SUBSCRIPTION_API_URL, API_KEY_1")
+            logger.error("Please set environment variables:")
+            logger.error("  - SUBSCRIPTION_API_URL (or use default)")
+            logger.error("  - API_KEY_1 or SUBSCRIPTION_API_KEY")
+            logger.error("  - GEMINI_API_KEY (optional but recommended)")
             raise ValueError(f"Missing configuration: {missing_keys}")
         
-        logger.info(f"✅ Configuration loaded - Server: {config['server_url']}")
+        logger.info(f"✅ Configuration loaded successfully")
         return config
     
     def _register_handlers(self):
@@ -263,39 +301,18 @@ class UniversalClientMCPServer:
         @self.server.call_tool()
         async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[types.TextContent]:
             logger.info(f"🔧 Handling tool call: {name} with args: {arguments}")
-            if name in self._tool_handlers:
-                try:
-                    # Get the handler function
-                    handler = self._tool_handlers[name]
-                    
-                    # Call the handler with the arguments
-                    logger.debug(f"🔄 Executing handler for {name}")
-                    
-                    # Call the handler and get the coroutine
-                    coro = handler(**arguments)
-                    
-                    # If it's a coroutine, await it
-                    if asyncio.iscoroutine(coro):
-                        result = await coro
-                    else:
-                        result = coro
+            
+            try:
+                # Execute the tool
+                result = await self.handle_call_tool(name, arguments)
+                
+                # Return as TextContent
+                return [types.TextContent(type="text", text=str(result))]
                         
-                    # Format the result as TextContent
-                    if isinstance(result, (str, int, float, bool)):
-                        return [types.TextContent(type="text", text=str(result))]
-                    elif isinstance(result, dict) or isinstance(result, list):
-                        return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-                    else:
-                        return [types.TextContent(type="text", text=str(result))]
-                        
-                except Exception as e:
-                    error_msg = f"❌ Error in tool handler for {name}: {str(e)}"
-                    logger.error(error_msg, exc_info=True)
-                    return [types.TextContent(type="text", text=error_msg)]
-                    
-            error_msg = f"No handler registered for tool: {name}"
-            logger.error(error_msg)
-            return [types.TextContent(type="text", text=error_msg)]
+            except Exception as e:
+                error_msg = f"❌ Error in tool handler for {name}: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                return [types.TextContent(type="text", text=error_msg)]
         
         # Register the list_tools handler
         @self.server.list_tools()
@@ -304,31 +321,14 @@ class UniversalClientMCPServer:
             logger.info("🔧 MCP client requesting tool list")
             # Log the tools being returned for debugging
             for tool in self.tools:
-                logger.info(f"🔧 Registered tool: {tool.name} - {tool.description}")
+                logger.debug(f"🔧 Available tool: {tool.name} - {tool.description}")
             return self.tools
-        
-        # Create and register tool handlers
-        for tool in self.tools:
-            logger.debug(f"🔧 Registering tool handler for: {tool.name}")
-            
-            # Create a unique handler for this tool
-            tool_name = tool.name  # Capture the tool name in the closure
-            
-            # Create a closure to capture the tool name
-            def create_tool_handler(tool_name):
-                async def tool_handler(**kwargs):
-                    return await self.handle_call_tool(tool_name, kwargs)
-                return tool_handler
-            
-            # Store the handler
-            self._tool_handlers[tool_name] = create_tool_handler(tool_name)
-            logger.debug(f"✅ Registered handler for {tool_name}")
         
         logger.info("✅ MCP handlers registered successfully")
     
     async def handle_call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
         """
-        Handle tool calls from MCP clients
+        Handle tool calls from MCP clients - ENHANCED VERSION
         
         Args:
             name: Name of the tool to call
@@ -345,35 +345,30 @@ class UniversalClientMCPServer:
                 logger.info("🔌 Initializing UniversalClient...")
                 self.universal_client = UniversalClient(**self.config)
                 await self.universal_client.__aenter__()
+                logger.info("✅ UniversalClient initialized successfully")
             
-            logger.debug(f"🛠️  Executing tool: {name}")
+            logger.debug(f"🛠️ Executing tool: {name}")
             
-            # Handle different tool calls
+            # Handle different tool calls with enhanced routing
             if name == "natural_language_query":
                 result = await self._handle_natural_language_query(arguments)
-            elif name == "get_subscription_summary":
-                result = await self._handle_direct_tool_call(name, arguments)
-            elif name == "get_subscriptions_in_last_days":
-                result = await self._handle_direct_tool_call(name, arguments)
-            elif name == "get_payment_success_rate_in_last_days":
-                result = await self._handle_direct_tool_call(name, arguments)
-            elif name == "get_database_status":
-                result = await self._handle_direct_tool_call(name, arguments)
-            elif name == "get_user_payment_history":
-                result = await self._handle_direct_tool_call(name, arguments)
             elif name == "compare_periods":
                 result = await self._handle_compare_periods(arguments)
+            elif name in ["get_subscriptions_by_date_range", "get_payments_by_date_range", "get_analytics_by_date_range"]:
+                # Handle date range tools - try direct API first, then natural language
+                result = await self._handle_date_range_tool(name, arguments)
+            elif name in ["get_subscription_summary", "get_subscriptions_in_last_days", 
+                          "get_payment_success_rate_in_last_days", "get_database_status", 
+                          "get_user_payment_history"]:
+                # Handle standard API tools
+                result = await self._handle_api_tool_call(name, arguments)
             else:
-                raise ValueError(f"Unknown tool: {name}")
+                # Unknown tool - try direct API call as fallback
+                logger.warning(f"Unknown tool {name}, trying direct API call")
+                result = await self._handle_api_tool_call(name, arguments)
             
-            # Format the result as a string
-            if isinstance(result, dict) or isinstance(result, list):
-                formatted_result = json.dumps(result, indent=2)
-            else:
-                formatted_result = str(result)
-                
             logger.debug(f"✅ Tool {name} executed successfully")
-            return formatted_result
+            return result
             
         except Exception as e:
             error_msg = f"❌ Tool call failed: {str(e)}"
@@ -382,15 +377,19 @@ class UniversalClientMCPServer:
             # Include more detailed error information for debugging
             import traceback
             error_details = traceback.format_exc()
-            logger.debug(f"Error details: {error_details}")
+            logger.debug(f"Full error details: {error_details}")
             
             # Format a user-friendly error message
             error_message = (
                 f"❌ Error executing {name}: {str(e)}\n\n"
-                "Please check:\n"
-                f"- Error details: {error_details}\n"
+                "Troubleshooting:\n"
+                f"- Tool: {name}\n"
+                f"- Arguments: {arguments}\n"
+                f"- API URL: {self.config.get('server_url', 'Not set')}\n"
+                f"- API Key: {'Present' if self.config.get('api_key') else 'Missing'}\n"
+                "\nPlease check:\n"
                 "- Is the API server running?\n"
-                "- Is the configuration correct?\n"
+                "- Are the environment variables correct?\n"
                 "- Is there network connectivity?"
             )
             return error_message
@@ -406,7 +405,7 @@ class UniversalClientMCPServer:
             return result
         except Exception as e:
             logger.error(f"Natural language query failed: {e}")
-            return f"❌ Query failed: {str(e)}"
+            return f"❌ Natural language query failed: {str(e)}"
     
     async def _handle_compare_periods(self, arguments: Dict[str, Any]) -> str:
         """Handle period comparison queries"""
@@ -425,107 +424,100 @@ class UniversalClientMCPServer:
             logger.error(f"Period comparison failed: {e}")
             return f"❌ Comparison failed: {str(e)}"
     
-    async def _handle_direct_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        """
-        Handle direct tool calls to your backend
+    async def _handle_date_range_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        """Handle date range tools with fallback strategy"""
+        start_date = arguments.get("start_date", "")
+        end_date = arguments.get("end_date", "")
         
-        Args:
-            tool_name: Name of the tool/method to call on the universal client
-            arguments: Dictionary of arguments to pass to the method
+        logger.info(f"📅 Date range tool: {tool_name} from {start_date} to {end_date}")
+        
+        try:
+            # First, try direct API call
+            logger.debug(f"Trying direct API call for {tool_name}")
+            result = await self._handle_api_tool_call(tool_name, arguments)
             
-        Returns:
-            The result of the method call
+            # Check if result looks like an error
+            if "❌" in result or "Error" in result or "Failed" in result:
+                logger.warning(f"Direct API call failed, trying natural language approach")
+                # Fallback to natural language
+                if tool_name == "get_analytics_by_date_range":
+                    query = f"get comprehensive analytics from {start_date} to {end_date}"
+                elif tool_name == "get_subscriptions_by_date_range":
+                    query = f"get subscription statistics from {start_date} to {end_date}"
+                elif tool_name == "get_payments_by_date_range":
+                    query = f"get payment statistics from {start_date} to {end_date}"
+                else:
+                    return result  # Return the error from direct API call
+                
+                # Try natural language approach
+                result = await self._handle_natural_language_query({"query": query})
             
-        Raises:
-            ValueError: If the tool/method is not found
-            Exception: Any exception raised by the called method
+            return result
+            
+        except Exception as e:
+            logger.error(f"Date range tool failed: {e}")
+            return f"❌ Date range query failed: {str(e)}"
+    
+    async def _handle_api_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """
-        logger.info(f"🔧 Direct tool call: {tool_name} with args: {arguments}")
+        Handle tool calls that go to the API server via universal client's call_tool method
+        """
+        logger.info(f"🔧 API tool call: {tool_name} with args: {arguments}")
         
         # Clean up the arguments (remove None values)
         clean_args = {k: v for k, v in arguments.items() if v is not None}
         
-        # Log the cleaned arguments
-        logger.debug(f"🔧 Cleaned arguments for {tool_name}: {clean_args}")
-        
         try:
-            # Get the method from the universal client
-            method = getattr(self.universal_client, tool_name, None)
-            if not method or not callable(method):
-                error_msg = f"Tool/method not found: {tool_name}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
+            # Use universal client's call_tool method to hit the API
+            result = await self.universal_client.call_tool(tool_name, clean_args)
             
-            # Log the method being called
-            logger.debug(f"🔧 Calling method: {tool_name} with args: {clean_args}")
-            
-            # Call the method with the provided arguments
-            if asyncio.iscoroutinefunction(method):
-                result = await method(**clean_args)
+            if result.success:
+                # Format the result using the universal client's formatter
+                formatted_result = self.universal_client.formatter.format_single_result(result)
+                return formatted_result
             else:
-                result = method(**clean_args)
+                return f"❌ API Error: {result.error}"
                 
-            logger.debug(f"✅ Method {tool_name} executed successfully")
-            return result
-            
+        except AttributeError as e:
+            logger.error(f"❌ Universal client method not found: {e}")
+            return f"❌ Client error: Universal client missing required method or attribute"
         except Exception as e:
-            error_msg = f"❌ Error in direct tool call {tool_name}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            
-            # Include more context in the error message
-            error_details = f"Error calling {tool_name} with args {clean_args}: {str(e)}"
-            logger.debug(f"Error details: {error_details}")
-            
-            # Re-raise with more context
-            raise Exception(f"Failed to execute {tool_name}: {str(e)}") from e
-    
-    def _format_for_mcp(self, result: Any, tool_name: str, arguments: Dict[str, Any]) -> str:
-        """Format results for MCP clients with metadata"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        output = []
-        output.append(f"🎯 **Subscription Analytics Result**")
-        output.append(f"⏰ Generated: {timestamp}")
-        output.append(f"🔧 Tool: {tool_name}")
-        if arguments:
-            output.append(f"📋 Parameters: {json.dumps(arguments, indent=2)}")
-        output.append("")
-        output.append("---")
-        output.append("")
-        output.append(str(result))
-        output.append("")
-        output.append("---")
-        output.append("💡 *Powered by Universal Analytics Client*")
-        return "\n".join(output)
+            logger.error(f"❌ API tool call failed: {e}")
+            return f"❌ API tool call failed: {str(e)}"
     
     async def cleanup(self):
         """Cleanup resources"""
         if self.universal_client:
-            await self.universal_client.__aexit__(None, None, None)
+            try:
+                await self.universal_client.__aexit__(None, None, None)
+                logger.info("✅ Universal client cleaned up")
+            except Exception as e:
+                logger.error(f"Error during cleanup: {e}")
 
-# FIXED: Proper MCP server mode
+# MCP Server Mode
 async def run_mcp_server():
-    """Run the MCP server - THIS IS THE KEY FIX"""
+    """Run the MCP server - ENHANCED VERSION"""
     logger.info("🌉 Starting MCP Server for Claude Desktop")
     
-    mcp_server = UniversalClientMCPServer()
-    
-    # Log all registered tools at startup
-    logger.info("📋 Registered tools:")
-    for tool in mcp_server.tools:
-        logger.info(f"  - {tool.name}: {tool.description}")
-    
     try:
+        mcp_server = UniversalClientMCPServer()
+        
+        # Log all registered tools at startup
+        logger.info("📋 Registered tools:")
+        for tool in mcp_server.tools:
+            logger.info(f"  - {tool.name}: {tool.description}")
+        
         # This is what Claude Desktop expects - stdio server
         logger.info("🔌 Starting MCP server on stdio...")
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-            logger.info("🚀 MCP Server is running and ready to accept connections")
+            logger.info("🚀 MCP Server is running and ready to accept connections from Claude Desktop")
             await mcp_server.server.run(
                 read_stream,
                 write_stream,
                 mcp_server.server.create_initialization_options()
             )
     except KeyboardInterrupt:
-        logger.info("🛑 MCP Server interrupted")
+        logger.info("🛑 MCP Server interrupted by user")
     except Exception as e:
         logger.error(f"❌ MCP Server error: {e}")
         import traceback
@@ -533,54 +525,128 @@ async def run_mcp_server():
         raise
     finally:
         logger.info("🧹 Cleaning up MCP server resources...")
-        await mcp_server.cleanup()
+        if 'mcp_server' in locals():
+            await mcp_server.cleanup()
         logger.info("👋 MCP Server shutdown complete")
-        logger.info("🧹 MCP Server cleanup complete")
 
-# FIXED: Interactive mode
+# Interactive Mode
 async def run_interactive():
-    """Run interactive mode"""
+    """Run interactive mode with enhanced error handling"""
+    print("🎯 Subscription Analytics - Interactive Mode")
+    print("=" * 50)
+    
     try:
-        from universal_client import interactive_mode
-        await interactive_mode()
-    except ImportError:
-        print("❌ Could not import interactive_mode from universal_client")
-        print("Running basic interactive mode...")
+        # Try to import and use the universal client's interactive mode
+        try:
+            from universal_client import interactive_mode
+            await interactive_mode()
+        except ImportError:
+            logger.warning("Could not import interactive_mode, using fallback")
+            await _fallback_interactive()
+    except Exception as e:
+        logger.error(f"Interactive mode failed: {e}")
+        print(f"❌ Interactive mode failed: {e}")
+
+async def _fallback_interactive():
+    """Fallback interactive mode"""
+    print("Running basic interactive mode...")
+    
+    # Load config
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
         
-        # Basic fallback interactive mode
-        from universal_client import UniversalClient
         config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'http://localhost:8000'),
-            'api_key': os.getenv('API_KEY_1'),
+            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
+            'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
             'gemini_api_key': os.getenv('GEMINI_API_KEY')
         }
         
+        missing = []
+        if not config['api_key']:
+            missing.append('API_KEY_1')
+        if not config['gemini_api_key']:
+            missing.append('GEMINI_API_KEY')
+        
+        if missing:
+            print(f"❌ Missing environment variables: {missing}")
+            return
+        
+    except Exception as e:
+        print(f"❌ Configuration error: {e}")
+        return
+    
+    # Run interactive session
+    try:
         async with UniversalClient(**config) as client:
+            print("\n💬 Enter your queries (or 'quit' to exit):")
             while True:
                 try:
                     query = input("\n🎯 Query: ").strip()
-                    if query.lower() in ['quit', 'exit']:
+                    if query.lower() in ['quit', 'exit', 'q']:
                         break
+                    if not query:
+                        continue
+                    
                     result = await client.query_formatted(query)
                     print(result)
                 except KeyboardInterrupt:
                     break
+                except Exception as e:
+                    print(f"❌ Query failed: {e}")
+    except Exception as e:
+        print(f"❌ Client initialization failed: {e}")
 
-# FIXED: Single query mode  
+# Single Query Mode
 async def run_single_query(query: str):
-    """Run single query mode"""
+    """Run single query mode with enhanced error handling"""
     try:
-        from universal_client import single_query_mode
-        exit_code = await single_query_mode(query)
-        sys.exit(exit_code)
-    except ImportError:
-        print("❌ Could not import single_query_mode from universal_client")
+        # Try to use the universal client's single query mode
+        try:
+            from universal_client import single_query_mode
+            exit_code = await single_query_mode(query)
+            sys.exit(exit_code)
+        except ImportError:
+            logger.warning("Could not import single_query_mode, using fallback")
+            await _fallback_single_query(query)
+    except Exception as e:
+        print(f"❌ Single query mode failed: {e}")
         sys.exit(1)
 
-# FIXED: Main function
+async def _fallback_single_query(query: str):
+    """Fallback single query implementation"""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        config = {
+            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
+            'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
+            'gemini_api_key': os.getenv('GEMINI_API_KEY')
+        }
+        
+        missing = []
+        if not config['api_key']:
+            missing.append('API_KEY_1')
+        if not config['gemini_api_key']:
+            missing.append('GEMINI_API_KEY')
+        
+        if missing:
+            print(f"❌ Missing environment variables: {missing}")
+            sys.exit(1)
+        
+        async with UniversalClient(**config) as client:
+            result = await client.query_formatted(query)
+            print(result)
+            sys.exit(0)
+    except Exception as e:
+        print(f"❌ Query execution failed: {e}")
+        sys.exit(1)
+
+# Main Function
 async def main():
-    """Main entry point - COMPLETELY FIXED"""
-    # Configure logging to show all levels
+    """Main entry point - ENHANCED VERSION"""
+    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -595,17 +661,28 @@ async def main():
             return
         elif sys.argv[1] in ['--help', '-h']:
             print("""
-🎯 Universal Client MCP Bridge
+🎯 Universal Client MCP Bridge - ENHANCED VERSION
 
 Usage:
   python mcp_client.py           # Interactive mode
   python mcp_client.py --mcp     # MCP server mode (for Claude Desktop)
   python mcp_client.py "query"   # Single query mode
-  python mcp_client.py --debug    # Enable debug logging
+  python mcp_client.py --debug   # Enable debug logging
 
 Examples:
   python mcp_client.py --mcp
   python mcp_client.py "show me database status"
+  python mcp_client.py "analytics from 2024-06-01 to 2024-12-11"
+  python mcp_client.py "compare 7 days vs 30 days performance"
+
+Features:
+  ✅ Natural language queries with Gemini AI
+  ✅ Date range analytics (specific dates)
+  ✅ Period comparisons (last N days)
+  ✅ Beautiful formatted output
+  ✅ Claude Desktop integration via MCP
+  ✅ Enhanced error handling and debugging
+  ✅ Fallback mechanisms for reliability
             """)
             return
         elif sys.argv[1] == '--debug':
