@@ -770,12 +770,6 @@ async def interactive_mode():
     
     async with UniversalClient(**config) as client:
         print("\n💬 Enter your queries in natural language (or 'quit' to exit):")
-        print("\n📋 Example queries:")
-        print("  • 'compare the statistics for 10 days vs 7 days'")
-        print("  • 'Compare our 1-day and 7-day performance metrics'")
-        print("  • 'How is our database doing and what's the 30-day summary?'")
-        print("  • 'Give me payment analytics for the past 2 weeks'")
-        print("  • 'What are our subscription numbers versus payment rates?'")
         
         while True:
             try:
