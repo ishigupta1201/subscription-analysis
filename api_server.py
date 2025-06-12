@@ -322,6 +322,161 @@ def get_user_payment_history(merchant_user_id: str, days: int = 90) -> Dict:
         if connection and connection.is_connected():
             cursor.close()
             connection.close()
+    
+# Add these new functions to your api_server.py
+
+def get_subscriptions_by_date_range(start_date: str, end_date: str) -> Dict:
+    """Get subscription data for a specific date range"""
+    connection = get_db_connection()
+    if not connection:
+        return {"error": "Database connection failed"}
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        # Parse dates (expecting YYYY-MM-DD format)
+        from datetime import datetime
+        try:
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            return {"error": "Invalid date format. Use YYYY-MM-DD"}
+        
+        query = """
+            SELECT 
+                COUNT(*) as new_subscriptions,
+                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_count,
+                SUM(CASE WHEN status IN ('CLOSED', 'REJECT') THEN 1 ELSE 0 END) as cancelled_count
+            FROM subscription_contract_v2 
+            WHERE subcription_start_date BETWEEN %s AND %s
+        """
+        
+        cursor.execute(query, (start_dt, end_dt))
+        result = cursor.fetchone()
+        
+        # Calculate period days
+        period_days = (end_dt - start_dt).days + 1
+        
+        return {
+            "new_subscriptions": result['new_subscriptions'] or 0,
+            "active_subscriptions": result['active_count'] or 0,
+            "cancelled_subscriptions": result['cancelled_count'] or 0,
+            "period_days": period_days,
+            "date_range": {
+                "start": str(start_dt),
+                "end": str(end_dt)
+            }
+        }
+        
+    except Error as e:
+        logger.error(f"Database query failed: {str(e)}")
+        return {"error": f"Database query failed: {str(e)}"}
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
+
+def get_payments_by_date_range(start_date: str, end_date: str) -> Dict:
+    """Get payment data for a specific date range"""
+    connection = get_db_connection()
+    if not connection:
+        return {"error": "Database connection failed"}
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        # Parse dates
+        from datetime import datetime
+        try:
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            return {"error": "Invalid date format. Use YYYY-MM-DD"}
+        
+        query = """
+            SELECT 
+                COUNT(*) as total_payments,
+                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
+                SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) as failed_payments,
+                SUM(CASE WHEN status = 'ACTIVE' THEN trans_amount_decimal ELSE 0 END) as total_revenue,
+                SUM(CASE WHEN status = 'FAIL' THEN trans_amount_decimal ELSE 0 END) as lost_revenue
+            FROM subscription_payment_details 
+            WHERE created_date BETWEEN %s AND %s
+        """
+        
+        cursor.execute(query, (start_dt, end_dt))
+        result = cursor.fetchone()
+        
+        total_payments = result['total_payments'] or 0
+        successful_payments = result['successful_payments'] or 0
+        failed_payments = result['failed_payments'] or 0
+        total_revenue = float(result['total_revenue'] or 0)
+        lost_revenue = float(result['lost_revenue'] or 0)
+        
+        # Calculate period days
+        period_days = (end_dt - start_dt).days + 1
+        
+        if total_payments == 0:
+            return {
+                "success_rate": "0.00%",
+                "failure_rate": "0.00%",
+                "total_payments": 0,
+                "successful_payments": 0,
+                "failed_payments": 0,
+                "total_revenue": "$0.00",
+                "lost_revenue": "$0.00",
+                "period_days": period_days,
+                "date_range": {"start": str(start_dt), "end": str(end_dt)}
+            }
+        
+        success_rate = (successful_payments / total_payments) * 100
+        failure_rate = (failed_payments / total_payments) * 100
+        
+        return {
+            "success_rate": f"{success_rate:.2f}%",
+            "failure_rate": f"{failure_rate:.2f}%",
+            "total_payments": total_payments,
+            "successful_payments": successful_payments,
+            "failed_payments": failed_payments,
+            "total_revenue": f"${total_revenue:.2f}",
+            "lost_revenue": f"${lost_revenue:.2f}",
+            "period_days": period_days,
+            "date_range": {"start": str(start_dt), "end": str(end_dt)}
+        }
+        
+    except Error as e:
+        logger.error(f"Database query failed: {str(e)}")
+        return {"error": f"Database query failed: {str(e)}"}
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
+
+def get_analytics_by_date_range(start_date: str, end_date: str) -> Dict:
+    """Get comprehensive analytics for a specific date range"""
+    subscription_data = get_subscriptions_by_date_range(start_date, end_date)
+    payment_data = get_payments_by_date_range(start_date, end_date)
+    
+    if "error" in subscription_data or "error" in payment_data:
+        return {
+            "error": "Failed to fetch data from database",
+            "subscription_error": subscription_data.get("error"),
+            "payment_error": payment_data.get("error")
+        }
+    
+    period_days = subscription_data.get('period_days', 0)
+    
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "period_days": period_days,
+        "subscriptions": subscription_data,
+        "payments": payment_data,
+        "summary": f"From {start_date} to {end_date} ({period_days} days): "
+                  f"{subscription_data['new_subscriptions']} new subscriptions, "
+                  f"{payment_data['successful_payments']} successful payments ({payment_data['success_rate']}), "
+                  f"total revenue: {payment_data['total_revenue']}"
+    }
 
 # 3. APIKEYMANAGER CLASS
 class APIKeyManager:
@@ -472,6 +627,61 @@ TOOL_REGISTRY = {
                 }
             },
             "required": ["merchant_user_id"]
+        }
+    },
+    # Add these to your TOOL_REGISTRY dictionary
+    "get_subscriptions_by_date_range": {
+        "function": get_subscriptions_by_date_range,
+        "description": "Get subscription statistics for a specific date range",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_date": {
+                    "type": "string",
+                    "description": "Start date in YYYY-MM-DD format"
+                },
+                "end_date": {
+                    "type": "string", 
+                    "description": "End date in YYYY-MM-DD format"
+                }
+            },
+            "required": ["start_date", "end_date"]
+        }
+    },
+    "get_payments_by_date_range": {
+        "function": get_payments_by_date_range,
+        "description": "Get payment statistics for a specific date range",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_date": {
+                    "type": "string",
+                    "description": "Start date in YYYY-MM-DD format"
+                },
+                "end_date": {
+                    "type": "string",
+                    "description": "End date in YYYY-MM-DD format"
+                }
+            },
+            "required": ["start_date", "end_date"]
+        }
+    },
+    "get_analytics_by_date_range": {
+        "function": get_analytics_by_date_range,
+        "description": "Get comprehensive analytics for a specific date range",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_date": {
+                    "type": "string",
+                    "description": "Start date in YYYY-MM-DD format"
+                },
+                "end_date": {
+                    "type": "string",
+                    "description": "End date in YYYY-MM-DD format"
+                }
+            },
+            "required": ["start_date", "end_date"]
         }
     }
 }

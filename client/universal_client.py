@@ -364,6 +364,43 @@ class GeminiNLPProcessor:
                     },
                     "required": ["merchant_user_id"]
                 }
+            },
+            # Add to self.available_tools in GeminiNLPProcessor
+            {
+                "name": "get_subscriptions_by_date_range",
+                "description": "Get subscription statistics for a specific date range",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                        "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"}
+                    },
+                    "required": ["start_date", "end_date"]
+                }
+            },
+            {
+                "name": "get_payments_by_date_range", 
+                "description": "Get payment statistics for a specific date range",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                        "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"}
+                    },
+                    "required": ["start_date", "end_date"]
+                }
+            },
+            {
+                "name": "get_analytics_by_date_range",
+                "description": "Get comprehensive analytics for a specific date range", 
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                        "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"}
+                    },
+                    "required": ["start_date", "end_date"]
+                }
             }
         ]
     
