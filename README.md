@@ -298,37 +298,3 @@ print('URL:', os.getenv('SUBSCRIPTION_API_URL'))
 print('API Key:', os.getenv('SUBSCRIPTION_API_KEY'))
 "
 ```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## 🆘 Support
-
-- **🐛 Issues**: [GitHub Issues](https://github.com/Abhyuday-Gupta912/subscription-analytics/issues)
-- **📚 Documentation**: `/docs` folder
-- **💬 Examples**: See example queries above
-- **🔧 Technical Support**: Create an issue with error details
-
-## 🎯 What's New
-
-- ✅ **Live server** deployed on Railway
-- ✅ **SSL certificate handling** for secure connections  
-- ✅ **Environment variable configuration** for easy setup
-- ✅ **Async context management** fixes
-- ✅ **Railway MySQL integration** with full data migration
-- ✅ **Remote access** from any computer
-- ✅ **Improved error handling** and debugging
-- ✅ **Production-ready** authentication and security
-
----
-
-**Ready to analyze your subscription data? Get started in 5 minutes!** 🚀
