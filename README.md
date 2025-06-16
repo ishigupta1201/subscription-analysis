@@ -38,7 +38,7 @@ A comprehensive subscription analytics platform with API server, universal clien
 - **Beautiful formatting** of results
 - **Interactive and CLI modes**
 
-### 3. MCP Client (Claude Desktop Integration)
+### 3. MCP Client 
 - **MCP (Model Context Protocol)** wrapper
 - **Claude Desktop integration**
 - **Tool server** functionality
