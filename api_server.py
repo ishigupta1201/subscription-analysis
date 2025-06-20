@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """
-Corrected API Server for Subscription Analytics
-Fixed version with enhanced error handling and proper date range support
+CRASH-RESISTANT API Server for Subscription Analytics
+- Fixes connection reset issues
+- Improved error handling for dynamic SQL
+- Stable semantic learning with LOCAL MODEL
+- Better validation and logging
+- NO DOWNLOADS - Uses local model only
 """
 
-# 1. IMPORTS
 import datetime
 import os
 import secrets
-from typing import Dict, List, Optional
+import json
+import decimal
+import re
+import sys
+import gc
+from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Header, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import mysql.connector
 from mysql.connector import Error
 import uvicorn
@@ -21,47 +28,311 @@ from contextlib import asynccontextmanager
 import logging
 import traceback
 
-# Configure enhanced logging
+# Configure logging with more detail
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('api_server.log')
+    ]
 )
 logger = logging.getLogger(__name__)
-
-# Load environment variables
 load_dotenv()
 
-# DEBUG: Print all environment variables related to database
-print("🔍 === DATABASE DEBUG INFO ===")
-print(f"DB_HOST: '{os.getenv('DB_HOST')}'")
-print(f"DB_PORT: '{os.getenv('DB_PORT')}'")
-print(f"DB_USER: '{os.getenv('DB_USER')}'")
-print(f"DB_NAME: '{os.getenv('DB_NAME')}'")
-print(f"DB_PASSWORD exists: {bool(os.getenv('DB_PASSWORD'))}")
-print("🔍 === END DEBUG INFO ===")
+# FORCE OFFLINE MODE BEFORE ANY IMPORTS
+os.environ.update({
+    'HF_HUB_OFFLINE': '1',
+    'TRANSFORMERS_OFFLINE': '1',
+    'HF_HUB_DISABLE_PROGRESS_BARS': '1',
+    'PYTORCH_ENABLE_MPS_FALLBACK': '1',
+    'PYTORCH_MPS_HIGH_WATERMARK_RATIO': '0.0',
+    'PYTORCH_DISABLE_MMAP': '1',
+    'OMP_NUM_THREADS': '1',
+    'MKL_NUM_THREADS': '1',
+    'TOKENIZERS_PARALLELISM': 'false',
+    'CUDA_VISIBLE_DEVICES': '',
+})
 
-# Enhanced Database Configuration
+# SEMANTIC LEARNING WITH LOCAL MODEL ONLY
+SEMANTIC_LEARNING_ENABLED = False
+try:
+    import numpy as np
+    import faiss
+    from sentence_transformers import SentenceTransformer, models
+    import torch
+    LIBRARIES_INSTALLED = True
+    logger.info("✅ Semantic learning libraries available")
+except ImportError as e:
+    LIBRARIES_INSTALLED = False
+    logger.info(f"ℹ️ Semantic learning libraries not available: {e}")
+
+LOCAL_MODEL_PATH = "./model"
+
+class SemanticQueryLearner:
+    """Ultra-stable semantic learning with LOCAL MODEL ONLY - NO DOWNLOADS."""
+    
+    def __init__(self, queries_file='query_memory.json', vectors_file='query_vectors.npy'):
+        global SEMANTIC_LEARNING_ENABLED
+        
+        if not LIBRARIES_INSTALLED:
+            logger.info("Semantic learning disabled - libraries not installed")
+            self.model = None
+            return
+            
+        if not os.path.exists(LOCAL_MODEL_PATH):
+            logger.info(f"Semantic learning disabled - model directory '{LOCAL_MODEL_PATH}' not found")
+            self.model = None
+            return
+        
+        try:
+            logger.info(f"🧠 Loading LOCAL semantic model from {LOCAL_MODEL_PATH} - NO DOWNLOADS")
+            
+            # Force CPU and disable all GPU/MPS
+            import torch
+            torch.set_default_dtype(torch.float32)
+            if hasattr(torch.backends, 'mps'):
+                torch.backends.mps.is_available = lambda: False
+            
+            # Load model components manually from LOCAL DIRECTORY ONLY
+            word_embedding_model = models.Transformer(LOCAL_MODEL_PATH)
+            pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension())
+            
+            # Create model and force to CPU
+            self.model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
+            self.model = self.model.to('cpu')
+            self.model.eval()
+            
+            # Force all parameters to CPU and disable gradients
+            for param in self.model.parameters():
+                param.data = param.data.cpu()
+                param.requires_grad = False
+            
+            SEMANTIC_LEARNING_ENABLED = True
+            
+            self.queries_file = queries_file
+            self.vectors_file = vectors_file
+            self.known_queries = []
+            self.known_vectors = None
+            self.index = None
+            
+            self._load_memory()
+            logger.info("✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Semantic learning disabled due to setup issue: {e}")
+            SEMANTIC_LEARNING_ENABLED = False
+            self.model = None
+
+    def _load_memory(self):
+        """Load existing query memory safely."""
+        if not self.model:
+            return
+            
+        try:
+            if os.path.exists(self.queries_file) and os.path.exists(self.vectors_file):
+                with open(self.queries_file, 'r') as f:
+                    self.known_queries = json.load(f)
+                
+                self.known_vectors = np.load(self.vectors_file)
+                
+                if self.known_vectors is not None and self.known_vectors.shape[0] > 0:
+                    dimension = self.known_vectors.shape[1]
+                    self.index = faiss.IndexFlatL2(dimension)
+                    vectors_cpu = self.known_vectors.astype('float32')
+                    self.index.add(vectors_cpu)
+                    logger.info(f"🧠 Loaded {len(self.known_queries)} queries from memory")
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load query memory: {e}")
+
+    def _save_memory(self):
+        """Save query memory safely."""
+        if not self.model:
+            return
+            
+        try:
+            with open(self.queries_file, 'w') as f:
+                json.dump(self.known_queries, f, indent=2)
+            
+            if self.known_vectors is not None:
+                np.save(self.vectors_file, self.known_vectors)
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save query memory: {e}")
+
+    def add_successful_query(self, original_question: str, sql_query: str, was_helpful: bool = True):
+        """Add query feedback to memory - both positive and negative."""
+        if not self.model:
+            logger.info("📝 Feedback noted (semantic learning not available)")
+            return
+            
+        try:
+            feedback_type = "positive" if was_helpful else "negative"
+            logger.info(f"🧠 Adding {feedback_type} feedback to memory...")
+            
+            # MAXIMUM SAFETY ENCODING
+            import torch
+            with torch.no_grad():
+                # Ensure model is in eval mode and on CPU
+                self.model.eval()
+                
+                # Multiple fallback encoding strategies
+                vector = None
+                encoding_strategies = [
+                    # Strategy 1: Full parameter specification
+                    lambda: self.model.encode([original_question], 
+                                            show_progress_bar=False,
+                                            convert_to_tensor=False,
+                                            device='cpu',
+                                            batch_size=1)[0],
+                    # Strategy 2: Basic encoding
+                    lambda: self.model.encode([original_question], 
+                                            show_progress_bar=False,
+                                            convert_to_tensor=False)[0],
+                    # Strategy 3: Minimal encoding
+                    lambda: self.model.encode([original_question])[0]
+                ]
+                
+                for i, strategy in enumerate(encoding_strategies):
+                    try:
+                        vector = strategy()
+                        logger.info(f"✅ Encoding successful with strategy {i+1}")
+                        break
+                    except Exception as e:
+                        logger.warning(f"⚠️ Encoding strategy {i+1} failed: {e}")
+                        continue
+                
+                if vector is None:
+                    logger.warning("⚠️ All encoding strategies failed")
+                    return
+            
+            # Ensure vector is numpy array
+            if hasattr(vector, 'cpu'):
+                vector = vector.cpu().numpy()
+            elif hasattr(vector, 'numpy'):
+                vector = vector.numpy()
+            
+            # Add to memory with feedback information
+            self.known_queries.append({
+                'question': original_question,
+                'sql': sql_query,
+                'was_helpful': was_helpful,
+                'feedback_type': feedback_type,
+                'timestamp': datetime.datetime.now().isoformat()
+            })
+            
+            if self.known_vectors is None:
+                self.known_vectors = np.array([vector])
+            else:
+                self.known_vectors = np.vstack([self.known_vectors, vector])
+            
+            # Rebuild index safely
+            try:
+                if self.index is not None:
+                    del self.index
+                    
+                dimension = self.known_vectors.shape[1]
+                self.index = faiss.IndexFlatL2(dimension)
+                vectors_cpu = self.known_vectors.astype('float32')
+                self.index.add(vectors_cpu)
+            except Exception as faiss_error:
+                logger.warning(f"⚠️ FAISS indexing failed: {faiss_error}")
+            
+            # Cleanup and save
+            gc.collect()
+            self._save_memory()
+            logger.info(f"💾 {feedback_type.title()} feedback stored successfully")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Feedback processing failed gracefully: {e}")
+            # Never raise exceptions from feedback - system must continue
+
+    def find_similar_queries(self, question: str, threshold: float = 0.85):
+        """Find similar queries in memory, including negative examples to warn about."""
+        if not self.model or not self.index or len(self.known_queries) == 0:
+            return []
+        
+        try:
+            # Encode the question
+            import torch
+            with torch.no_grad():
+                self.model.eval()
+                question_vector = self.model.encode([question], 
+                                                  show_progress_bar=False, 
+                                                  convert_to_tensor=False,
+                                                  device='cpu')[0]
+            
+            # Ensure vector is numpy array
+            if hasattr(question_vector, 'cpu'):
+                question_vector = question_vector.cpu().numpy()
+            elif hasattr(question_vector, 'numpy'):
+                question_vector = question_vector.numpy()
+            
+            # Search for similar queries
+            k = min(5, len(self.known_queries))  # Don't search for more than we have
+            distances, indices = self.index.search(np.array([question_vector]).astype('float32'), k=k)
+            
+            results = []
+            for distance, idx in zip(distances[0], indices[0]):
+                if distance < threshold and idx < len(self.known_queries):
+                    query_data = self.known_queries[idx]
+                    similarity = 1.0 - (distance / 2.0)  # Convert distance to similarity score
+                    results.append({
+                        'similarity': similarity,
+                        'question': query_data['question'],
+                        'sql': query_data['sql'],
+                        'was_helpful': query_data.get('was_helpful', True),
+                        'feedback_type': query_data.get('feedback_type', 'positive'),
+                        'timestamp': query_data['timestamp']
+                    })
+            
+            # Sort by similarity
+            results.sort(key=lambda x: x['similarity'], reverse=True)
+            logger.info(f"🔍 Found {len(results)} similar queries for analysis")
+            return results
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Similar query search failed: {e}")
+            return []
+
+# Initialize with error handling
+try:
+    semantic_learner = SemanticQueryLearner()
+except Exception as e:
+    logger.warning(f"Failed to initialize semantic learner: {e}")
+    semantic_learner = None
+
+# Database Configuration with improved error handling
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': int(os.getenv('DB_PORT', '3306')),
-    'database': os.getenv('DB_NAME', 'SUBS_STAGING'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', '12345678'),
+    'host': os.getenv('DB_HOST'),
+    'port': int(os.getenv('DB_PORT', 3306)),
+    'database': os.getenv('DB_NAME'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
     'autocommit': True,
-    'connect_timeout': 30,
-    'raise_on_warnings': False
+    'connect_timeout': 10,
+    'charset': 'utf8mb4',
+    'raise_on_warnings': False,
+    'use_pure': True  # Use pure Python implementation
 }
 
-print(f"🔍 Final DB_CONFIG: host={DB_CONFIG['host']}, port={DB_CONFIG['port']}, database={DB_CONFIG['database']}")
-
-# --- API Models ---
+# Pydantic Models
 class ToolRequest(BaseModel):
     tool_name: str = Field(..., description="Name of the tool to execute")
     parameters: Dict = Field(default_factory=dict, description="Parameters for the tool")
+    
+    @field_validator('tool_name')
+    @classmethod
+    def validate_tool_name(cls, v):
+        if not v or not isinstance(v, str):
+            raise ValueError('tool_name must be a non-empty string')
+        return v.strip()
 
 class ToolResponse(BaseModel):
     success: bool
-    data: Optional[Dict] = None
+    data: Optional[Any] = None
+    message: Optional[str] = None
     error: Optional[str] = None
 
 class ToolInfo(BaseModel):
@@ -69,678 +340,353 @@ class ToolInfo(BaseModel):
     description: str
     parameters: Dict
 
-class APIStatus(BaseModel):
-    status: str
-    version: str
-    available_tools: int
-    database_status: str
-
-# 2. ENHANCED DATABASE FUNCTIONS
-
+# Enhanced Database Functions
 def get_db_connection():
-    """Create and return a database connection with enhanced error handling"""
+    """Get database connection with improved error handling."""
     try:
-        logger.debug(f"Attempting database connection...")
         connection = mysql.connector.connect(**DB_CONFIG)
         if connection.is_connected():
-            logger.debug("✅ Database connection successful")
             return connection
         else:
-            logger.error("❌ Database connection failed - not connected")
+            logger.error("Database connection failed - connection not established")
             return None
     except Error as e:
-        logger.error(f"❌ MySQL Error: {e}")
-        logger.error(f"Error Code: {e.errno if hasattr(e, 'errno') else 'No code'}")
+        logger.error(f"❌ MySQL Connection Error: {e}")
         return None
     except Exception as e:
         logger.error(f"❌ Unexpected database error: {e}")
         return None
 
-def validate_date_format(date_string: str, date_name: str) -> datetime.date:
-    """Validate and parse date string"""
-    try:
-        return datetime.datetime.strptime(date_string, '%Y-%m-%d').date()
-    except ValueError as e:
-        raise ValueError(f"Invalid {date_name} format. Use YYYY-MM-DD. Error: {str(e)}")
+def sanitize_for_json(obj):
+    """Convert objects to JSON-serializable format."""
+    if isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: sanitize_for_json(value) for key, value in obj.items()}
+    elif isinstance(obj, decimal.Decimal):
+        return float(obj)  # Convert to float for consistency
+    elif isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    else:
+        return obj
 
-def get_subscriptions_in_last_days(days: int) -> Dict:
-    """Get subscription data for the last x days - ENHANCED VERSION"""
-    # Input validation
-    if not isinstance(days, int) or days <= 0 or days > 365:
-        return {"error": "Days must be an integer between 1 and 365"}
-    
-    connection = get_db_connection()
-    if not connection:
-        return {"error": "Database connection failed"}
+def _execute_query(query: str, params: tuple = ()):
+    """Execute database query with comprehensive error handling."""
+    connection = None
+    cursor = None
     
     try:
+        logger.info(f"🔍 Executing query: {query[:100]}...")
+        
+        connection = get_db_connection()
+        if not connection:
+            return None, "Database connection failed"
+        
         cursor = connection.cursor(dictionary=True)
-        today = datetime.date.today()
-        start_date = today - datetime.timedelta(days=days)
+        cursor.execute(query, params)
+        results = cursor.fetchall()
         
-        query = """
-            SELECT 
-                COUNT(*) as new_subscriptions,
-                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_count,
-                SUM(CASE WHEN status IN ('CLOSED', 'REJECT') THEN 1 ELSE 0 END) as cancelled_count
-            FROM subscription_contract_v2 
-            WHERE subcription_start_date BETWEEN %s AND %s
-        """
-        
-        logger.info(f"Executing subscription query for last {days} days: {start_date} to {today}")
-        cursor.execute(query, (start_date, today))
-        result = cursor.fetchone()
-        
-        if not result:
-            logger.warning("No results returned from subscription query")
-            return {"error": "No data returned from database"}
-        
-        response_data = {
-            "new_subscriptions": result['new_subscriptions'] or 0,
-            "active_subscriptions": result['active_count'] or 0,
-            "cancelled_subscriptions": result['cancelled_count'] or 0,
-            "period_days": days,
-            "date_range": {
-                "start": str(start_date),
-                "end": str(today)
-            }
-        }
-        
-        logger.info(f"Subscription query successful: {response_data}")
-        return response_data
+        logger.info(f"✅ Query executed successfully, returned {len(results)} rows")
+        return results, None
         
     except Error as e:
-        error_msg = f"Database query failed: {str(e)}"
-        logger.error(error_msg)
-        return {"error": error_msg}
+        error_msg = f"Database error: {str(e)}"
+        logger.error(f"❌ Database query failed: {e}")
+        return None, error_msg
+        
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
-        return {"error": error_msg}
+        logger.error(f"❌ Unexpected error in query execution: {e}")
+        return None, error_msg
+        
     finally:
-        if connection and connection.is_connected():
-            cursor.close()
-            connection.close()
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except Exception as e:
+            logger.warning(f"Error closing database connection: {e}")
+
+def validate_sql_query(sql_query: str) -> tuple[bool, str]:
+    """Enhanced SQL query validation with detailed error messages."""
+    if not sql_query or not isinstance(sql_query, str):
+        return False, "SQL query is required and must be a string"
+    
+    # Clean query for analysis
+    cleaned_query = re.sub(r'--.*$', '', sql_query, flags=re.MULTILINE)
+    cleaned_query = re.sub(r'/\*.*?\*/', '', cleaned_query, flags=re.DOTALL)
+    cleaned_query = cleaned_query.strip()
+    
+    if not cleaned_query:
+        return False, "Query is empty after removing comments"
+    
+    # Check if it starts with SELECT (case insensitive)
+    if not cleaned_query.upper().startswith('SELECT'):
+        return False, "Only SELECT statements are allowed"
+    
+    # Check for prohibited keywords
+    prohibited_patterns = [
+        (r'\bDROP\b', 'DROP statements are not allowed'),
+        (r'\bDELETE\b', 'DELETE statements are not allowed'),
+        (r'\bINSERT\b', 'INSERT statements are not allowed'),
+        (r'\bUPDATE\b', 'UPDATE statements are not allowed'),
+        (r'\bCREATE\b', 'CREATE statements are not allowed'),
+        (r'\bALTER\b', 'ALTER statements are not allowed'),
+        (r'\bTRUNCATE\b', 'TRUNCATE statements are not allowed'),
+        (r'\bGRANT\b', 'GRANT statements are not allowed'),
+        (r'\bREVOKE\b', 'REVOKE statements are not allowed'),
+        (r'\bEXEC\b', 'EXEC statements are not allowed'),
+        (r'\bEXECUTE\b', 'EXECUTE statements are not allowed')
+    ]
+    
+    cleaned_upper = cleaned_query.upper()
+    for pattern, error_msg in prohibited_patterns:
+        if re.search(pattern, cleaned_upper):
+            return False, error_msg
+    
+    # Length check
+    if len(sql_query) > 5000:
+        return False, "SQL query is too long (maximum 5000 characters)"
+    
+    return True, "Query validation passed"
+
+# Enhanced Tool Functions
+def get_subscriptions_in_last_days(days: int) -> Dict:
+    """Get subscription statistics for the last N days."""
+    try:
+        days = int(days)
+        if days <= 0 or days > 365:
+            return {"error": "Days must be between 1 and 365"}
+    except (ValueError, TypeError):
+        return {"error": "Days must be a valid integer"}
+    
+    query = """
+        SELECT 
+            COUNT(*) as new_subscriptions,
+            COALESCE(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END), 0) as active_count,
+            COALESCE(SUM(CASE WHEN status = 'INACTIVE' THEN 1 ELSE 0 END), 0) as inactive_count
+        FROM subscription_contract_v2 
+        WHERE subcription_start_date BETWEEN %s AND %s
+    """
+    
+    end_date = datetime.date.today()
+    start_date = end_date - datetime.timedelta(days=days)
+    
+    results, error = _execute_query(query, (start_date, end_date))
+    
+    if error:
+        return {"error": error}
+    
+    return {"data": sanitize_for_json(results[0]) if results else {}}
 
 def get_payment_success_rate_in_last_days(days: int) -> Dict:
-    """Get payment success rate for the last x days - ENHANCED VERSION"""
-    # Input validation
-    if not isinstance(days, int) or days <= 0 or days > 365:
-        return {"error": "Days must be an integer between 1 and 365"}
-    
-    connection = get_db_connection()
-    if not connection:
-        return {"error": "Database connection failed"}
-    
+    """Get payment success rate and revenue for the last N days."""
     try:
-        cursor = connection.cursor(dictionary=True)
-        today = datetime.date.today()
-        start_date = today - datetime.timedelta(days=days)
-        
-        query = """
-            SELECT 
-                COUNT(*) as total_payments,
-                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
-                SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) as failed_payments,
-                SUM(CASE WHEN status = 'ACTIVE' THEN trans_amount_decimal ELSE 0 END) as total_revenue,
-                SUM(CASE WHEN status = 'FAIL' THEN trans_amount_decimal ELSE 0 END) as lost_revenue
-            FROM subscription_payment_details 
-            WHERE created_date BETWEEN %s AND %s
-        """
-        
-        logger.info(f"Executing payment query for last {days} days: {start_date} to {today}")
-        cursor.execute(query, (start_date, today))
-        result = cursor.fetchone()
-        
-        if not result:
-            logger.warning("No results returned from payment query")
-            return {"error": "No data returned from database"}
-        
-        total_payments = result['total_payments'] or 0
-        successful_payments = result['successful_payments'] or 0
-        failed_payments = result['failed_payments'] or 0
-        total_revenue = float(result['total_revenue'] or 0)
-        lost_revenue = float(result['lost_revenue'] or 0)
-        
-        if total_payments == 0:
-            response_data = {
-                "success_rate": "0.00%",
-                "failure_rate": "0.00%",
-                "total_payments": 0,
-                "successful_payments": 0,
-                "failed_payments": 0,
-                "total_revenue": "$0.00",
-                "lost_revenue": "$0.00",
-                "period_days": days,
-                "date_range": {"start": str(start_date), "end": str(today)}
-            }
-        else:
-            success_rate = (successful_payments / total_payments) * 100
-            failure_rate = (failed_payments / total_payments) * 100
-            
-            response_data = {
-                "success_rate": f"{success_rate:.2f}%",
-                "failure_rate": f"{failure_rate:.2f}%",
-                "total_payments": total_payments,
-                "successful_payments": successful_payments,
-                "failed_payments": failed_payments,
-                "total_revenue": f"${total_revenue:.2f}",
-                "lost_revenue": f"${lost_revenue:.2f}",
-                "period_days": days,
-                "date_range": {"start": str(start_date), "end": str(today)}
-            }
-        
-        logger.info(f"Payment query successful: {response_data}")
-        return response_data
-        
-    except Error as e:
-        error_msg = f"Database query failed: {str(e)}"
-        logger.error(error_msg)
-        return {"error": error_msg}
-    except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
-        return {"error": error_msg}
-    finally:
-        if connection and connection.is_connected():
-            cursor.close()
-            connection.close()
-
-def get_subscription_summary(days: int = 30) -> Dict:
-    """Get comprehensive subscription and payment summary - ENHANCED VERSION"""
-    if not isinstance(days, int) or days <= 0 or days > 365:
-        return {"error": "Days must be an integer between 1 and 365"}
+        days = int(days)
+        if days <= 0 or days > 365:
+            return {"error": "Days must be between 1 and 365"}
+    except (ValueError, TypeError):
+        return {"error": "Days must be a valid integer"}
     
-    logger.info(f"Getting subscription summary for {days} days")
+    query = """
+        SELECT 
+            COUNT(*) as total_payments,
+            SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
+            SUM(CASE WHEN status != 'ACTIVE' OR status IS NULL THEN 1 ELSE 0 END) as failed_payments,
+            SUM(CASE WHEN status = 'ACTIVE' THEN trans_amount_decimal ELSE 0 END) as total_revenue,
+            ROUND(
+                (SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / 
+                 NULLIF(COUNT(*), 0)), 
+                2
+            ) as success_rate_percent,
+            GROUP_CONCAT(DISTINCT status) as all_status_values
+        FROM subscription_payment_details 
+        WHERE created_date BETWEEN %s AND %s
+    """
     
-    subscription_data = get_subscriptions_in_last_days(days)
-    payment_data = get_payment_success_rate_in_last_days(days)
+    end_date = datetime.date.today()
+    start_date = end_date - datetime.timedelta(days=days)
     
-    if "error" in subscription_data or "error" in payment_data:
-        return {
-            "error": "Failed to fetch data from database",
-            "subscription_error": subscription_data.get("error"),
-            "payment_error": payment_data.get("error")
-        }
+    results, error = _execute_query(query, (start_date, end_date))
     
-    return {
-        "period_days": days,
-        "subscriptions": subscription_data,
-        "payments": payment_data,
-        "summary": f"In the last {days} days: {subscription_data['new_subscriptions']} new subscriptions, "
-                  f"{payment_data['successful_payments']} successful payments ({payment_data['success_rate']}), "
-                  f"total revenue: {payment_data['total_revenue']}"
-    }
-
-def get_database_status() -> Dict:
-    """Check database connection and get basic statistics - ENHANCED VERSION"""
-    connection = get_db_connection()
-    if not connection:
-        return {"status": "disconnected", "error": "Cannot connect to database"}
+    if error:
+        return {"error": error}
     
-    try:
-        cursor = connection.cursor(dictionary=True)
-        
-        # Test basic connectivity
-        cursor.execute("SELECT 1 as test")
-        test_result = cursor.fetchone()
-        if not test_result or test_result['test'] != 1:
-            return {"status": "error", "error": "Database test query failed"}
-        
-        # Get table counts
-        cursor.execute("SELECT COUNT(*) as count FROM subscription_contract_v2")
-        total_subscriptions = cursor.fetchone()['count']
-        
-        cursor.execute("SELECT COUNT(*) as count FROM subscription_payment_details")
-        total_payments = cursor.fetchone()['count']
-
-        cursor.execute("SELECT COUNT(DISTINCT merchant_user_id) as count FROM subscription_contract_v2")
-        unique_users = cursor.fetchone()['count']
-        
-        # Get latest dates
-        cursor.execute("SELECT MAX(subcription_start_date) as latest_sub FROM subscription_contract_v2")
-        latest_sub = cursor.fetchone()['latest_sub']
-        
-        cursor.execute("SELECT MAX(created_date) as latest_payment FROM subscription_payment_details")
-        latest_payment = cursor.fetchone()['latest_payment']
-        
-        # Calculate overall success rate
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as successful
-            FROM subscription_payment_details
-        """)
-        stats = cursor.fetchone()
-        overall_success_rate = (stats['successful'] / stats['total'] * 100) if stats['total'] > 0 else 0
-        
-        return {
-            "status": "connected",
-            "database": DB_CONFIG['database'],
-            "host": DB_CONFIG['host'],
-            "tables": ["subscription_contract_v2", "subscription_payment_details"],
-            "total_subscriptions": total_subscriptions,
-            "total_payments": total_payments,
-            "unique_users": unique_users,
-            "latest_subscription": str(latest_sub) if latest_sub else None,
-            "latest_payment": str(latest_payment) if latest_payment else None,
-            "overall_success_rate": f"{overall_success_rate:.2f}%"
-        }
-        
-    except Error as e:
-        error_msg = f"Database status check failed: {str(e)}"
-        logger.error(error_msg)
-        return {"status": "error", "error": error_msg}
-    except Exception as e:
-        error_msg = f"Unexpected error in database status: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
-        return {"status": "error", "error": error_msg}
-    finally:
-        if connection and connection.is_connected():
-            cursor.close()
-            connection.close()
+    return {"data": sanitize_for_json(results[0]) if results else {}}
 
 def get_user_payment_history(merchant_user_id: str, days: int = 90) -> Dict:
-    """Get payment history for a specific user - ENHANCED VERSION"""
-    # Input validation
-    if not isinstance(days, int) or days <= 0 or days > 365:
-        return {"error": "Days must be an integer between 1 and 365"}
-    
-    if not merchant_user_id or not merchant_user_id.strip():
-        return {"error": "merchant_user_id cannot be empty"}
-    
-    connection = get_db_connection()
-    if not connection:
-        return {"error": "Database connection failed"}
+    """Get payment history for a specific user."""
+    if not merchant_user_id or not isinstance(merchant_user_id, str):
+        return {"error": "merchant_user_id must be a non-empty string"}
     
     try:
-        cursor = connection.cursor(dictionary=True)
-        today = datetime.date.today()
-        start_date = today - datetime.timedelta(days=days)
+        days = int(days)
+        if days <= 0 or days > 365:
+            days = 90
+    except (ValueError, TypeError):
+        days = 90
+    
+    query = """
+        SELECT 
+            spd.created_date as payment_date,
+            spd.trans_amount_decimal as payment_amount,
+            spd.status as payment_status,
+            scv.status as subscription_status
+        FROM subscription_payment_details as spd
+        JOIN subscription_contract_v2 as scv ON spd.subscription_id = scv.subscription_id
+        WHERE scv.merchant_user_id = %s 
+        AND spd.created_date >= %s
+        ORDER BY spd.created_date DESC
+        LIMIT 100
+    """
+    
+    cutoff_date = datetime.date.today() - datetime.timedelta(days=days)
+    results, error = _execute_query(query, (merchant_user_id, cutoff_date))
+    
+    if error:
+        return {"error": error}
+    
+    if not results:
+        return {"message": f"No payment history found for user {merchant_user_id} in the last {days} days"}
+    
+    return {"data": sanitize_for_json(results)}
+
+def get_database_status() -> Dict:
+    """Check database connection and get basic statistics."""
+    query = """
+        SELECT 
+            (SELECT COUNT(*) FROM subscription_contract_v2) as total_subscriptions,
+            (SELECT COUNT(*) FROM subscription_payment_details) as total_payments,
+            (SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2) as unique_users
+    """
+    
+    results, error = _execute_query(query)
+    
+    if error:
+        return {"error": error}
+    
+    status_data = {
+        "status": "connected",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled"
+    }
+    
+    if results:
+        status_data.update(sanitize_for_json(results[0]))
+    
+    return {"data": status_data}
+
+def execute_dynamic_sql(sql_query: str) -> Dict:
+    """Execute dynamic SQL query with comprehensive safety checks."""
+    logger.info(f"🔍 Dynamic SQL request received: {sql_query[:100]}...")
+    
+    try:
+        # Input validation
+        if not sql_query or not isinstance(sql_query, str):
+            return {"error": "SQL query is required and must be a string"}
         
-        query = """
-            SELECT 
-                spd.created_date as payment_date,
-                spd.trans_amount_decimal as payment_amount,
-                spd.status as payment_status,
-                scv.status as subscription_status,
-                scv.subcription_start_date
-            FROM 
-                subscription_payment_details as spd
-            JOIN 
-                subscription_contract_v2 as scv ON spd.subscription_id = scv.subscription_id
-            WHERE 
-                scv.merchant_user_id = %s AND spd.created_date BETWEEN %s AND %s
-            ORDER BY 
-                spd.created_date DESC
-        """
+        # Enhanced validation
+        is_valid, validation_message = validate_sql_query(sql_query)
+        if not is_valid:
+            logger.warning(f"❌ SQL validation failed: {validation_message}")
+            return {"error": f"SQL validation failed: {validation_message}"}
         
-        logger.info(f"Getting payment history for user {merchant_user_id} for last {days} days")
-        cursor.execute(query, (merchant_user_id, start_date, today))
-        payments = cursor.fetchall()
+        logger.info(f"✅ SQL validation passed")
+        logger.info(f"🔍 Executing: {sql_query}")
         
-        if not payments:
+        # Execute the query
+        results, error = _execute_query(sql_query)
+        
+        if error:
+            logger.error(f"❌ SQL execution failed: {error}")
+            return {"error": f"SQL execution failed: {error}"}
+        
+        if not results:
+            logger.info("ℹ️ Query executed successfully but returned no results")
+            return {"message": "Query executed successfully, but no matching records were found."}
+        
+        # Limit result size for performance
+        if len(results) > 1000:
+            results = results[:1000]
+            logger.info(f"⚠️ Results limited to first 1000 rows")
             return {
-                "merchant_user_id": merchant_user_id,
-                "period_days": days,
-                "message": f"No payments found for user {merchant_user_id} in the last {days} days"
+                "data": sanitize_for_json(results),
+                "message": f"Results limited to first 1000 rows (query returned more)"
             }
+        
+        logger.info(f"✅ Dynamic SQL completed successfully with {len(results)} rows")
+        return {"data": sanitize_for_json(results)}
+        
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in dynamic SQL execution: {e}")
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        return {"error": f"Unexpected error during SQL execution: {str(e)}"}
+
+def record_query_feedback(original_question: str, sql_query: str, was_helpful: bool) -> Dict:
+    """Record user feedback - both positive and negative for learning."""
+    try:
+        if not original_question or not sql_query:
+            return {"error": "Both original_question and sql_query are required"}
+        
+        if not isinstance(was_helpful, bool):
+            return {"error": "was_helpful must be a boolean value"}
+        
+        if semantic_learner:
+            # Store both positive and negative feedback
+            semantic_learner.add_successful_query(original_question, sql_query, was_helpful)
             
-        total_payments = len(payments)
-        successful = sum(1 for p in payments if p['payment_status'] == 'ACTIVE')
-        total_spent = sum(p['payment_amount'] for p in payments if p['payment_status'] == 'ACTIVE')
-        
-        return {
-            "merchant_user_id": merchant_user_id,
-            "period_days": days,
-            "total_payments": total_payments,
-            "successful_payments": successful,
-            "success_rate": f"{(successful/total_payments*100):.2f}%" if total_payments > 0 else "0.00%",
-            "total_spent": f"${total_spent:.2f}",
-            "subscription_start": str(payments[0]['subcription_start_date']) if payments else None,
-            "current_status": payments[0]['subscription_status'] if payments else None,
-            "payments": [
-                {
-                    "date": str(p['payment_date']),
-                    "amount": f"${p['payment_amount']:.2f}",
-                    "status": "success" if p['payment_status'] == 'ACTIVE' else "failure"
-                }
-                for p in payments
-            ]
-        }
-        
-    except Error as e:
-        error_msg = f"User payment history query failed: {str(e)}"
-        logger.error(error_msg)
-        return {"error": error_msg}
-    except Exception as e:
-        error_msg = f"Unexpected error in user payment history: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
-        return {"error": error_msg}
-    finally:
-        if connection and connection.is_connected():
-            cursor.close()
-            connection.close()
-
-# FIXED DATE RANGE FUNCTIONS
-
-def get_subscriptions_by_date_range(start_date: str, end_date: str) -> Dict:
-    """Get subscription data for a specific date range - FIXED VERSION"""
-    connection = get_db_connection()
-    if not connection:
-        return {"error": "Database connection failed"}
-    
-    try:
-        # Validate and parse dates
-        start_dt = validate_date_format(start_date, "start_date")
-        end_dt = validate_date_format(end_date, "end_date")
-        
-        # Validate date range
-        if start_dt > end_dt:
-            return {"error": "Start date cannot be after end date"}
-        
-        # Check if date range is too far in the future
-        today = datetime.date.today()
-        if start_dt > today:
-            return {"error": "Start date cannot be in the future"}
-        
-        cursor = connection.cursor(dictionary=True)
-        
-        query = """
-            SELECT 
-                COUNT(*) as new_subscriptions,
-                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_count,
-                SUM(CASE WHEN status IN ('CLOSED', 'REJECT') THEN 1 ELSE 0 END) as cancelled_count
-            FROM subscription_contract_v2 
-            WHERE subcription_start_date BETWEEN %s AND %s
-        """
-        
-        logger.info(f"Executing subscription date range query from {start_dt} to {end_dt}")
-        cursor.execute(query, (start_dt, end_dt))
-        result = cursor.fetchone()
-        
-        if not result:
-            logger.warning("No results returned from subscription date range query")
-            return {"error": "No data returned from database"}
-        
-        # Calculate period days
-        period_days = (end_dt - start_dt).days + 1
-        
-        response_data = {
-            "new_subscriptions": result['new_subscriptions'] or 0,
-            "active_subscriptions": result['active_count'] or 0,
-            "cancelled_subscriptions": result['cancelled_count'] or 0,
-            "period_days": period_days,
-            "date_range": {
-                "start": str(start_dt),
-                "end": str(end_dt)
-            }
-        }
-        
-        logger.info(f"Subscription date range query successful: {response_data}")
-        return response_data
-        
-    except ValueError as e:
-        error_msg = str(e)
-        logger.error(f"Date validation error: {error_msg}")
-        return {"error": error_msg}
-    except Error as e:
-        error_msg = f"Database query failed: {str(e)}"
-        logger.error(error_msg)
-        logger.error(f"Query was: {query}")
-        logger.error(f"Parameters: start_dt={start_dt}, end_dt={end_dt}")
-        return {"error": error_msg}
-    except Exception as e:
-        error_msg = f"Unexpected error in get_subscriptions_by_date_range: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
-        return {"error": error_msg}
-    finally:
-        if connection and connection.is_connected():
-            cursor.close()
-            connection.close()
-
-def get_payments_by_date_range(start_date: str, end_date: str) -> Dict:
-    """Get payment data for a specific date range - FIXED VERSION"""
-    connection = get_db_connection()
-    if not connection:
-        return {"error": "Database connection failed"}
-    
-    try:
-        # Validate and parse dates
-        start_dt = validate_date_format(start_date, "start_date")
-        end_dt = validate_date_format(end_date, "end_date")
-        
-        # Validate date range
-        if start_dt > end_dt:
-            return {"error": "Start date cannot be after end date"}
-        
-        # Check if date range is too far in the future
-        today = datetime.date.today()
-        if start_dt > today:
-            return {"error": "Start date cannot be in the future"}
-        
-        cursor = connection.cursor(dictionary=True)
-        
-        query = """
-            SELECT 
-                COUNT(*) as total_payments,
-                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
-                SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) as failed_payments,
-                SUM(CASE WHEN status = 'ACTIVE' THEN trans_amount_decimal ELSE 0 END) as total_revenue,
-                SUM(CASE WHEN status = 'FAIL' THEN trans_amount_decimal ELSE 0 END) as lost_revenue
-            FROM subscription_payment_details 
-            WHERE created_date BETWEEN %s AND %s
-        """
-        
-        logger.info(f"Executing payment date range query from {start_dt} to {end_dt}")
-        cursor.execute(query, (start_dt, end_dt))
-        result = cursor.fetchone()
-        
-        if not result:
-            logger.warning("No results returned from payment date range query")
-            return {"error": "No data returned from database"}
-        
-        total_payments = result['total_payments'] or 0
-        successful_payments = result['successful_payments'] or 0
-        failed_payments = result['failed_payments'] or 0
-        total_revenue = float(result['total_revenue'] or 0)
-        lost_revenue = float(result['lost_revenue'] or 0)
-        
-        # Calculate period days
-        period_days = (end_dt - start_dt).days + 1
-        
-        if total_payments == 0:
-            response_data = {
-                "success_rate": "0.00%",
-                "failure_rate": "0.00%",
-                "total_payments": 0,
-                "successful_payments": 0,
-                "failed_payments": 0,
-                "total_revenue": "$0.00",
-                "lost_revenue": "$0.00",
-                "period_days": period_days,
-                "date_range": {"start": str(start_dt), "end": str(end_dt)}
-            }
-        else:
-            success_rate = (successful_payments / total_payments) * 100
-            failure_rate = (failed_payments / total_payments) * 100
-            
-            response_data = {
-                "success_rate": f"{success_rate:.2f}%",
-                "failure_rate": f"{failure_rate:.2f}%",
-                "total_payments": total_payments,
-                "successful_payments": successful_payments,
-                "failed_payments": failed_payments,
-                "total_revenue": f"${total_revenue:.2f}",
-                "lost_revenue": f"${lost_revenue:.2f}",
-                "period_days": period_days,
-                "date_range": {"start": str(start_dt), "end": str(end_dt)}
-            }
-        
-        logger.info(f"Payment date range query successful: {response_data}")
-        return response_data
-        
-    except ValueError as e:
-        error_msg = str(e)
-        logger.error(f"Date validation error: {error_msg}")
-        return {"error": error_msg}
-    except Error as e:
-        error_msg = f"Database query failed: {str(e)}"
-        logger.error(error_msg)
-        logger.error(f"Query was: {query}")
-        logger.error(f"Parameters: start_dt={start_dt}, end_dt={end_dt}")
-        return {"error": error_msg}
-    except Exception as e:
-        error_msg = f"Unexpected error in get_payments_by_date_range: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
-        return {"error": error_msg}
-    finally:
-        if connection and connection.is_connected():
-            cursor.close()
-            connection.close()
-
-def get_analytics_by_date_range(start_date: str, end_date: str) -> Dict:
-    """Get comprehensive analytics for a specific date range - FIXED VERSION"""
-    logger.info(f"Getting analytics for date range: {start_date} to {end_date}")
-    
-    try:
-        # Validate dates first before making any database calls
-        start_dt = validate_date_format(start_date, "start_date")
-        end_dt = validate_date_format(end_date, "end_date")
-        
-        if start_dt > end_dt:
-            return {"error": "Start date cannot be after end date"}
-        
-        # Check if date range is too far in the future
-        today = datetime.date.today()
-        if start_dt > today:
-            return {"error": "Start date cannot be in the future"}
-        
-        # Get subscription and payment data
-        subscription_data = get_subscriptions_by_date_range(start_date, end_date)
-        payment_data = get_payments_by_date_range(start_date, end_date)
-        
-        # Check for errors in either dataset
-        if "error" in subscription_data:
-            logger.error(f"Subscription data error: {subscription_data['error']}")
-            return {
-                "error": "Failed to fetch subscription data from database",
-                "subscription_error": subscription_data["error"]
-            }
-        
-        if "error" in payment_data:
-            logger.error(f"Payment data error: {payment_data['error']}")
-            return {
-                "error": "Failed to fetch payment data from database", 
-                "payment_error": payment_data["error"]
-            }
-        
-        period_days = subscription_data.get('period_days', 0)
-        
-        analytics_response = {
-            "start_date": start_date,
-            "end_date": end_date,
-            "period_days": period_days,
-            "subscriptions": subscription_data,
-            "payments": payment_data,
-            "summary": f"From {start_date} to {end_date} ({period_days} days): "
-                      f"{subscription_data['new_subscriptions']} new subscriptions, "
-                      f"{payment_data['successful_payments']} successful payments ({payment_data['success_rate']}), "
-                      f"total revenue: {payment_data['total_revenue']}"
-        }
-        
-        logger.info(f"Analytics query successful for {start_date} to {end_date}")
-        return analytics_response
-        
-    except ValueError as e:
-        error_msg = str(e)
-        logger.error(f"Date validation error in analytics: {error_msg}")
-        return {"error": error_msg}
-    except Exception as e:
-        error_msg = f"Unexpected error in get_analytics_by_date_range: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
-        return {"error": error_msg}
-
-# 3. API KEY MANAGER CLASS
-class APIKeyManager:
-    def __init__(self):
-        # Get API keys from environment variables
-        api_key_1 = os.getenv('API_KEY_1')
-        api_key_2 = os.getenv('API_KEY_2')
-        
-        # If no API keys found, handle based on environment
-        if not api_key_1 or not api_key_2:
-            if os.getenv('PORT') or os.getenv('RAILWAY_ENVIRONMENT'):
-                # Running on Railway - API keys should be set as environment variables
-                logger.error("API keys not found in environment variables!")
-                logger.error("Please set API_KEY_1 and API_KEY_2 in Railway dashboard")
-                raise ValueError("Missing API keys in production environment")
+            if was_helpful:
+                return {"message": "Thank you! Your positive feedback has been recorded and will help improve the system."}
             else:
-                # Running locally - generate new keys and save to .env
-                logger.warning("API keys not found in .env file, generating new ones...")
-                api_key_1 = 'sub_analytics_' + secrets.token_urlsafe(32)
-                api_key_2 = 'sub_analytics_' + secrets.token_urlsafe(32)
-                
-                # Update .env file with new keys (only for local development)
-                try:
-                    with open('.env', 'a') as f:
-                        f.write(f"\nAPI_KEY_1={api_key_1}")
-                        f.write(f"\nAPI_KEY_2={api_key_2}")
-                    logger.info(f"Generated new API keys and saved to .env file")
-                except Exception as e:
-                    logger.warning(f"Could not write to .env file: {e}")
+                return {"message": "Thank you! Your negative feedback has been recorded and will help the system avoid similar mistakes in the future."}
+        else:
+            return {"message": "Thank you for your feedback."}
+            
+    except Exception as e:
+        logger.warning(f"⚠️ Feedback processing failed: {e}")
+        return {"message": "Thank you for your feedback (recorded without semantic learning)."}
+
+def get_query_suggestions(original_question: str) -> Dict:
+    """Get suggestions based on similar queries in memory - helps with negative feedback learning."""
+    try:
+        if not semantic_learner:
+            return {"message": "Query suggestions not available (semantic learning disabled)"}
         
-        self.api_keys = {api_key_1, api_key_2}
-        logger.info(f"Initialized with {len(self.api_keys)} API keys")
-    
-    def is_valid_key(self, api_key: str) -> bool:
-        return api_key in self.api_keys
-    
-    def generate_new_key(self) -> str:
-        new_key = 'sub_analytics_' + secrets.token_urlsafe(32)
-        self.api_keys.add(new_key)
-        return new_key
+        similar_queries = semantic_learner.find_similar_queries(original_question)
+        
+        if not similar_queries:
+            return {"message": "No similar queries found in memory"}
+        
+        suggestions = {
+            "similar_queries_found": len(similar_queries),
+            "recommendations": []
+        }
+        
+        for query in similar_queries[:3]:  # Top 3 most similar
+            suggestion = {
+                "similarity_score": f"{query['similarity']:.2f}",
+                "previous_question": query['question'],
+                "was_helpful": query['was_helpful'],
+                "feedback_type": query['feedback_type']
+            }
+            
+            if query['was_helpful']:
+                suggestion["recommendation"] = "✅ This SQL worked well for a similar question"
+                suggestion["sql"] = query['sql']
+            else:
+                suggestion["recommendation"] = "❌ This SQL failed for a similar question - avoid this approach"
+                suggestion["failed_sql"] = query['sql']
+            
+            suggestions["recommendations"].append(suggestion)
+        
+        return {"data": suggestions}
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Query suggestions failed: {e}")
+        return {"error": f"Query suggestions failed: {str(e)}"}
 
-# 4. INITIALIZE API_KEY_MANAGER
-try:
-    api_key_manager = APIKeyManager()
-    logger.info("✅ API Key Manager initialized successfully")
-except Exception as e:
-    logger.error(f"❌ Failed to initialize API Key Manager: {e}")
-    raise
-
-# 5. VERIFY_API_KEY FUNCTION
-def verify_api_key(authorization: str = Header(None)) -> str:
-    """Verify API key from Authorization header"""
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header"
-        )
-    
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Authorization header format. Use 'Bearer <api_key>'"
-        )
-    
-    api_key = authorization.split(" ")[1]
-    if not api_key_manager.is_valid_key(api_key):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
-        )
-    
-    return api_key
-
-# --- ENHANCED TOOL REGISTRY ---
+# Tool Registry
 TOOL_REGISTRY = {
     "get_subscriptions_in_last_days": {
         "function": get_subscriptions_in_last_days,
@@ -748,478 +694,251 @@ TOOL_REGISTRY = {
         "parameters": {
             "type": "object",
             "properties": {
-                "days": {
-                    "type": "integer",
-                    "description": "Number of days to look back",
-                    "minimum": 1,
-                    "maximum": 365
-                }
+                "days": {"type": "integer", "description": "Number of days to look back (1-365)"}
             },
             "required": ["days"]
         }
     },
     "get_payment_success_rate_in_last_days": {
         "function": get_payment_success_rate_in_last_days,
-        "description": "Get payment success rate statistics for the last N days",
+        "description": "Get payment success rate and revenue statistics for the last N days",
         "parameters": {
             "type": "object",
             "properties": {
-                "days": {
-                    "type": "integer",
-                    "description": "Number of days to look back",
-                    "minimum": 1,
-                    "maximum": 365
-                }
+                "days": {"type": "integer", "description": "Number of days to look back (1-365)"}
             },
             "required": ["days"]
         }
     },
-    "get_subscription_summary": {
-        "function": get_subscription_summary,
-        "description": "Get comprehensive subscription and payment summary",
+    "get_user_payment_history": {
+        "function": get_user_payment_history,
+        "description": "Get payment history for a specific user by merchant_user_id",
         "parameters": {
             "type": "object",
             "properties": {
-                "days": {
-                    "type": "integer",
-                    "description": "Number of days to look back (default: 30)",
-                    "minimum": 1,
-                    "maximum": 365,
-                    "default": 30
-                }
+                "merchant_user_id": {"type": "string", "description": "The merchant user ID"},
+                "days": {"type": "integer", "description": "Number of days to look back (default: 90)"}
             },
-            "required": []
+            "required": ["merchant_user_id"]
         }
     },
     "get_database_status": {
         "function": get_database_status,
         "description": "Check database connection and get basic statistics",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "parameters": {"type": "object", "properties": {}}
     },
-    "get_user_payment_history": {
-        "function": get_user_payment_history,
-        "description": "Get payment history for a specific user",
+    "execute_dynamic_sql": {
+        "function": execute_dynamic_sql,
+        "description": "Execute a custom SELECT SQL query for complex analytics",
         "parameters": {
             "type": "object",
             "properties": {
-                "merchant_user_id": {
-                    "type": "string",
-                    "description": "The merchant user ID to query"
-                },
-                "days": {
-                    "type": "integer",
-                    "description": "Number of days to look back (default: 90)",
-                    "minimum": 1,
-                    "maximum": 365,
-                    "default": 90
-                }
+                "sql_query": {"type": "string", "description": "SELECT SQL query to execute"}
             },
-            "required": ["merchant_user_id"]
+            "required": ["sql_query"]
         }
     },
-    "get_subscriptions_by_date_range": {
-        "function": get_subscriptions_by_date_range,
-        "description": "Get subscription statistics for a specific date range",
+    "record_query_feedback": {
+        "function": record_query_feedback,
+        "description": "Record user feedback on a dynamic query - both positive and negative",
         "parameters": {
             "type": "object",
             "properties": {
-                "start_date": {
-                    "type": "string",
-                    "description": "Start date in YYYY-MM-DD format"
-                },
-                "end_date": {
-                    "type": "string", 
-                    "description": "End date in YYYY-MM-DD format"
-                }
+                "original_question": {"type": "string"},
+                "sql_query": {"type": "string"},
+                "was_helpful": {"type": "boolean"}
             },
-            "required": ["start_date", "end_date"]
+            "required": ["original_question", "sql_query", "was_helpful"]
         }
     },
-    "get_payments_by_date_range": {
-        "function": get_payments_by_date_range,
-        "description": "Get payment statistics for a specific date range",
+    "get_query_suggestions": {
+        "function": get_query_suggestions,
+        "description": "Get suggestions based on similar queries in memory to help avoid past mistakes",
         "parameters": {
             "type": "object",
             "properties": {
-                "start_date": {
-                    "type": "string",
-                    "description": "Start date in YYYY-MM-DD format"
-                },
-                "end_date": {
-                    "type": "string",
-                    "description": "End date in YYYY-MM-DD format"
-                }
+                "original_question": {"type": "string", "description": "The question to find similar queries for"}
             },
-            "required": ["start_date", "end_date"]
-        }
-    },
-    "get_analytics_by_date_range": {
-        "function": get_analytics_by_date_range,
-        "description": "Get comprehensive analytics for a specific date range",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "start_date": {
-                    "type": "string",
-                    "description": "Start date in YYYY-MM-DD format"
-                },
-                "end_date": {
-                    "type": "string",
-                    "description": "End date in YYYY-MM-DD format"
-                }
-            },
-            "required": ["start_date", "end_date"]
+            "required": ["original_question"]
         }
     }
 }
 
-# 6. FASTAPI APP CREATION
+# API Configuration
+API_KEY = os.getenv("API_KEY_1")
+if not API_KEY:
+    logger.error("❌ FATAL: API_KEY_1 environment variable is not set")
+    raise ValueError("API_KEY_1 must be set")
+
+def verify_api_key(authorization: str = Header(None)):
+    """Verify API key from Authorization header."""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is required"
+        )
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header must start with 'Bearer '"
+        )
+    
+    token = authorization.split(" ")[1]
+    if not secrets.compare_digest(token, API_KEY):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key"
+        )
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("🚀 Starting Subscription Analytics API...")
-    logger.info(f"Environment: {'Production' if os.getenv('PORT') else 'Development'}")
-    
-    # Test database connection on startup
-    db_status = get_database_status()
-    if db_status.get("status") == "connected":
-        logger.info("✅ Database connection verified on startup")
-        logger.info(f"Database: {db_status.get('database')} on {db_status.get('host')}")
-        logger.info(f"Total subscriptions: {db_status.get('total_subscriptions')}")
-        logger.info(f"Total payments: {db_status.get('total_payments')}")
-    else:
-        logger.warning("⚠️ Database connection failed on startup")
-        logger.warning(f"Error: {db_status.get('error', 'Unknown error')}")
-    
+    """Application lifespan handler."""
+    logger.info("🚀 Starting CRASH-RESISTANT Subscription Analytics API Server")
+    logger.info(f"Semantic learning: {'enabled' if SEMANTIC_LEARNING_ENABLED else 'disabled'}")
+    logger.info(f"Available tools: {len(TOOL_REGISTRY)}")
     yield
-    
-    # Shutdown
-    logger.info("🛑 Shutting down Subscription Analytics API...")
+    logger.info("🛑 Shutting down API Server")
 
+# Create FastAPI app
 app = FastAPI(
     title="Subscription Analytics API",
-    description="Enhanced HTTP API for subscription payment analytics with date range support",
-    version="1.1.0",
+    description="Crash-resistant AI-powered subscription analytics",
+    version="6.0.0-crash-resistant-local-model",
     lifespan=lifespan,
-    docs_url="/docs" if not os.getenv('PORT') else None,  # Disable docs in production
-    redoc_url="/redoc" if not os.getenv('PORT') else None
+    dependencies=[Depends(verify_api_key)]
 )
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure this properly for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
-# 7. API ROUTES
-
-@app.get("/", response_model=APIStatus)
-async def root():
-    """API status and basic information"""
-    db_status = get_database_status()
-    return APIStatus(
-        status="online",
-        version="1.1.0",
-        available_tools=len(TOOL_REGISTRY),
-        database_status=db_status.get("status", "unknown")
-    )
-
+# API Endpoints
 @app.get("/health")
-async def health_check():
-    """Enhanced health check endpoint"""
-    db_status = get_database_status()
-    
-    health_status = {
-        "status": "healthy" if db_status.get("status") == "connected" else "unhealthy",
+def health_check():
+    """Health check endpoint."""
+    health_data = {
+        "status": "ok",
+        "semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled",
         "timestamp": datetime.datetime.now().isoformat(),
-        "version": "1.1.0",
-        "database": {
-            "status": db_status.get("status", "unknown"),
-            "host": db_status.get("host", "unknown"),
-            "database": db_status.get("database", "unknown")
-        },
-        "environment": "production" if os.getenv('PORT') else "development"
+        "available_tools": len(TOOL_REGISTRY),
+        "stability": "crash-resistant-local-model-negative-feedback"
     }
     
-    if "error" in db_status:
-        health_status["database"]["error"] = db_status["error"]
+    # Add learning system stats
+    if semantic_learner and hasattr(semantic_learner, 'known_queries'):
+        total_queries = len(semantic_learner.known_queries)
+        positive_count = sum(1 for q in semantic_learner.known_queries if q.get('was_helpful', True))
+        negative_count = total_queries - positive_count
+        
+        health_data.update({
+            "learning_stats": {
+                "total_learned_queries": total_queries,
+                "positive_examples": positive_count,
+                "negative_examples": negative_count
+            }
+        })
     
-    return health_status
+    return health_data
 
 @app.get("/tools", response_model=List[ToolInfo])
-async def list_tools(api_key: str = Depends(verify_api_key)):
-    """List all available tools"""
-    tools = []
-    for tool_name, tool_config in TOOL_REGISTRY.items():
-        tools.append(ToolInfo(
-            name=tool_name,
-            description=tool_config["description"],
-            parameters=tool_config["parameters"]
-        ))
-    return tools
+def list_tools():
+    """List all available tools."""
+    return [
+        ToolInfo(name=name, description=info["description"], parameters=info["parameters"])
+        for name, info in TOOL_REGISTRY.items()
+        if name not in ["record_query_feedback", "get_query_suggestions"]  # Hide internal tools
+    ]
 
 @app.post("/execute", response_model=ToolResponse)
-async def execute_tool(
-    request: ToolRequest, 
-    api_key: str = Depends(verify_api_key)
-):
-    """Execute a specific tool with parameters - ENHANCED VERSION"""
-    tool_name = request.tool_name
-    parameters = request.parameters
-    
-    logger.info(f"🔧 Executing tool: {tool_name} with parameters: {parameters}")
-    
-    if tool_name not in TOOL_REGISTRY:
-        logger.error(f"❌ Tool not found: {tool_name}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Tool '{tool_name}' not found. Available tools: {list(TOOL_REGISTRY.keys())}"
-        )
+def execute_tool(request: ToolRequest):
+    """Execute a specific tool with comprehensive error handling."""
+    start_time = datetime.datetime.now()
     
     try:
-        tool_function = TOOL_REGISTRY[tool_name]["function"]
+        logger.info(f"🔧 Tool execution request: {request.tool_name}")
         
-        # Execute the tool function
-        result = tool_function(**parameters)
+        if request.tool_name not in TOOL_REGISTRY:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tool '{request.tool_name}' not found"
+            )
         
-        # Check if the result contains an error
-        if isinstance(result, dict) and "error" in result:
-            logger.error(f"❌ Tool execution error: {result['error']}")
+        tool_info = TOOL_REGISTRY[request.tool_name]
+        
+        # Execute the tool with comprehensive error handling
+        try:
+            logger.info(f"⚙️ Executing {request.tool_name} with parameters: {request.parameters}")
+            result = tool_info["function"](**request.parameters)
+        except TypeError as e:
+            logger.error(f"❌ Parameter error for {request.tool_name}: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid parameters for tool '{request.tool_name}': {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"❌ Tool execution error for {request.tool_name}: {e}")
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            return ToolResponse(
+                success=False,
+                error=f"Tool execution failed: {str(e)}"
+            )
+        
+        # Process the result
+        execution_time = (datetime.datetime.now() - start_time).total_seconds()
+        
+        if "error" in result:
+            logger.warning(f"Tool {request.tool_name} returned error: {result['error']}")
             return ToolResponse(success=False, error=result["error"])
         
-        logger.info(f"✅ Tool {tool_name} executed successfully")
-        return ToolResponse(success=True, data=result)
-        
-    except TypeError as e:
-        error_msg = f"Invalid parameters for tool '{tool_name}': {str(e)}"
-        logger.error(f"❌ Parameter error: {error_msg}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_msg
+        logger.info(f"✅ Tool {request.tool_name} completed successfully in {execution_time:.2f}s")
+        return ToolResponse(
+            success=True,
+            data=result.get("data"),
+            message=result.get("message")
         )
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        error_msg = f"Tool execution failed: {str(e)}"
-        logger.error(f"❌ Execution error: {error_msg}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_msg
+        logger.error(f"❌ Unexpected error in execute_tool: {e}")
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        return ToolResponse(
+            success=False,
+            error=f"Server error: {str(e)}"
         )
+    finally:
+        # Force garbage collection after each request
+        gc.collect()
 
-# DEBUG ROUTES (only available in development)
-if not os.getenv('PORT'):
-    @app.get("/debug/db-test")
-    async def test_database(api_key: str = Depends(verify_api_key)):
-        """Test database connection and table structure"""
-        connection = get_db_connection()
-        if not connection:
-            return {"error": "Cannot connect to database"}
-        
-        try:
-            cursor = connection.cursor()
-            
-            # Test table existence
-            cursor.execute("SHOW TABLES")
-            tables = [table[0] for table in cursor.fetchall()]
-            
-            debug_info = {
-                "connection_status": "connected",
-                "tables": tables,
-                "database_config": {
-                    "host": DB_CONFIG['host'],
-                    "port": DB_CONFIG['port'],
-                    "database": DB_CONFIG['database'],
-                    "user": DB_CONFIG['user']
-                }
-            }
-            
-            # Test subscription table structure if it exists
-            if 'subscription_contract_v2' in tables:
-                cursor.execute("DESCRIBE subscription_contract_v2")
-                sub_columns = cursor.fetchall()
-                debug_info["subscription_columns"] = sub_columns
-                
-                cursor.execute("SELECT COUNT(*) FROM subscription_contract_v2")
-                sub_count = cursor.fetchone()[0]
-                debug_info["subscription_count"] = sub_count
-                
-                # Check for data in date range
-                cursor.execute("""
-                    SELECT 
-                        MIN(subcription_start_date) as earliest_sub,
-                        MAX(subcription_start_date) as latest_sub
-                    FROM subscription_contract_v2
-                """)
-                date_range = cursor.fetchone()
-                debug_info["subscription_date_range"] = {
-                    "earliest": str(date_range[0]) if date_range[0] else None,
-                    "latest": str(date_range[1]) if date_range[1] else None
-                }
-            
-            # Test payment table structure if it exists
-            if 'subscription_payment_details' in tables:
-                cursor.execute("DESCRIBE subscription_payment_details")
-                pay_columns = cursor.fetchall()
-                debug_info["payment_columns"] = pay_columns
-                
-                cursor.execute("SELECT COUNT(*) FROM subscription_payment_details")
-                pay_count = cursor.fetchone()[0]
-                debug_info["payment_count"] = pay_count
-                
-                # Check for data in date range
-                cursor.execute("""
-                    SELECT 
-                        MIN(created_date) as earliest_payment,
-                        MAX(created_date) as latest_payment
-                    FROM subscription_payment_details
-                """)
-                date_range = cursor.fetchone()
-                debug_info["payment_date_range"] = {
-                    "earliest": str(date_range[0]) if date_range[0] else None,
-                    "latest": str(date_range[1]) if date_range[1] else None
-                }
-            
-            return debug_info
-            
-        except Exception as e:
-            return {"error": str(e), "error_type": type(e).__name__}
-        finally:
-            if connection.is_connected():
-                cursor.close()
-                connection.close()
-    
-    @app.get("/debug/test-date-ranges")
-    async def debug_date_ranges(api_key: str = Depends(verify_api_key)):
-        """Debug endpoint to test date range functions"""
-        test_start = "2024-12-01"
-        test_end = "2024-12-11"
-        
-        logger.info(f"🧪 Testing date range functions from {test_start} to {test_end}")
-        
-        # Test each function individually
-        sub_result = get_subscriptions_by_date_range(test_start, test_end)
-        pay_result = get_payments_by_date_range(test_start, test_end)
-        analytics_result = get_analytics_by_date_range(test_start, test_end)
-        
-        # Also test a broader range to see if there's any data
-        broad_start = "2024-01-01"
-        broad_end = "2024-12-31"
-        broad_sub_result = get_subscriptions_by_date_range(broad_start, broad_end)
-        broad_pay_result = get_payments_by_date_range(broad_start, broad_end)
-        
-        return {
-            "test_period": f"{test_start} to {test_end}",
-            "results": {
-                "subscriptions": sub_result,
-                "payments": pay_result,
-                "analytics": analytics_result
-            },
-            "broad_test_period": f"{broad_start} to {broad_end}",
-            "broad_results": {
-                "subscriptions": broad_sub_result,
-                "payments": broad_pay_result
-            }
-        }
-    
-    @app.get("/debug/recent-data")
-    async def debug_recent_data(api_key: str = Depends(verify_api_key)):
-        """Check for recent data in the database"""
-        connection = get_db_connection()
-        if not connection:
-            return {"error": "Cannot connect to database"}
-        
-        try:
-            cursor = connection.cursor(dictionary=True)
-            
-            # Check recent subscriptions
-            cursor.execute("""
-                SELECT 
-                    subcription_start_date,
-                    COUNT(*) as count
-                FROM subscription_contract_v2 
-                WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                GROUP BY subcription_start_date
-                ORDER BY subcription_start_date DESC
-                LIMIT 10
-            """)
-            recent_subs = cursor.fetchall()
-            
-            # Check recent payments
-            cursor.execute("""
-                SELECT 
-                    created_date,
-                    COUNT(*) as count,
-                    SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as successful
-                FROM subscription_payment_details 
-                WHERE created_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                GROUP BY created_date
-                ORDER BY created_date DESC
-                LIMIT 10
-            """)
-            recent_payments = cursor.fetchall()
-            
-            # Test last 7 days specifically
-            cursor.execute("""
-                SELECT COUNT(*) as count 
-                FROM subscription_contract_v2 
-                WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-            """)
-            last_7_days_subs = cursor.fetchone()['count']
-            
-            cursor.execute("""
-                SELECT COUNT(*) as count 
-                FROM subscription_payment_details 
-                WHERE created_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-            """)
-            last_7_days_payments = cursor.fetchone()['count']
-            
-            return {
-                "recent_subscriptions": recent_subs,
-                "recent_payments": recent_payments,
-                "last_7_days": {
-                    "subscriptions": last_7_days_subs,
-                    "payments": last_7_days_payments
-                }
-            }
-            
-        except Exception as e:
-            return {"error": str(e), "error_type": type(e).__name__}
-        finally:
-            if connection.is_connected():
-                cursor.close()
-                connection.close()
-
-# 8. DEVELOPMENT SERVER
 if __name__ == "__main__":
-    # Print API keys for development
-    if not os.getenv('PORT'):
-        print("\n" + "="*60)
-        print("🔑 API KEYS (Save these securely!):")
-        for i, key in enumerate(api_key_manager.api_keys, 1):
-            if key:  # Only print non-None keys
-                print(f"   Key {i}: {key}")
-        print("="*60)
-        print("🌐 Starting development server...")
-        print("📚 API Documentation: http://localhost:8000/docs")
-        print("🔍 Health Check: http://localhost:8000/health")
-        print("🧪 Debug DB Test: http://localhost:8000/debug/db-test")
-        print("📊 Debug Date Ranges: http://localhost:8000/debug/test-date-ranges")
-        print("="*60 + "\n")
+    # Validate environment variables
+    required_env_vars = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'API_KEY_1']
+    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
     
-    # Get port from environment or default to 8000
-    port = int(os.getenv('PORT', 8000))
+    if missing_vars:
+        logger.error(f"❌ FATAL: Missing required environment variables: {missing_vars}")
+        sys.exit(1)
     
+    port = int(os.getenv("PORT", 8000))
+    
+    logger.info(f"🚀 Starting CRASH-RESISTANT server on port {port}")
+    logger.info("🛡️ Enhanced error handling and logging enabled")
+    logger.info("🧠 Local model support enabled - NO DOWNLOADS")
+    
+    # Ultra-stable configuration
     uvicorn.run(
         "api_server:app",
         host="0.0.0.0",
         port=port,
-        reload=not os.getenv('PORT'),  # Only reload in development
-        log_level="info"
+        reload=False,           # Critical: prevent reloads
+        workers=1,              # Single worker for stability
+        log_level="info",
+        access_log=True,
+        loop="asyncio"          # Use asyncio loop
     )
