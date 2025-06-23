@@ -245,3 +245,11 @@
 2025-06-23 11:44:49,051 - api_server - INFO - ✅ Encoding successful with strategy 1
 2025-06-23 11:44:49,148 - api_server - INFO - 💾 Positive feedback stored successfully
 2025-06-23 11:44:49,148 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.14s
+2025-06-23 15:59:28,322 - faiss.loader - INFO - Loading faiss.
+2025-06-23 15:59:28,346 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-23 15:59:28,350 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-23 15:59:32,534 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-23 15:59:32,534 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 15:59:33,341 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 15:59:33,344 - api_server - INFO - 🧠 Loaded 9 queries from memory
+2025-06-23 15:59:33,344 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED

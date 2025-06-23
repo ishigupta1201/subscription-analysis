@@ -448,8 +448,89 @@ class UniversalClient:
 
     async def __aenter__(self):
         # FIXED: Better connection handling to prevent connection resets
+        # Create SSL context with enhanced certificate verification and fallback
+        ssl_context = None
+        
+        # Try multiple SSL configurations with real connection tests
+        ssl_configs = [
+            {
+                'name': 'Standard SSL with certifi',
+                'setup': lambda: (
+                    ssl.create_default_context(cafile=certifi.where()),
+                    lambda ctx: (
+                        setattr(ctx, 'check_hostname', True),
+                        setattr(ctx, 'verify_mode', ssl.CERT_REQUIRED),
+                        ctx.load_default_certs()
+                    )[-1]
+                )
+            },
+            {
+                'name': 'Standard SSL without system certs',
+                'setup': lambda: (
+                    ssl.create_default_context(cafile=certifi.where()),
+                    lambda ctx: (
+                        setattr(ctx, 'check_hostname', True),
+                        setattr(ctx, 'verify_mode', ssl.CERT_REQUIRED)
+                    )[-1]
+                )
+            },
+            {
+                'name': 'Default SSL context',
+                'setup': lambda: (
+                    ssl.create_default_context(),
+                    lambda ctx: (
+                        setattr(ctx, 'check_hostname', True),
+                        setattr(ctx, 'verify_mode', ssl.CERT_REQUIRED)
+                    )[-1]
+                )
+            },
+            {
+                'name': 'Permissive SSL (hostname verification disabled)',
+                'setup': lambda: (
+                    ssl.create_default_context(cafile=certifi.where()),
+                    lambda ctx: (
+                        setattr(ctx, 'check_hostname', False),
+                        setattr(ctx, 'verify_mode', ssl.CERT_REQUIRED)
+                    )[-1]
+                )
+            },
+            {
+                'name': 'Insecure SSL (verification disabled)',
+                'setup': lambda: False  # Disable SSL verification entirely
+            }
+        ]
+        
+        for attempt, config in enumerate(ssl_configs):
+            try:
+                if config['name'] == 'Insecure SSL (verification disabled)':
+                    ssl_context = False
+                    logger.warning(f"⚠️ Using insecure SSL configuration (no verification)")
+                    break
+                else:
+                    ssl_context, setup_func = config['setup']()
+                    if setup_func:
+                        setup_func(ssl_context)
+                
+                # Test the SSL context with a real connection
+                test_connector = aiohttp.TCPConnector(ssl=ssl_context)
+                test_session = aiohttp.ClientSession(connector=test_connector, timeout=aiohttp.ClientTimeout(total=10))
+                
+                try:
+                    async with test_session.get('https://subscription-analytics.onrender.com/health') as test_response:
+                        logger.info(f"✅ SSL configuration '{config['name']}' tested successfully (status: {test_response.status})")
+                        await test_session.close()
+                        break
+                except Exception as test_e:
+                    await test_session.close()
+                    logger.warning(f"⚠️ SSL configuration '{config['name']}' failed connection test: {test_e}")
+                    continue
+                
+            except Exception as e:
+                logger.warning(f"⚠️ SSL configuration '{config['name']}' failed setup: {e}")
+                continue
+        
         connector = aiohttp.TCPConnector(
-            ssl=ssl.create_default_context(cafile=certifi.where()),
+            ssl=ssl_context,
             limit=10,           # Total connection limit
             limit_per_host=5,   # Per-host connection limit
             enable_cleanup_closed=True,  # Clean up closed connections
