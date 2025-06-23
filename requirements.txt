@@ -1,7 +1,20 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-mysql-connector-python==8.2.0
-python-dotenv==1.0.0
-pydantic==2.5.0
-python-multipart==0.0.6
-aiofiles==23.2.1
+# requirements.txt
+
+# Core Server
+fastapi
+uvicorn[standard]
+python-dotenv
+mysql-connector-python
+
+# AI & NLP
+google-generativeai
+sentence-transformers
+faiss-cpu
+numpy
+
+# Client & Networking
+aiohttp
+certifi
+
+# MCP Integration
+mcp

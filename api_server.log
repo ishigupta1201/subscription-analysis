@@ -1,0 +1,247 @@
+2025-06-20 21:45:45,717 - faiss.loader - INFO - Loading faiss.
+2025-06-20 21:45:45,728 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-20 21:45:45,731 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-20 21:45:49,528 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-20 21:45:49,529 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-20 21:45:50,197 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-20 21:45:50,199 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-20 21:45:50,201 - __main__ - INFO - 🚀 Starting CRASH-RESISTANT server on port 8000
+2025-06-20 21:45:50,201 - __main__ - INFO - 🛡️ Enhanced error handling and logging enabled
+2025-06-20 21:45:50,201 - __main__ - INFO - 🧠 Local model support enabled - NO DOWNLOADS
+2025-06-20 21:45:50,238 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-20 21:45:50,238 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-20 21:45:50,288 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-20 21:45:50,289 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-20 21:45:50,291 - api_server - INFO - 🚀 Starting CRASH-RESISTANT Subscription Analytics API Server
+2025-06-20 21:45:50,291 - api_server - INFO - Semantic learning: enabled
+2025-06-20 21:45:50,291 - api_server - INFO - Available tools: 7
+2025-06-20 21:47:43,609 - api_server - INFO - 🔧 Tool execution request: get_database_status
+2025-06-20 21:47:43,610 - api_server - INFO - ⚙️ Executing get_database_status with parameters: {}
+2025-06-20 21:47:43,610 - api_server - INFO - 🔍 Executing query: 
+        SELECT 
+            (SELECT COUNT(*) FROM subscription_contract_v2) as total_subscriptions,...
+2025-06-20 21:47:45,065 - mysql.connector - INFO - package: mysql.connector.plugins
+2025-06-20 21:47:45,066 - mysql.connector - INFO - plugin_name: caching_sha2_password
+2025-06-20 21:47:45,066 - mysql.connector - INFO - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-06-20 21:47:46,578 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-20 21:47:46,833 - api_server - INFO - ✅ Tool get_database_status completed successfully in 3.22s
+2025-06-20 21:48:27,094 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-20 21:48:27,096 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(DISTINCT sc.merchant_user_id) FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id WHERE pd.status = "ACTIVE"'}
+2025-06-20 21:48:27,096 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(DISTINCT sc.merchant_user_id) FROM subscription_contract_v2 AS sc JOIN subscription_pay...
+2025-06-20 21:48:27,097 - api_server - INFO - ✅ SQL validation passed
+2025-06-20 21:48:27,097 - api_server - INFO - 🔍 Executing: SELECT COUNT(DISTINCT sc.merchant_user_id) FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id WHERE pd.status = "ACTIVE"
+2025-06-20 21:48:27,097 - api_server - INFO - 🔍 Executing query: SELECT COUNT(DISTINCT sc.merchant_user_id) FROM subscription_contract_v2 AS sc JOIN subscription_pay...
+2025-06-20 21:48:29,887 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-20 21:48:30,147 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-20 21:48:30,148 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.05s
+2025-06-20 21:49:07,062 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-20 21:49:07,064 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'how many of these users have paid', 'sql_query': 'SELECT COUNT(DISTINCT sc.merchant_user_id) FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id WHERE pd.status = "ACTIVE"', 'was_helpful': True}
+2025-06-20 21:49:07,064 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-20 21:49:07,105 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-20 21:49:07,201 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-20 21:49:07,202 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.14s
+2025-06-20 21:49:13,073 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-20 21:49:13,074 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT DISTINCT sc.merchant_user_id FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id'}
+2025-06-20 21:49:13,074 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT DISTINCT sc.merchant_user_id FROM subscription_contract_v2 AS sc JOIN subscription_payment_de...
+2025-06-20 21:49:13,074 - api_server - INFO - ✅ SQL validation passed
+2025-06-20 21:49:13,074 - api_server - INFO - 🔍 Executing: SELECT DISTINCT sc.merchant_user_id FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id
+2025-06-20 21:49:13,075 - api_server - INFO - 🔍 Executing query: SELECT DISTINCT sc.merchant_user_id FROM subscription_contract_v2 AS sc JOIN subscription_payment_de...
+2025-06-20 21:49:15,726 - api_server - INFO - ✅ Query executed successfully, returned 63 rows
+2025-06-20 21:49:15,987 - api_server - INFO - ✅ Dynamic SQL completed successfully with 63 rows
+2025-06-20 21:49:15,988 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 2.91s
+2025-06-20 21:50:10,603 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-20 21:50:10,604 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'show me the users', 'sql_query': 'SELECT DISTINCT sc.merchant_user_id FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id', 'was_helpful': True}
+2025-06-20 21:50:10,604 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-20 21:50:10,620 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-20 21:50:10,713 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-20 21:50:10,713 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-23 10:12:39,361 - faiss.loader - INFO - Loading faiss.
+2025-06-23 10:12:39,386 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-23 10:12:39,390 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-23 10:12:43,700 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-23 10:12:43,700 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 10:12:44,446 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 10:12:44,450 - __main__ - INFO - 🧠 Loaded 2 queries from memory
+2025-06-23 10:12:44,450 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 10:12:44,452 - __main__ - INFO - 🚀 Starting CRASH-RESISTANT server on port 8000
+2025-06-23 10:12:44,452 - __main__ - INFO - 🛡️ Enhanced error handling and logging enabled
+2025-06-23 10:12:44,452 - __main__ - INFO - 🧠 Local model support enabled - NO DOWNLOADS
+2025-06-23 10:12:44,491 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-23 10:12:44,491 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 10:12:44,545 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 10:12:44,547 - api_server - INFO - 🧠 Loaded 2 queries from memory
+2025-06-23 10:12:44,547 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 10:12:44,550 - api_server - INFO - 🚀 Starting CRASH-RESISTANT Subscription Analytics API Server
+2025-06-23 10:12:44,550 - api_server - INFO - Semantic learning: enabled
+2025-06-23 10:12:44,550 - api_server - INFO - Available tools: 7
+2025-06-23 10:15:32,271 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-23 10:15:32,272 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2024-04-01" AND sc.subcription_start_date <= "2024-07-03"'}
+2025-06-23 10:15:32,272 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE"...
+2025-06-23 10:15:32,273 - api_server - INFO - ✅ SQL validation passed
+2025-06-23 10:15:32,273 - api_server - INFO - 🔍 Executing: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2024-04-01" AND sc.subcription_start_date <= "2024-07-03"
+2025-06-23 10:15:32,273 - api_server - INFO - 🔍 Executing query: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE"...
+2025-06-23 10:15:33,990 - mysql.connector - INFO - package: mysql.connector.plugins
+2025-06-23 10:15:33,991 - mysql.connector - INFO - plugin_name: caching_sha2_password
+2025-06-23 10:15:33,992 - mysql.connector - INFO - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-06-23 10:15:36,220 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-23 10:15:36,552 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-23 10:15:36,552 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 4.28s
+2025-06-23 10:15:45,677 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-23 10:15:45,677 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'number o fsubscriptions between 1st april and 3 july along with their paayment status and success rate for this period', 'sql_query': 'SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2024-04-01" AND sc.subcription_start_date <= "2024-07-03"', 'was_helpful': False}
+2025-06-23 10:15:45,678 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-23 10:15:45,740 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-23 10:15:45,829 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-23 10:15:45,829 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.15s
+2025-06-23 10:15:45,910 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-23 10:15:45,910 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'number o fsubscriptions between 1st april and 3 july along with their paayment status and success rate for this period'}
+2025-06-23 10:15:45,923 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-23 10:15:45,923 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-23 10:16:08,808 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-23 10:16:08,809 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2024-04-01" AND sc.subcription_start_date <= "2024-07-03"'}
+2025-06-23 10:16:08,809 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE"...
+2025-06-23 10:16:08,809 - api_server - INFO - ✅ SQL validation passed
+2025-06-23 10:16:08,809 - api_server - INFO - 🔍 Executing: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2024-04-01" AND sc.subcription_start_date <= "2024-07-03"
+2025-06-23 10:16:08,809 - api_server - INFO - 🔍 Executing query: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE"...
+2025-06-23 10:16:12,076 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-23 10:16:12,365 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-23 10:16:12,366 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.56s
+2025-06-23 10:16:14,681 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-23 10:16:14,682 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'number o fsubscriptions between 1st april and 3 july along with their paayment status and success rate for this period in 1015', 'sql_query': 'SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2024-04-01" AND sc.subcription_start_date <= "2024-07-03"', 'was_helpful': False}
+2025-06-23 10:16:14,682 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-23 10:16:14,703 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-23 10:16:14,796 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-23 10:16:14,796 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-23 10:16:14,879 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-23 10:16:14,879 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'number o fsubscriptions between 1st april and 3 july along with their paayment status and success rate for this period in 1015'}
+2025-06-23 10:16:14,888 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-23 10:16:14,888 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-23 10:16:24,272 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-23 10:16:24,273 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2025-04-01" AND sc.subcription_start_date <= "2025-07-03"'}
+2025-06-23 10:16:24,273 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE"...
+2025-06-23 10:16:24,273 - api_server - INFO - ✅ SQL validation passed
+2025-06-23 10:16:24,273 - api_server - INFO - 🔍 Executing: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2025-04-01" AND sc.subcription_start_date <= "2025-07-03"
+2025-06-23 10:16:24,273 - api_server - INFO - 🔍 Executing query: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE"...
+2025-06-23 10:16:27,441 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-23 10:16:27,734 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-23 10:16:27,735 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.46s
+2025-06-23 10:16:40,401 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-23 10:16:40,401 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'number o fsubscriptions between 1st april and 3 july along with their paayment status and success rate for this period in 2025', 'sql_query': 'SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2025-04-01" AND sc.subcription_start_date <= "2025-07-03"', 'was_helpful': False}
+2025-06-23 10:16:40,402 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-23 10:16:40,423 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-23 10:16:40,516 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-23 10:16:40,516 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-23 10:16:40,592 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-23 10:16:40,593 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'number o fsubscriptions between 1st april and 3 july along with their paayment status and success rate for this period in 2025'}
+2025-06-23 10:16:40,600 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-23 10:16:40,600 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-23 10:16:46,777 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-23 10:16:46,778 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2025-04-01" AND sc.subcription_start_date <= "2025-07-03"'}
+2025-06-23 10:16:46,778 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE"...
+2025-06-23 10:16:46,778 - api_server - INFO - ✅ SQL validation passed
+2025-06-23 10:16:46,778 - api_server - INFO - 🔍 Executing: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2025-04-01" AND sc.subcription_start_date <= "2025-07-03"
+2025-06-23 10:16:46,779 - api_server - INFO - 🔍 Executing query: SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE"...
+2025-06-23 10:16:50,893 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-23 10:16:51,307 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-23 10:16:51,307 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 4.53s
+2025-06-23 10:17:31,774 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-23 10:17:31,774 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'we asked for status as well', 'sql_query': 'SELECT COUNT(DISTINCT sc.subscription_id) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, COUNT(*) AS total_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) AS payment_success_rate FROM subscription_contract_v2 sc JOIN subscription_payment_details pd ON sc.subscription_id = pd.subscription_id WHERE sc.subcription_start_date >= "2025-04-01" AND sc.subcription_start_date <= "2025-07-03"', 'was_helpful': True}
+2025-06-23 10:17:31,774 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-23 10:17:31,791 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-23 10:17:31,882 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-23 10:17:31,882 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-23 10:17:43,109 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-23 10:17:43,110 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(*) AS total_subscriptions_active FROM subscription_contract_v2 WHERE status = "ACTIVE"'}
+2025-06-23 10:17:43,110 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(*) AS total_subscriptions_active FROM subscription_contract_v2 WHERE status = "ACTIVE"...
+2025-06-23 10:17:43,110 - api_server - INFO - ✅ SQL validation passed
+2025-06-23 10:17:43,111 - api_server - INFO - 🔍 Executing: SELECT COUNT(*) AS total_subscriptions_active FROM subscription_contract_v2 WHERE status = "ACTIVE"
+2025-06-23 10:17:43,111 - api_server - INFO - 🔍 Executing query: SELECT COUNT(*) AS total_subscriptions_active FROM subscription_contract_v2 WHERE status = "ACTIVE"...
+2025-06-23 10:17:46,593 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-23 10:17:46,912 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-23 10:17:46,913 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.80s
+2025-06-23 10:18:03,047 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-23 10:18:03,047 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'number of subsxriptions with active status', 'sql_query': 'SELECT COUNT(*) AS total_subscriptions_active FROM subscription_contract_v2 WHERE status = "ACTIVE"', 'was_helpful': True}
+2025-06-23 10:18:03,047 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-23 10:18:03,067 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-23 10:18:03,159 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-23 10:18:03,159 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-23 10:22:22,585 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-23 10:22:22,585 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT sc.merchant_user_id, COUNT(pd.subcription_payment_details_id) AS successful_payments, SUM(pd.trans_amount_decimal) AS total_amount_paid FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id WHERE pd.status = "ACTIVE" GROUP BY sc.merchant_user_id ORDER BY successful_payments DESC LIMIT 5'}
+2025-06-23 10:22:22,586 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT sc.merchant_user_id, COUNT(pd.subcription_payment_details_id) AS successful_payments, SUM(pd....
+2025-06-23 10:22:22,586 - api_server - INFO - ✅ SQL validation passed
+2025-06-23 10:22:22,586 - api_server - INFO - 🔍 Executing: SELECT sc.merchant_user_id, COUNT(pd.subcription_payment_details_id) AS successful_payments, SUM(pd.trans_amount_decimal) AS total_amount_paid FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id WHERE pd.status = "ACTIVE" GROUP BY sc.merchant_user_id ORDER BY successful_payments DESC LIMIT 5
+2025-06-23 10:22:22,586 - api_server - INFO - 🔍 Executing query: SELECT sc.merchant_user_id, COUNT(pd.subcription_payment_details_id) AS successful_payments, SUM(pd....
+2025-06-23 10:22:26,252 - api_server - INFO - ✅ Query executed successfully, returned 5 rows
+2025-06-23 10:22:26,668 - api_server - INFO - ✅ Dynamic SQL completed successfully with 5 rows
+2025-06-23 10:22:26,669 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 4.08s
+2025-06-23 10:22:42,994 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-23 10:22:42,994 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'who are my top 5 customers measured by the number of successfull payments on their currently active subscriptions and what is the total amount they have paid', 'sql_query': 'SELECT sc.merchant_user_id, COUNT(pd.subcription_payment_details_id) AS successful_payments, SUM(pd.trans_amount_decimal) AS total_amount_paid FROM subscription_contract_v2 AS sc JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id WHERE pd.status = "ACTIVE" GROUP BY sc.merchant_user_id ORDER BY successful_payments DESC LIMIT 5', 'was_helpful': True}
+2025-06-23 10:22:42,994 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-23 10:22:43,014 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-23 10:22:43,098 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-23 10:22:43,099 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-23 11:18:17,547 - faiss.loader - INFO - Loading faiss.
+2025-06-23 11:18:17,558 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-23 11:18:17,561 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-23 11:18:21,292 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-23 11:18:21,293 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 11:18:22,031 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 11:18:22,034 - __main__ - INFO - 🧠 Loaded 8 queries from memory
+2025-06-23 11:18:22,034 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 11:18:22,037 - __main__ - INFO - 🚀 Starting CRASH-RESISTANT server on port 8000
+2025-06-23 11:18:22,037 - __main__ - INFO - 🛡️ Enhanced error handling and logging enabled
+2025-06-23 11:18:22,037 - __main__ - INFO - 🧠 Local model support enabled - NO DOWNLOADS
+2025-06-23 11:18:22,075 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-23 11:18:22,075 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 11:18:22,128 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 11:18:22,130 - api_server - INFO - 🧠 Loaded 8 queries from memory
+2025-06-23 11:18:22,130 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 11:18:22,132 - api_server - INFO - 🚀 Starting CRASH-RESISTANT Subscription Analytics API Server
+2025-06-23 11:18:22,132 - api_server - INFO - Semantic learning: enabled
+2025-06-23 11:18:22,132 - api_server - INFO - Available tools: 7
+2025-06-23 11:18:22,132 - api_server - INFO - 🛑 Shutting down API Server
+2025-06-23 11:18:39,564 - api_server - INFO - 🛑 Shutting down API Server
+2025-06-23 11:18:42,681 - faiss.loader - INFO - Loading faiss.
+2025-06-23 11:18:42,697 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-23 11:18:42,701 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-23 11:18:46,057 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-23 11:18:46,057 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 11:18:46,769 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 11:18:46,771 - __main__ - INFO - 🧠 Loaded 8 queries from memory
+2025-06-23 11:18:46,771 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 11:18:46,773 - __main__ - INFO - 🚀 Starting CRASH-RESISTANT server on port 8000
+2025-06-23 11:18:46,774 - __main__ - INFO - 🛡️ Enhanced error handling and logging enabled
+2025-06-23 11:18:46,774 - __main__ - INFO - 🧠 Local model support enabled - NO DOWNLOADS
+2025-06-23 11:18:46,803 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-23 11:18:46,803 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 11:18:46,852 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 11:18:46,854 - api_server - INFO - 🧠 Loaded 8 queries from memory
+2025-06-23 11:18:46,854 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 11:18:46,856 - api_server - INFO - 🚀 Starting CRASH-RESISTANT Subscription Analytics API Server
+2025-06-23 11:18:46,856 - api_server - INFO - Semantic learning: enabled
+2025-06-23 11:18:46,856 - api_server - INFO - Available tools: 7
+2025-06-23 11:44:27,216 - api_server - INFO - 🔧 Tool execution request: get_subscriptions_in_last_days
+2025-06-23 11:44:27,217 - api_server - INFO - ⚙️ Executing get_subscriptions_in_last_days with parameters: {'days': 7.0}
+2025-06-23 11:44:27,217 - api_server - INFO - 🔍 Executing query: 
+        SELECT 
+            COUNT(*) as new_subscriptions,
+            COALESCE(SUM(CASE WHEN statu...
+2025-06-23 11:44:28,840 - mysql.connector - INFO - package: mysql.connector.plugins
+2025-06-23 11:44:28,842 - mysql.connector - INFO - plugin_name: caching_sha2_password
+2025-06-23 11:44:28,842 - mysql.connector - INFO - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-06-23 11:44:31,928 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-23 11:44:32,239 - api_server - INFO - ✅ Tool get_subscriptions_in_last_days completed successfully in 5.02s
+2025-06-23 11:44:36,796 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-23 11:44:36,796 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROUP BY sc.merchant_user_id ORDER BY total_subscriptions DESC LIMIT 10'}
+2025-06-23 11:44:36,797 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROU...
+2025-06-23 11:44:36,798 - api_server - INFO - ✅ SQL validation passed
+2025-06-23 11:44:36,798 - api_server - INFO - 🔍 Executing: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROUP BY sc.merchant_user_id ORDER BY total_subscriptions DESC LIMIT 10
+2025-06-23 11:44:36,798 - api_server - INFO - 🔍 Executing query: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROU...
+2025-06-23 11:44:41,440 - api_server - INFO - ✅ Query executed successfully, returned 10 rows
+2025-06-23 11:44:41,731 - api_server - INFO - ✅ Dynamic SQL completed successfully with 10 rows
+2025-06-23 11:44:41,731 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 4.94s
+2025-06-23 11:44:49,012 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-23 11:44:49,014 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'top 10 users', 'sql_query': 'SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROUP BY sc.merchant_user_id ORDER BY total_subscriptions DESC LIMIT 10', 'was_helpful': True}
+2025-06-23 11:44:49,014 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-23 11:44:49,051 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-23 11:44:49,148 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-23 11:44:49,148 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.14s
