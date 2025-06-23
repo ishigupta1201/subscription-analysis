@@ -832,7 +832,7 @@ async def interactive_mode():
                     logger.error("Error in interactive loop", exc_info=True)
                     print(f"❌ Error: {e}")
                     
-    except Exception as e:
+    except Exception as e:  
         logger.error("Client failed to initialize", exc_info=True)
         print(f"❌ Critical Error: {e}")
         print("\n🔧 Troubleshooting:")
