@@ -1,358 +1,347 @@
-# client/mcp_client.py
+#!/usr/bin/env python3
+# full_tools_mcp_client.py - MCP client exposing all backend tools individually
 
 import asyncio
+import aiohttp
 import logging
 import sys
 import os
+import json
+import ssl
+import certifi
 from typing import Any, Dict, List
+from pathlib import Path
 
-# --- MCP Imports (v1.9.4 Compatible) ---
+# MCP Imports
 try:
     from mcp.server import Server, InitializationOptions
     from mcp.types import TextContent, Tool
     import mcp.server.stdio
-    print("✅ MCP v1.9.4 imports successful", file=sys.stderr)
-except ImportError as e:
-    print(f"❌ MCP import failed: {e}", file=sys.stderr)
-    print("Available MCP components:", file=sys.stderr)
-    try:
-        import mcp.types
-        print(f"mcp.types contents: {[x for x in dir(mcp.types) if not x.startswith('_')]}", file=sys.stderr)
-    except:
-        pass
+except ImportError:
+    print("❌ MCP not installed. Run: pip install mcp", file=sys.stderr)
     sys.exit(1)
 
-# --- Local Package Imports ---
-try:
-    from .universal_client import UniversalClient, QueryResult
-    from .config_manager import ConfigManager
-    print("✅ Project imports successful", file=sys.stderr)
-except ImportError as e:
-    print(f"❌ Project import failed: {e}", file=sys.stderr)
-    print(f"Current working directory: {os.getcwd()}", file=sys.stderr)
-    sys.exit(1)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("full-tools-mcp")
 
-# --- Basic Setup ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("mcp-server-v1.9.4")
-
-# --- The Enhanced MCP Server Class ---
-class UniversalClientMCPServer:
-    """Enhanced MCP Server wrapper compatible with MCP v1.9.4."""
-    
+class FullToolsMCPClient:
     def __init__(self):
-        self.server = Server("subscription-analytics-v1.9.4")
-        self.universal_client: UniversalClient | None = None
-        self.last_dynamic_result: QueryResult | None = None
-        self.config = {}
-        self.learning_stats = {"positive_feedback": 0, "negative_feedback": 0, "total_queries": 0}
+        print("🔧 Initializing Full Tools MCP Client...", file=sys.stderr)
+        self.server = Server("subscription-analytics")
+        self.config = None
+        self.session = None
         
-        # Enhanced tool definitions compatible with v1.9.4
+        # Define ALL backend tools for Claude Desktop
         self.tools = [
             Tool(
-                name="natural_language_query",
-                description="""
-The primary tool for subscription analytics. Processes any natural language query about subscription data.
-
-Features:
-- Uses pre-built functions for common queries (fast, reliable)
-- Generates custom SQL for complex analytics (flexible, powerful) 
-- Context-aware: understands follow-up questions like "show me users higher than that"
-- Auto-fixes SQL syntax errors (SQLite → MySQL conversion)
-- Learns from both positive and negative feedback
-
-Examples:
-• "What's the payment success rate for the last month?"
-• "How many users have success rate above 15%?"
-• "Show me their individual failure rates"
-• "How many payments in the same timeframe?"
-
-The system will intelligently choose between pre-built tools or generate custom SQL as needed.
-""",
-                inputSchema={
-                    "type": "object", 
-                    "properties": {
-                        "query": {
-                            "type": "string", 
-                            "description": "The user's question in plain English about subscription or payment analytics."
-                        }
-                    }, 
-                    "required": ["query"]
-                }
-            ),
-            Tool(
-                name="record_feedback",
-                description="""
-Record user feedback on a dynamically generated query result.
-
-IMPORTANT: Only call this tool AFTER the user explicitly provides feedback (yes/no/good/bad) 
-on an answer that was generated using custom SQL (marked as "DYNAMIC QUERY RESULT").
-
-The system learns from BOTH positive and negative feedback:
-- Positive feedback: Stores successful (question, SQL) patterns for future use
-- Negative feedback: Remembers failed approaches to avoid similar mistakes
-
-This enhances the AI's ability to generate better queries over time.
-""",
-                inputSchema={
-                    "type": "object", 
-                    "properties": {
-                        "was_helpful": {
-                            "type": "boolean",
-                            "description": "True if the user found the answer helpful/accurate, False if not helpful/inaccurate"
-                        }
-                    }, 
-                    "required": ["was_helpful"]
-                }
-            ),
-            Tool(
-                name="get_learning_stats",
-                description="""
-Get statistics about the system's learning progress and feedback history.
-
-Shows:
-- Total queries processed
-- Number of positive vs negative feedback examples
-- Learning system status
-- Recent feedback trends
-
-Useful for understanding how the system is improving over time.
-""",
+                name="get_subscriptions_in_last_days",
+                description="Get subscription statistics for the last N days",
                 inputSchema={
                     "type": "object",
-                    "properties": {},
-                    "required": []
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days to look back (1-365)"
+                        }
+                    },
+                    "required": ["days"]
+                }
+            ),
+            Tool(
+                name="get_payment_success_rate_in_last_days",
+                description="Get payment success rate and revenue statistics for the last N days",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days to look back (1-365)"
+                        }
+                    },
+                    "required": ["days"]
+                }
+            ),
+            Tool(
+                name="get_user_payment_history",
+                description="Get payment history for a specific user by merchant_user_id",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "merchant_user_id": {
+                            "type": "string",
+                            "description": "The merchant user ID to query"
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days to look back (default: 90)"
+                        }
+                    },
+                    "required": ["merchant_user_id"]
+                }
+            ),
+            Tool(
+                name="get_database_status",
+                description="Check database connection and get basic statistics",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
+            ),
+            Tool(
+                name="execute_dynamic_sql",
+                description="""Execute a custom SELECT SQL query for complex analytics.
+                
+Database Schema:
+- subscription_contract_v2: subscription_id, merchant_user_id, status, subcription_start_date
+- subscription_payment_details: subscription_id, status, trans_amount_decimal, created_date
+
+Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.""",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "sql_query": {
+                            "type": "string",
+                            "description": "SELECT SQL query to execute (MySQL syntax)"
+                        }
+                    },
+                    "required": ["sql_query"]
+                }
+            ),
+            Tool(
+                name="record_query_feedback",
+                description="Record feedback on a dynamic query result (for system learning)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "original_question": {
+                            "type": "string",
+                            "description": "The original question that was asked"
+                        },
+                        "sql_query": {
+                            "type": "string", 
+                            "description": "The SQL query that was generated"
+                        },
+                        "was_helpful": {
+                            "type": "boolean",
+                            "description": "Whether the result was helpful and accurate"
+                        }
+                    },
+                    "required": ["original_question", "sql_query", "was_helpful"]
+                }
+            ),
+            Tool(
+                name="get_query_suggestions",
+                description="Get suggestions based on similar queries in memory",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "original_question": {
+                            "type": "string",
+                            "description": "The question to find similar queries for"
+                        }
+                    },
+                    "required": ["original_question"]
                 }
             )
         ]
+        
+        print(f"✅ Defined {len(self.tools)} tools", file=sys.stderr)
         self._register_handlers()
-    
-    async def _initialize_client(self):
-        """Initializes the config and the client on first use."""
-        if not self.universal_client:
-            logger.info("Initializing enhanced configuration and UniversalClient for MCP server...")
-            config_manager = ConfigManager()
-            self.config = config_manager.get_config()
+        
+    def _load_config(self):
+        """Load configuration from config.json"""
+        if self.config:
+            return  # Already loaded
             
-            # Set the environment variable before initializing the client
-            os.environ['GOOGLE_API_KEY'] = self.config['GOOGLE_API_KEY']
-            
-            self.universal_client = UniversalClient(config=self.config)
-            await self.universal_client.__aenter__()
-            logger.info("Enhanced UniversalClient with negative feedback learning initialized.")
+        # Try multiple locations for config.json
+        config_paths = [
+            Path(__file__).parent / 'config.json',
+            Path.cwd() / 'config.json',
+            Path.cwd() / 'client' / 'config.json'
+        ]
+        
+        for path in config_paths:
+            try:
+                if path.exists():
+                    with open(path, 'r') as f:
+                        self.config = json.load(f)
+                        print(f"✅ Found config at: {path}", file=sys.stderr)
+                        
+                        # Validate required fields
+                        required_fields = ['API_KEY_1', 'SUBSCRIPTION_API_URL']
+                        missing_fields = [field for field in required_fields if not self.config.get(field)]
+                        if missing_fields:
+                            raise Exception(f"Missing required config fields: {missing_fields}")
+                        
+                        return
+            except Exception as e:
+                print(f"⚠️ Could not read config from {path}: {e}", file=sys.stderr)
+                continue
+        
+        raise Exception(f"config.json not found. Tried: {[str(p) for p in config_paths]}")
+
+    async def _init_session(self):
+        """Initialize HTTP session if not already done"""
+        if not self.session:
+            connector = aiohttp.TCPConnector(
+                ssl=ssl.create_default_context(cafile=certifi.where()),
+                limit=10,
+                limit_per_host=5,
+                enable_cleanup_closed=True,
+                force_close=True,
+                ttl_dns_cache=300
+            )
+            self.session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=aiohttp.ClientTimeout(total=120),
+                headers={'Connection': 'close'}
+            )
 
     def _register_handlers(self):
-        """Registers handlers for listing and calling tools."""
+        print("🔧 Registering MCP handlers...", file=sys.stderr)
+        
         @self.server.list_tools()
         async def handle_list_tools() -> List[Tool]:
+            print("📋 MCP: list_tools called", file=sys.stderr)
             return self.tools
         
         @self.server.call_tool()
         async def handle_tool_call(name: str, args: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"🔧 Agent called tool: {name}")
-            await self._initialize_client()
-            handler_name = f"_handle_{name}"
+            print(f"🔧 MCP: tool_call '{name}' with args: {args}", file=sys.stderr)
+            
             try:
-                if hasattr(self, handler_name):
-                    handler = getattr(self, handler_name)
-                    result_text = await handler(args)
-                else:
-                    result_text = f"❌ Error: Unknown tool '{name}'."
-                return [TextContent(text=result_text)]
+                # Load config and init session
+                self._load_config()
+                await self._init_session()
+                
+                # Call the backend API tool directly
+                result_data = await self._call_api_tool(name, args)
+                
+                # Format the result
+                formatted_output = self._format_result(result_data, name)
+                
+                return [TextContent(text=formatted_output)]
+                
             except Exception as e:
-                logger.error(f"Error handling tool '{name}': {e}", exc_info=True)
-                return [TextContent(text=f"❌ An internal error occurred: {e}")]
-
-    async def _handle_natural_language_query(self, args: Dict[str, Any]) -> str:
-        """Handles the main query tool call from the agent with enhanced features."""
-        query = args.get("query")
-        if not query: 
-            return "❌ Error: 'query' parameter is missing."
+                print(f"❌ Error in tool call '{name}': {e}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+                return [TextContent(text=f"❌ Error: {str(e)}")]
         
-        # Increment query counter
-        self.learning_stats["total_queries"] += 1
-        
-        logger.info(f"🤔 Processing query: {query[:50]}...")
-        result_obj = await self.universal_client.query(query)
-        formatter = self.universal_client.formatter
-        
-        # Format the result
-        if isinstance(result_obj, list):
-            formatted_data = formatter.format_multi_result(result_obj, query)
-        else:
-            formatted_data = formatter.format_single_result(result_obj)
-        
-        # Handle dynamic query results with enhanced feedback instructions
-        if isinstance(result_obj, QueryResult) and result_obj.is_dynamic and result_obj.success and result_obj.data is not None:
-            self.last_dynamic_result = result_obj
-            
-            # Enhanced feedback instructions for dynamic queries
-            feedback_instructions = """
+        print("✅ MCP handlers registered", file=sys.stderr)
 
----
-**🧠 LEARNING OPPORTUNITY**
-
-This answer was generated using a custom SQL query. The system can learn from your feedback:
-
-**To help the AI improve:**
-- If the answer is **helpful and accurate**: Please ask the user if it was helpful, then call `record_feedback` with `was_helpful: true`
-- If the answer is **wrong or unhelpful**: Please ask the user if it was helpful, then call `record_feedback` with `was_helpful: false`
-
-**The system learns from BOTH positive and negative feedback** to:
-✅ Remember successful query patterns
-❌ Avoid failed approaches for similar questions
-🎯 Generate better SQL over time
-
-**Example user interaction:**
-User: "Was this answer helpful and accurate?"
-If user says yes → call record_feedback(was_helpful=true)
-If user says no → call record_feedback(was_helpful=false)"""
-            
-            return formatted_data + feedback_instructions
-        else:
-            # For pre-built tool results, no feedback needed
-            self.last_dynamic_result = None
-            return formatted_data
-
-    async def _handle_record_feedback(self, args: Dict[str, Any]) -> str:
-        """Handles the enhanced feedback tool call from the agent."""
-        was_helpful = args.get("was_helpful")
-        if was_helpful is None: 
-            return "❌ Error: 'was_helpful' parameter is missing."
+    async def _call_api_tool(self, tool_name: str, parameters: Dict = None) -> Dict:
+        """Call the subscription analytics API"""
+        headers = {
+            "Authorization": f"Bearer {self.config['API_KEY_1']}",
+            "Connection": "close"
+        }
+        payload = {"tool_name": tool_name, "parameters": parameters or {}}
+        server_url = self.config['SUBSCRIPTION_API_URL']
         
-        if not self.last_dynamic_result: 
-            return "⚠️ No recent dynamic query found to record feedback for. Feedback can only be recorded for custom SQL queries."
-        
-        # Update learning stats
-        if was_helpful:
-            self.learning_stats["positive_feedback"] += 1
-        else:
-            self.learning_stats["negative_feedback"] += 1
-        
-        # Submit feedback to the backend
         try:
-            await self.universal_client.submit_feedback(self.last_dynamic_result, was_helpful)
-            self.last_dynamic_result = None
-            
-            if was_helpful:
-                return """✅ **Positive feedback recorded!** 
-
-The system has learned from this successful query. It will:
-- Remember this (question → SQL) pattern for future similar questions
-- Use this as a positive example when generating new queries
-- Help improve accuracy for related analytics requests
-
-Thank you for helping the AI learn! 🎓"""
-            else:
-                return """📝 **Negative feedback recorded!**
-
-The system has learned from this unsuccessful query. It will:
-- Remember to avoid this SQL pattern for similar questions  
-- Use this as a negative example to prevent similar mistakes
-- Generate alternative approaches for related queries in the future
-
-Your feedback helps the AI improve - thank you! 🔄"""
+            async with self.session.post(f"{server_url}/execute", json=payload, headers=headers) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    return {
+                        "success": False,
+                        "error": f"HTTP {response.status}: {error_text}"
+                    }
+                
+                return await response.json()
                 
         except Exception as e:
-            logger.error(f"Error submitting feedback: {e}")
-            return f"⚠️ Feedback noted locally but couldn't sync with server: {e}"
+            return {
+                "success": False,
+                "error": f"Network error: {str(e)}"
+            }
 
-    async def _handle_get_learning_stats(self, args: Dict[str, Any]) -> str:
-        """Handles the learning statistics tool call."""
-        try:
-            # Get server-side learning stats if available
-            if self.universal_client:
-                # Try to get health info from server which includes learning stats
-                health_result = await self.universal_client.call_tool('get_database_status', {})
-                
-                stats_output = ["📊 **LEARNING SYSTEM STATISTICS**", "=" * 40]
-                
-                # Local session stats
-                stats_output.extend([
-                    f"**This Session:**",
-                    f"• Total queries processed: {self.learning_stats['total_queries']}",
-                    f"• Positive feedback given: {self.learning_stats['positive_feedback']}",
-                    f"• Negative feedback given: {self.learning_stats['negative_feedback']}",
-                    ""
-                ])
-                
-                # Server-side stats if available
-                if health_result.success and health_result.data:
-                    server_data = health_result.data
-                    if 'learning_stats' in server_data:
-                        learning_stats = server_data['learning_stats']
-                        stats_output.extend([
-                            f"**Overall System Learning:**",
-                            f"• Total learned queries: {learning_stats.get('total_learned_queries', 'N/A')}",
-                            f"• Positive examples stored: {learning_stats.get('positive_examples', 'N/A')}",
-                            f"• Negative examples stored: {learning_stats.get('negative_examples', 'N/A')}",
-                            f"• Semantic learning: {server_data.get('semantic_learning', 'Unknown')}",
-                            ""
-                        ])
-                    
-                    stats_output.extend([
-                        f"**System Status:**",
-                        f"• Server status: {server_data.get('status', 'Unknown')}",
-                        f"• Available tools: {server_data.get('available_tools', 'N/A')}",
-                        f"• Stability level: {server_data.get('stability', 'Unknown')}",
-                        f"• Last updated: {server_data.get('timestamp', 'Unknown')}"
-                    ])
-                
-                return "\n".join(stats_output)
-            else:
-                return "⚠️ Learning statistics not available - client not initialized."
-                
-        except Exception as e:
-            logger.error(f"Error getting learning stats: {e}")
-            return f"❌ Error retrieving learning statistics: {e}"
+    def _format_result(self, result_data: Dict, tool_name: str) -> str:
+        """Format API result for display"""
+        if not result_data.get('success', False):
+            return f"❌ ERROR: {result_data.get('error', 'Unknown error')}"
+        
+        if result_data.get('message'):
+            return f"ℹ️ {result_data['message']}"
+        
+        data = result_data.get('data')
+        if data is None:
+            return "✅ Query succeeded, but no data returned."
+        
+        output = []
+        is_dynamic = tool_name == 'execute_dynamic_sql'
+        header = f"📊 DYNAMIC QUERY RESULT" if is_dynamic else f"📊 RESULT FROM TOOL: {tool_name.upper()}"
+        output.append(header)
+        output.append("=" * len(header))
+        
+        if isinstance(data, list) and len(data) > 0:
+            # Table formatting
+            headers = list(data[0].keys())
+            col_widths = {h: len(str(h)) for h in headers}
+            
+            # Calculate column widths
+            for row in data:
+                for h in headers:
+                    col_widths[h] = max(col_widths[h], len(str(row.get(h, ''))))
+            
+            # Create table
+            header_line = " | ".join(h.ljust(col_widths[h]) for h in headers)
+            output.append(header_line)
+            output.append("-" * len(header_line))
+            
+            for row in data:
+                output.append(" | ".join(str(row.get(h, '')).ljust(col_widths[h]) for h in headers))
+            
+            output.append("")
+            output.append(f"📈 Total rows: {len(data)}")
+            
+            # Add helpful note for dynamic queries
+            if is_dynamic:
+                output.append("\n💡 This was a custom SQL query. You can use record_query_feedback to help improve the system.")
+            
+        elif isinstance(data, dict):
+            for key, value in data.items():
+                output.append(f"{key}: {value}")
+        else:
+            output.append(str(data))
+        
+        return "\n".join(output)
 
     async def cleanup(self):
-        """Enhanced cleanup with learning statistics summary."""
-        if self.universal_client:
-            await self.universal_client.__aexit__(None, None, None)
-            logger.info("✅ Enhanced Universal client cleaned up.")
-        
-        # Log session learning summary
-        total_feedback = self.learning_stats['positive_feedback'] + self.learning_stats['negative_feedback']
-        logger.info(f"📊 Session Summary: {self.learning_stats['total_queries']} queries, "
-                   f"{total_feedback} feedback responses ({self.learning_stats['positive_feedback']} positive, "
-                   f"{self.learning_stats['negative_feedback']} negative)")
+        print("🧹 Cleaning up full tools MCP client...", file=sys.stderr)
+        if self.session:
+            await self.session.close()
 
-# --- Main Execution Block ---
 async def main():
-    print("🌉 Starting Enhanced MCP Server (v1.9.4 Compatible) with Negative Feedback Learning", file=sys.stderr)
-    print(f"🐍 Python: {sys.executable}", file=sys.stderr)
-    print(f"📁 Working dir: {os.getcwd()}", file=sys.stderr)
+    """Main entry point for full tools MCP server"""
+    print(f"🚀 Full Tools MCP Client starting from: {Path(__file__).parent.absolute()}", file=sys.stderr)
+    print(f"🔧 This version exposes all 7 backend tools individually", file=sys.stderr)
     
-    server_instance = UniversalClientMCPServer()
     try:
+        mcp_client = FullToolsMCPClient()
+        print("✅ Full tools MCP client instance created", file=sys.stderr)
+        
         async with mcp.server.stdio.stdio_server() as (reader, writer):
-            print("🚀 Enhanced MCP Server is running and ready for Claude to connect.", file=sys.stderr)
-            print("🧠 Features: Context awareness, auto-fix, positive & negative feedback learning", file=sys.stderr)
-            
-            # MCP v1.9.4 requires InitializationOptions with capabilities
+            print("🚀 Full Tools MCP Server ready for Claude Desktop", file=sys.stderr)
             initialization_options = InitializationOptions(
-                server_name="subscription-analytics-v1.9.4",
-                server_version="2.0.0",
-                capabilities={}  # Empty capabilities for basic server
+                server_name="subscription-analytics",
+                server_version="1.0.0",
+                capabilities={}
             )
-            
-            await server_instance.server.run(reader, writer, initialization_options)
+            await mcp_client.server.run(reader, writer, initialization_options)
     except Exception as e:
-        print(f"❌ Critical error in Enhanced MCP Server: {e}", file=sys.stderr)
+        print(f"❌ Full tools MCP server error: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc(file=sys.stderr)
+        raise
     finally:
-        await server_instance.cleanup()
-        print("👋 Enhanced MCP Server shutdown complete.", file=sys.stderr)
+        await mcp_client.cleanup()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Enhanced MCP Server shut down by user.", file=sys.stderr)
+        print("🛑 Full tools MCP server stopped by user", file=sys.stderr)
     except Exception as e:
-        print(f"Fatal error: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc(file=sys.stderr)
+        print(f"💥 Fatal error: {e}", file=sys.stderr)
         sys.exit(1)

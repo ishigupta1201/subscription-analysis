@@ -179,3 +179,69 @@
 2025-06-23 10:22:43,014 - api_server - INFO - ✅ Encoding successful with strategy 1
 2025-06-23 10:22:43,098 - api_server - INFO - 💾 Positive feedback stored successfully
 2025-06-23 10:22:43,099 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-23 11:18:17,547 - faiss.loader - INFO - Loading faiss.
+2025-06-23 11:18:17,558 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-23 11:18:17,561 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-23 11:18:21,292 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-23 11:18:21,293 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 11:18:22,031 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 11:18:22,034 - __main__ - INFO - 🧠 Loaded 8 queries from memory
+2025-06-23 11:18:22,034 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 11:18:22,037 - __main__ - INFO - 🚀 Starting CRASH-RESISTANT server on port 8000
+2025-06-23 11:18:22,037 - __main__ - INFO - 🛡️ Enhanced error handling and logging enabled
+2025-06-23 11:18:22,037 - __main__ - INFO - 🧠 Local model support enabled - NO DOWNLOADS
+2025-06-23 11:18:22,075 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-23 11:18:22,075 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 11:18:22,128 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 11:18:22,130 - api_server - INFO - 🧠 Loaded 8 queries from memory
+2025-06-23 11:18:22,130 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 11:18:22,132 - api_server - INFO - 🚀 Starting CRASH-RESISTANT Subscription Analytics API Server
+2025-06-23 11:18:22,132 - api_server - INFO - Semantic learning: enabled
+2025-06-23 11:18:22,132 - api_server - INFO - Available tools: 7
+2025-06-23 11:18:22,132 - api_server - INFO - 🛑 Shutting down API Server
+2025-06-23 11:18:39,564 - api_server - INFO - 🛑 Shutting down API Server
+2025-06-23 11:18:42,681 - faiss.loader - INFO - Loading faiss.
+2025-06-23 11:18:42,697 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-23 11:18:42,701 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-23 11:18:46,057 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-23 11:18:46,057 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 11:18:46,769 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 11:18:46,771 - __main__ - INFO - 🧠 Loaded 8 queries from memory
+2025-06-23 11:18:46,771 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 11:18:46,773 - __main__ - INFO - 🚀 Starting CRASH-RESISTANT server on port 8000
+2025-06-23 11:18:46,774 - __main__ - INFO - 🛡️ Enhanced error handling and logging enabled
+2025-06-23 11:18:46,774 - __main__ - INFO - 🧠 Local model support enabled - NO DOWNLOADS
+2025-06-23 11:18:46,803 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-23 11:18:46,803 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-23 11:18:46,852 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-23 11:18:46,854 - api_server - INFO - 🧠 Loaded 8 queries from memory
+2025-06-23 11:18:46,854 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-23 11:18:46,856 - api_server - INFO - 🚀 Starting CRASH-RESISTANT Subscription Analytics API Server
+2025-06-23 11:18:46,856 - api_server - INFO - Semantic learning: enabled
+2025-06-23 11:18:46,856 - api_server - INFO - Available tools: 7
+2025-06-23 11:44:27,216 - api_server - INFO - 🔧 Tool execution request: get_subscriptions_in_last_days
+2025-06-23 11:44:27,217 - api_server - INFO - ⚙️ Executing get_subscriptions_in_last_days with parameters: {'days': 7.0}
+2025-06-23 11:44:27,217 - api_server - INFO - 🔍 Executing query: 
+        SELECT 
+            COUNT(*) as new_subscriptions,
+            COALESCE(SUM(CASE WHEN statu...
+2025-06-23 11:44:28,840 - mysql.connector - INFO - package: mysql.connector.plugins
+2025-06-23 11:44:28,842 - mysql.connector - INFO - plugin_name: caching_sha2_password
+2025-06-23 11:44:28,842 - mysql.connector - INFO - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-06-23 11:44:31,928 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-23 11:44:32,239 - api_server - INFO - ✅ Tool get_subscriptions_in_last_days completed successfully in 5.02s
+2025-06-23 11:44:36,796 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-23 11:44:36,796 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROUP BY sc.merchant_user_id ORDER BY total_subscriptions DESC LIMIT 10'}
+2025-06-23 11:44:36,797 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROU...
+2025-06-23 11:44:36,798 - api_server - INFO - ✅ SQL validation passed
+2025-06-23 11:44:36,798 - api_server - INFO - 🔍 Executing: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROUP BY sc.merchant_user_id ORDER BY total_subscriptions DESC LIMIT 10
+2025-06-23 11:44:36,798 - api_server - INFO - 🔍 Executing query: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROU...
+2025-06-23 11:44:41,440 - api_server - INFO - ✅ Query executed successfully, returned 10 rows
+2025-06-23 11:44:41,731 - api_server - INFO - ✅ Dynamic SQL completed successfully with 10 rows
+2025-06-23 11:44:41,731 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 4.94s
+2025-06-23 11:44:49,012 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-23 11:44:49,014 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'top 10 users', 'sql_query': 'SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions FROM subscription_contract_v2 AS sc GROUP BY sc.merchant_user_id ORDER BY total_subscriptions DESC LIMIT 10', 'was_helpful': True}
+2025-06-23 11:44:49,014 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-23 11:44:49,051 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-23 11:44:49,148 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-23 11:44:49,148 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.14s
