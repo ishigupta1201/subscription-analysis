@@ -1,0 +1,44 @@
+# Exclude client directory (not needed on server)
+client/
+
+# Exclude development files
+.git
+.gitignore
+README.md
+*.md
+.env
+
+# Exclude Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Exclude virtual environments
+venv/
+env/
+.venv/
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Exclude OS files
+.DS_Store
+Thumbs.db
+
+# Exclude logs
+*.log
+logs/
+
+# Exclude any local model files
+model/
+*.model
+*.bin
+
+# Exclude Railway specific files
+Procfile
+railway.json

@@ -925,20 +925,21 @@ if __name__ == "__main__":
         logger.error(f"❌ FATAL: Missing required environment variables: {missing_vars}")
         sys.exit(1)
     
+    # Cloud Run sets PORT environment variable
     port = int(os.getenv("PORT", 8000))
     
-    logger.info(f"🚀 Starting CRASH-RESISTANT server on port {port}")
+    logger.info(f"🚀 Starting server on port {port}")
     logger.info("🛡️ Enhanced error handling and logging enabled")
-    logger.info("🧠 Local model support enabled - NO DOWNLOADS")
+    logger.info("🧠 Semantic learning enabled for Cloud Run")
     
-    # Ultra-stable configuration
+    # Optimized configuration for Cloud Run
     uvicorn.run(
         "api_server:app",
         host="0.0.0.0",
         port=port,
-        reload=False,           # Critical: prevent reloads
-        workers=1,              # Single worker for stability
+        reload=False,
+        workers=1,
         log_level="info",
         access_log=True,
-        loop="asyncio"          # Use asyncio loop
+        loop="asyncio"
     )
