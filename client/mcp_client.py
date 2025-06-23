@@ -1,714 +1,358 @@
-#!/usr/bin/env python3
-"""
-MCP Client for Universal Client - ENHANCED FIXED VERSION
-Provides an MCP-compatible interface for the universal client with full date range support
-"""
+# client/mcp_client.py
 
 import asyncio
-import json
 import logging
-import os
 import sys
-import inspect
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable, Awaitable
+import os
+from typing import Any, Dict, List
 
-# MCP imports
+# --- MCP Imports (v1.9.4 Compatible) ---
 try:
-    import mcp
-    from mcp import types
-    from mcp.server import Server
-    from mcp.types import Tool, TextContent
+    from mcp.server import Server, InitializationOptions
+    from mcp.types import TextContent, Tool
     import mcp.server.stdio
-    import mcp.types as types
-except ImportError:
-    print("❌ MCP not installed. Run: pip install mcp")
+    print("✅ MCP v1.9.4 imports successful", file=sys.stderr)
+except ImportError as e:
+    print(f"❌ MCP import failed: {e}", file=sys.stderr)
+    print("Available MCP components:", file=sys.stderr)
+    try:
+        import mcp.types
+        print(f"mcp.types contents: {[x for x in dir(mcp.types) if not x.startswith('_')]}", file=sys.stderr)
+    except:
+        pass
     sys.exit(1)
 
-# Add parent directory to path to allow importing from the client module
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-
-# Import your existing universal client
+# --- Local Package Imports ---
 try:
-    from universal_client import UniversalClient, QueryResult
-except ImportError:
-    try:
-        # Try alternative import paths
-        sys.path.insert(0, os.getcwd())
-        from universal_client import UniversalClient, QueryResult
-    except ImportError:
-        print("❌ Universal client not found. Make sure universal_client.py is in the same directory or PYTHONPATH")
-        print(f"Current working directory: {os.getcwd()}")
-        print(f"Script directory: {Path(__file__).parent}")
-        sys.exit(1)
+    from .universal_client import UniversalClient, QueryResult
+    from .config_manager import ConfigManager
+    print("✅ Project imports successful", file=sys.stderr)
+except ImportError as e:
+    print(f"❌ Project import failed: {e}", file=sys.stderr)
+    print(f"Current working directory: {os.getcwd()}", file=sys.stderr)
+    sys.exit(1)
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger("mcp-universal-client")
+# --- Basic Setup ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("mcp-server-v1.9.4")
 
+# --- The Enhanced MCP Server Class ---
 class UniversalClientMCPServer:
-    """MCP Server wrapper for your Universal Client - ENHANCED FIXED VERSION"""
+    """Enhanced MCP Server wrapper compatible with MCP v1.9.4."""
     
     def __init__(self):
-        self.server = Server("subscription-analytics")
-        self.universal_client = None
+        self.server = Server("subscription-analytics-v1.9.4")
+        self.universal_client: UniversalClient | None = None
+        self.last_dynamic_result: QueryResult | None = None
+        self.config = {}
+        self.learning_stats = {"positive_feedback": 0, "negative_feedback": 0, "total_queries": 0}
         
-        # Load configuration for the universal client
-        self.config = self._load_config()
-        
-        # Define MCP tools that map to your universal client capabilities
+        # Enhanced tool definitions compatible with v1.9.4
         self.tools = [
             Tool(
                 name="natural_language_query",
-                description="Process any natural language query about subscription analytics using AI",
+                description="""
+The primary tool for subscription analytics. Processes any natural language query about subscription data.
+
+Features:
+- Uses pre-built functions for common queries (fast, reliable)
+- Generates custom SQL for complex analytics (flexible, powerful) 
+- Context-aware: understands follow-up questions like "show me users higher than that"
+- Auto-fixes SQL syntax errors (SQLite → MySQL conversion)
+- Learns from both positive and negative feedback
+
+Examples:
+• "What's the payment success rate for the last month?"
+• "How many users have success rate above 15%?"
+• "Show me their individual failure rates"
+• "How many payments in the same timeframe?"
+
+The system will intelligently choose between pre-built tools or generate custom SQL as needed.
+""",
                 inputSchema={
-                    "type": "object",
+                    "type": "object", 
                     "properties": {
                         "query": {
-                            "type": "string",
-                            "description": "Natural language query about subscription data (e.g., 'compare 7 days vs 30 days performance')"
+                            "type": "string", 
+                            "description": "The user's question in plain English about subscription or payment analytics."
                         }
-                    },
+                    }, 
                     "required": ["query"]
                 }
             ),
             Tool(
-                name="get_subscription_summary",
-                description="Get comprehensive subscription and payment summary for a specific period",
+                name="record_feedback",
+                description="""
+Record user feedback on a dynamically generated query result.
+
+IMPORTANT: Only call this tool AFTER the user explicitly provides feedback (yes/no/good/bad) 
+on an answer that was generated using custom SQL (marked as "DYNAMIC QUERY RESULT").
+
+The system learns from BOTH positive and negative feedback:
+- Positive feedback: Stores successful (question, SQL) patterns for future use
+- Negative feedback: Remembers failed approaches to avoid similar mistakes
+
+This enhances the AI's ability to generate better queries over time.
+""",
                 inputSchema={
-                    "type": "object",
+                    "type": "object", 
                     "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back (default: 30)",
-                            "minimum": 1,
-                            "maximum": 365,
-                            "default": 30
+                        "was_helpful": {
+                            "type": "boolean",
+                            "description": "True if the user found the answer helpful/accurate, False if not helpful/inaccurate"
                         }
-                    },
-                    "required": []
+                    }, 
+                    "required": ["was_helpful"]
                 }
             ),
             Tool(
-                name="get_subscriptions_in_last_days",
-                description="Get subscription statistics for the last N days",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back",
-                            "minimum": 1,
-                            "maximum": 365
-                        }
-                    },
-                    "required": ["days"]
-                }
-            ),
-            Tool(
-                name="get_payment_success_rate_in_last_days",
-                description="Get payment success rate statistics for the last N days",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back",
-                            "minimum": 1,
-                            "maximum": 365
-                        }
-                    },
-                    "required": ["days"]
-                }
-            ),
-            Tool(
-                name="get_database_status",
-                description="Check database connection and get basic statistics",
+                name="get_learning_stats",
+                description="""
+Get statistics about the system's learning progress and feedback history.
+
+Shows:
+- Total queries processed
+- Number of positive vs negative feedback examples
+- Learning system status
+- Recent feedback trends
+
+Useful for understanding how the system is improving over time.
+""",
                 inputSchema={
                     "type": "object",
                     "properties": {},
                     "required": []
                 }
-            ),
-            Tool(
-                name="get_user_payment_history",
-                description="Get payment history for a specific user",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "merchant_user_id": {
-                            "type": "string",
-                            "description": "The merchant user ID to query"
-                        },
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back (default: 90)",
-                            "minimum": 1,
-                            "maximum": 365,
-                            "default": 90
-                        }
-                    },
-                    "required": ["merchant_user_id"]
-                }
-            ),
-            Tool(
-                name="compare_periods",
-                description="Compare analytics across multiple time periods",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "periods": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "List of day periods to compare (e.g., [7, 14, 30])",
-                            "minItems": 2,
-                            "maxItems": 5
-                        }
-                    },
-                    "required": ["periods"]
-                }
-            ),
-            Tool(
-                name="get_subscriptions_by_date_range",
-                description="Get subscription statistics for a specific date range",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "start_date": {
-                            "type": "string",
-                            "description": "Start date in YYYY-MM-DD format"
-                        },
-                        "end_date": {
-                            "type": "string",
-                            "description": "End date in YYYY-MM-DD format"
-                        }
-                    },
-                    "required": ["start_date", "end_date"]
-                }
-            ),
-            Tool(
-                name="get_payments_by_date_range",
-                description="Get payment statistics for a specific date range",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "start_date": {
-                            "type": "string",
-                            "description": "Start date in YYYY-MM-DD format"
-                        },
-                        "end_date": {
-                            "type": "string",
-                            "description": "End date in YYYY-MM-DD format"
-                        }
-                    },
-                    "required": ["start_date", "end_date"]
-                }
-            ),
-            Tool(
-                name="get_analytics_by_date_range",
-                description="Get comprehensive analytics for a specific date range",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "start_date": {
-                            "type": "string",
-                            "description": "Start date in YYYY-MM-DD format"
-                        },
-                        "end_date": {
-                            "type": "string",
-                            "description": "End date in YYYY-MM-DD format"
-                        }
-                    },
-                    "required": ["start_date", "end_date"]
-                }
             )
         ]
-        
-        # Register MCP handlers
         self._register_handlers()
     
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration for universal client with enhanced error handling"""
-        from dotenv import load_dotenv
-        
-        # Try to load .env from multiple locations
-        env_paths = [
-            '.env',
-            '../.env',
-            os.path.join(os.getcwd(), '.env'),
-            os.path.join(Path(__file__).parent, '.env'),
-            os.path.join(Path(__file__).parent.parent, '.env')
-        ]
-        
-        env_loaded = False
-        for env_path in env_paths:
-            if os.path.exists(env_path):
-                load_dotenv(env_path)
-                env_loaded = True
-                logger.info(f"Loaded .env from: {env_path}")
-                break
-        
-        if not env_loaded:
-            logger.warning("No .env file found, using environment variables only")
-        
-        config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
-            'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
-            'gemini_api_key': os.getenv('GEMINI_API_KEY'),
-            'timeout': int(os.getenv('SUBSCRIPTION_API_TIMEOUT', '30')),
-            'retry_attempts': int(os.getenv('SUBSCRIPTION_API_RETRIES', '3'))
-        }
-        
-        # DEBUG: Print configuration (sanitized)
-        logger.info(f"🔍 MCP Client Configuration:")
-        logger.info(f"  Working Directory: {os.getcwd()}")
-        logger.info(f"  Script Directory: {Path(__file__).parent}")
-        logger.info(f"  URL: {config['server_url']}")
-        logger.info(f"  API Key: {'SET (' + config['api_key'][:20] + '...)' if config['api_key'] else 'MISSING'}")
-        logger.info(f"  Gemini Key: {'SET' if config['gemini_api_key'] else 'MISSING'}")
-        
-        # Validate required config
-        required_keys = ['server_url', 'api_key']
-        missing_keys = []
-        for key in required_keys:
-            if not config.get(key):
-                missing_keys.append(key)
-        
-        if missing_keys:
-            logger.error(f"Missing required configuration: {missing_keys}")
-            logger.error("Please set environment variables:")
-            logger.error("  - SUBSCRIPTION_API_URL (or use default)")
-            logger.error("  - API_KEY_1 or SUBSCRIPTION_API_KEY")
-            logger.error("  - GEMINI_API_KEY (optional but recommended)")
-            raise ValueError(f"Missing configuration: {missing_keys}")
-        
-        logger.info(f"✅ Configuration loaded successfully")
-        return config
-    
-    def _register_handlers(self):
-        """Register MCP protocol handlers"""
-        logger.info("🔄 Registering MCP handlers...")
-        
-        # Create a dictionary to map tool names to handlers
-        self._tool_handlers = {}
-        
-        # Create a single tool call handler
-        @self.server.call_tool()
-        async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[types.TextContent]:
-            logger.info(f"🔧 Handling tool call: {name} with args: {arguments}")
+    async def _initialize_client(self):
+        """Initializes the config and the client on first use."""
+        if not self.universal_client:
+            logger.info("Initializing enhanced configuration and UniversalClient for MCP server...")
+            config_manager = ConfigManager()
+            self.config = config_manager.get_config()
             
-            try:
-                # Execute the tool
-                result = await self.handle_call_tool(name, arguments)
-                
-                # Return as TextContent
-                return [types.TextContent(type="text", text=str(result))]
-                        
-            except Exception as e:
-                error_msg = f"❌ Error in tool handler for {name}: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                return [types.TextContent(type="text", text=error_msg)]
-        
-        # Register the list_tools handler
+            # Set the environment variable before initializing the client
+            os.environ['GOOGLE_API_KEY'] = self.config['GOOGLE_API_KEY']
+            
+            self.universal_client = UniversalClient(config=self.config)
+            await self.universal_client.__aenter__()
+            logger.info("Enhanced UniversalClient with negative feedback learning initialized.")
+
+    def _register_handlers(self):
+        """Registers handlers for listing and calling tools."""
         @self.server.list_tools()
         async def handle_list_tools() -> List[Tool]:
-            """List available tools"""
-            logger.info("🔧 MCP client requesting tool list")
-            # Log the tools being returned for debugging
-            for tool in self.tools:
-                logger.debug(f"🔧 Available tool: {tool.name} - {tool.description}")
             return self.tools
         
-        logger.info("✅ MCP handlers registered successfully")
-    
-    async def handle_call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
-        """
-        Handle tool calls from MCP clients - ENHANCED VERSION
-        
-        Args:
-            name: Name of the tool to call
-            arguments: Dictionary of arguments for the tool
-            
-        Returns:
-            str: The result of the tool execution as a string
-        """
-        logger.info(f"🎯 MCP tool call received: {name} with arguments: {arguments}")
-        
-        try:
-            # Ensure universal client is initialized
-            if not self.universal_client:
-                logger.info("🔌 Initializing UniversalClient...")
-                self.universal_client = UniversalClient(**self.config)
-                await self.universal_client.__aenter__()
-                logger.info("✅ UniversalClient initialized successfully")
-            
-            logger.debug(f"🛠️ Executing tool: {name}")
-            
-            # Handle different tool calls with enhanced routing
-            if name == "natural_language_query":
-                result = await self._handle_natural_language_query(arguments)
-            elif name == "compare_periods":
-                result = await self._handle_compare_periods(arguments)
-            elif name in ["get_subscriptions_by_date_range", "get_payments_by_date_range", "get_analytics_by_date_range"]:
-                # Handle date range tools - try direct API first, then natural language
-                result = await self._handle_date_range_tool(name, arguments)
-            elif name in ["get_subscription_summary", "get_subscriptions_in_last_days", 
-                          "get_payment_success_rate_in_last_days", "get_database_status", 
-                          "get_user_payment_history"]:
-                # Handle standard API tools
-                result = await self._handle_api_tool_call(name, arguments)
-            else:
-                # Unknown tool - try direct API call as fallback
-                logger.warning(f"Unknown tool {name}, trying direct API call")
-                result = await self._handle_api_tool_call(name, arguments)
-            
-            logger.debug(f"✅ Tool {name} executed successfully")
-            return result
-            
-        except Exception as e:
-            error_msg = f"❌ Tool call failed: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            
-            # Include more detailed error information for debugging
-            import traceback
-            error_details = traceback.format_exc()
-            logger.debug(f"Full error details: {error_details}")
-            
-            # Format a user-friendly error message
-            error_message = (
-                f"❌ Error executing {name}: {str(e)}\n\n"
-                "Troubleshooting:\n"
-                f"- Tool: {name}\n"
-                f"- Arguments: {arguments}\n"
-                f"- API URL: {self.config.get('server_url', 'Not set')}\n"
-                f"- API Key: {'Present' if self.config.get('api_key') else 'Missing'}\n"
-                "\nPlease check:\n"
-                "- Is the API server running?\n"
-                "- Are the environment variables correct?\n"
-                "- Is there network connectivity?"
-            )
-            return error_message
-    
-    async def _handle_natural_language_query(self, arguments: Dict[str, Any]) -> str:
-        """Handle natural language queries using your universal client"""
-        query = arguments.get("query", "")
-        logger.info(f"🤖 Processing natural language query: '{query}'")
-        
-        try:
-            # Use your universal client's query_formatted method
-            result = await self.universal_client.query_formatted(query)
-            return result
-        except Exception as e:
-            logger.error(f"Natural language query failed: {e}")
-            return f"❌ Natural language query failed: {str(e)}"
-    
-    async def _handle_compare_periods(self, arguments: Dict[str, Any]) -> str:
-        """Handle period comparison queries"""
-        periods = arguments.get("periods", [])
-        logger.info(f"📊 Comparing periods: {periods}")
-        
-        try:
-            # Create a natural language query for comparison
-            periods_str = " vs ".join([f"{p} days" for p in periods])
-            query = f"compare the statistics for {periods_str}"
-            
-            # Use your universal client
-            result = await self.universal_client.query_formatted(query)
-            return result
-        except Exception as e:
-            logger.error(f"Period comparison failed: {e}")
-            return f"❌ Comparison failed: {str(e)}"
-    
-    async def _handle_date_range_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
-        """Handle date range tools with fallback strategy"""
-        start_date = arguments.get("start_date", "")
-        end_date = arguments.get("end_date", "")
-        
-        logger.info(f"📅 Date range tool: {tool_name} from {start_date} to {end_date}")
-        
-        try:
-            # First, try direct API call
-            logger.debug(f"Trying direct API call for {tool_name}")
-            result = await self._handle_api_tool_call(tool_name, arguments)
-            
-            # Check if result looks like an error
-            if "❌" in result or "Error" in result or "Failed" in result:
-                logger.warning(f"Direct API call failed, trying natural language approach")
-                # Fallback to natural language
-                if tool_name == "get_analytics_by_date_range":
-                    query = f"get comprehensive analytics from {start_date} to {end_date}"
-                elif tool_name == "get_subscriptions_by_date_range":
-                    query = f"get subscription statistics from {start_date} to {end_date}"
-                elif tool_name == "get_payments_by_date_range":
-                    query = f"get payment statistics from {start_date} to {end_date}"
-                else:
-                    return result  # Return the error from direct API call
-                
-                # Try natural language approach
-                result = await self._handle_natural_language_query({"query": query})
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Date range tool failed: {e}")
-            return f"❌ Date range query failed: {str(e)}"
-    
-    async def _handle_api_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> str:
-        """
-        Handle tool calls that go to the API server via universal client's call_tool method
-        """
-        logger.info(f"🔧 API tool call: {tool_name} with args: {arguments}")
-        
-        # Clean up the arguments (remove None values)
-        clean_args = {k: v for k, v in arguments.items() if v is not None}
-        
-        try:
-            # Use universal client's call_tool method to hit the API
-            result = await self.universal_client.call_tool(tool_name, clean_args)
-            
-            if result.success:
-                # Format the result using the universal client's formatter
-                formatted_result = self.universal_client.formatter.format_single_result(result)
-                return formatted_result
-            else:
-                return f"❌ API Error: {result.error}"
-                
-        except AttributeError as e:
-            logger.error(f"❌ Universal client method not found: {e}")
-            return f"❌ Client error: Universal client missing required method or attribute"
-        except Exception as e:
-            logger.error(f"❌ API tool call failed: {e}")
-            return f"❌ API tool call failed: {str(e)}"
-    
-    async def cleanup(self):
-        """Cleanup resources"""
-        if self.universal_client:
+        @self.server.call_tool()
+        async def handle_tool_call(name: str, args: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"🔧 Agent called tool: {name}")
+            await self._initialize_client()
+            handler_name = f"_handle_{name}"
             try:
-                await self.universal_client.__aexit__(None, None, None)
-                logger.info("✅ Universal client cleaned up")
+                if hasattr(self, handler_name):
+                    handler = getattr(self, handler_name)
+                    result_text = await handler(args)
+                else:
+                    result_text = f"❌ Error: Unknown tool '{name}'."
+                return [TextContent(text=result_text)]
             except Exception as e:
-                logger.error(f"Error during cleanup: {e}")
+                logger.error(f"Error handling tool '{name}': {e}", exc_info=True)
+                return [TextContent(text=f"❌ An internal error occurred: {e}")]
 
-# MCP Server Mode
-async def run_mcp_server():
-    """Run the MCP server - ENHANCED VERSION"""
-    logger.info("🌉 Starting MCP Server for Claude Desktop")
-    
-    try:
-        mcp_server = UniversalClientMCPServer()
+    async def _handle_natural_language_query(self, args: Dict[str, Any]) -> str:
+        """Handles the main query tool call from the agent with enhanced features."""
+        query = args.get("query")
+        if not query: 
+            return "❌ Error: 'query' parameter is missing."
         
-        # Log all registered tools at startup
-        logger.info("📋 Registered tools:")
-        for tool in mcp_server.tools:
-            logger.info(f"  - {tool.name}: {tool.description}")
+        # Increment query counter
+        self.learning_stats["total_queries"] += 1
         
-        # This is what Claude Desktop expects - stdio server
-        logger.info("🔌 Starting MCP server on stdio...")
-        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-            logger.info("🚀 MCP Server is running and ready to accept connections from Claude Desktop")
-            await mcp_server.server.run(
-                read_stream,
-                write_stream,
-                mcp_server.server.create_initialization_options()
-            )
-    except KeyboardInterrupt:
-        logger.info("🛑 MCP Server interrupted by user")
-    except Exception as e:
-        logger.error(f"❌ MCP Server error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise
-    finally:
-        logger.info("🧹 Cleaning up MCP server resources...")
-        if 'mcp_server' in locals():
-            await mcp_server.cleanup()
-        logger.info("👋 MCP Server shutdown complete")
-
-# Interactive Mode
-async def run_interactive():
-    """Run interactive mode with enhanced error handling"""
-    print("🎯 Subscription Analytics - Interactive Mode")
-    print("=" * 50)
-    
-    try:
-        # Try to import and use the universal client's interactive mode
-        try:
-            from universal_client import interactive_mode
-            await interactive_mode()
-        except ImportError:
-            logger.warning("Could not import interactive_mode, using fallback")
-            await _fallback_interactive()
-    except Exception as e:
-        logger.error(f"Interactive mode failed: {e}")
-        print(f"❌ Interactive mode failed: {e}")
-
-async def _fallback_interactive():
-    """Fallback interactive mode"""
-    print("Running basic interactive mode...")
-    
-    # Load config
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
+        logger.info(f"🤔 Processing query: {query[:50]}...")
+        result_obj = await self.universal_client.query(query)
+        formatter = self.universal_client.formatter
         
-        config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
-            'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
-            'gemini_api_key': os.getenv('GEMINI_API_KEY')
-        }
-        
-        missing = []
-        if not config['api_key']:
-            missing.append('API_KEY_1')
-        if not config['gemini_api_key']:
-            missing.append('GEMINI_API_KEY')
-        
-        if missing:
-            print(f"❌ Missing environment variables: {missing}")
-            return
-        
-    except Exception as e:
-        print(f"❌ Configuration error: {e}")
-        return
-    
-    # Run interactive session
-    try:
-        async with UniversalClient(**config) as client:
-            print("\n💬 Enter your queries (or 'quit' to exit):")
-            while True:
-                try:
-                    query = input("\n🎯 Query: ").strip()
-                    if query.lower() in ['quit', 'exit', 'q']:
-                        break
-                    if not query:
-                        continue
-                    
-                    result = await client.query_formatted(query)
-                    print(result)
-                except KeyboardInterrupt:
-                    break
-                except Exception as e:
-                    print(f"❌ Query failed: {e}")
-    except Exception as e:
-        print(f"❌ Client initialization failed: {e}")
-
-# Single Query Mode
-async def run_single_query(query: str):
-    """Run single query mode with enhanced error handling"""
-    try:
-        # Try to use the universal client's single query mode
-        try:
-            from universal_client import single_query_mode
-            exit_code = await single_query_mode(query)
-            sys.exit(exit_code)
-        except ImportError:
-            logger.warning("Could not import single_query_mode, using fallback")
-            await _fallback_single_query(query)
-    except Exception as e:
-        print(f"❌ Single query mode failed: {e}")
-        sys.exit(1)
-
-async def _fallback_single_query(query: str):
-    """Fallback single query implementation"""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-        
-        config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
-            'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
-            'gemini_api_key': os.getenv('GEMINI_API_KEY')
-        }
-        
-        missing = []
-        if not config['api_key']:
-            missing.append('API_KEY_1')
-        if not config['gemini_api_key']:
-            missing.append('GEMINI_API_KEY')
-        
-        if missing:
-            print(f"❌ Missing environment variables: {missing}")
-            sys.exit(1)
-        
-        async with UniversalClient(**config) as client:
-            result = await client.query_formatted(query)
-            print(result)
-            sys.exit(0)
-    except Exception as e:
-        print(f"❌ Query execution failed: {e}")
-        sys.exit(1)
-
-# Main Function
-async def main():
-    """Main entry point - ENHANCED VERSION"""
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # Check command line arguments
-    if len(sys.argv) > 1:
-        if sys.argv[1] in ['--mcp', '-m']:
-            # MCP server mode - this is what Claude Desktop calls
-            logger.info("🚀 Starting in MCP server mode (--mcp flag detected)")
-            await run_mcp_server()
-            return
-        elif sys.argv[1] in ['--help', '-h']:
-            print("""
-🎯 Universal Client MCP Bridge - ENHANCED VERSION
-
-Usage:
-  python mcp_client.py           # Interactive mode
-  python mcp_client.py --mcp     # MCP server mode (for Claude Desktop)
-  python mcp_client.py "query"   # Single query mode
-  python mcp_client.py --debug   # Enable debug logging
-
-Examples:
-  python mcp_client.py --mcp
-  python mcp_client.py "show me database status"
-  python mcp_client.py "analytics from 2024-06-01 to 2024-12-11"
-  python mcp_client.py "compare 7 days vs 30 days performance"
-
-Features:
-  ✅ Natural language queries with Gemini AI
-  ✅ Date range analytics (specific dates)
-  ✅ Period comparisons (last N days)
-  ✅ Beautiful formatted output
-  ✅ Claude Desktop integration via MCP
-  ✅ Enhanced error handling and debugging
-  ✅ Fallback mechanisms for reliability
-            """)
-            return
-        elif sys.argv[1] == '--debug':
-            logging.getLogger().setLevel(logging.DEBUG)
-            logger.debug("🔍 Debug logging enabled")
-            if len(sys.argv) > 2 and sys.argv[2] == '--mcp':
-                await run_mcp_server()
-                return
-            else:
-                await run_interactive()
-                return
+        # Format the result
+        if isinstance(result_obj, list):
+            formatted_data = formatter.format_multi_result(result_obj, query)
         else:
-            # Single query mode
-            query = " ".join(sys.argv[1:])
-            await run_single_query(query)
-            return
+            formatted_data = formatter.format_single_result(result_obj)
+        
+        # Handle dynamic query results with enhanced feedback instructions
+        if isinstance(result_obj, QueryResult) and result_obj.is_dynamic and result_obj.success and result_obj.data is not None:
+            self.last_dynamic_result = result_obj
+            
+            # Enhanced feedback instructions for dynamic queries
+            feedback_instructions = """
+
+---
+**🧠 LEARNING OPPORTUNITY**
+
+This answer was generated using a custom SQL query. The system can learn from your feedback:
+
+**To help the AI improve:**
+- If the answer is **helpful and accurate**: Please ask the user if it was helpful, then call `record_feedback` with `was_helpful: true`
+- If the answer is **wrong or unhelpful**: Please ask the user if it was helpful, then call `record_feedback` with `was_helpful: false`
+
+**The system learns from BOTH positive and negative feedback** to:
+✅ Remember successful query patterns
+❌ Avoid failed approaches for similar questions
+🎯 Generate better SQL over time
+
+**Example user interaction:**
+User: "Was this answer helpful and accurate?"
+If user says yes → call record_feedback(was_helpful=true)
+If user says no → call record_feedback(was_helpful=false)"""
+            
+            return formatted_data + feedback_instructions
+        else:
+            # For pre-built tool results, no feedback needed
+            self.last_dynamic_result = None
+            return formatted_data
+
+    async def _handle_record_feedback(self, args: Dict[str, Any]) -> str:
+        """Handles the enhanced feedback tool call from the agent."""
+        was_helpful = args.get("was_helpful")
+        if was_helpful is None: 
+            return "❌ Error: 'was_helpful' parameter is missing."
+        
+        if not self.last_dynamic_result: 
+            return "⚠️ No recent dynamic query found to record feedback for. Feedback can only be recorded for custom SQL queries."
+        
+        # Update learning stats
+        if was_helpful:
+            self.learning_stats["positive_feedback"] += 1
+        else:
+            self.learning_stats["negative_feedback"] += 1
+        
+        # Submit feedback to the backend
+        try:
+            await self.universal_client.submit_feedback(self.last_dynamic_result, was_helpful)
+            self.last_dynamic_result = None
+            
+            if was_helpful:
+                return """✅ **Positive feedback recorded!** 
+
+The system has learned from this successful query. It will:
+- Remember this (question → SQL) pattern for future similar questions
+- Use this as a positive example when generating new queries
+- Help improve accuracy for related analytics requests
+
+Thank you for helping the AI learn! 🎓"""
+            else:
+                return """📝 **Negative feedback recorded!**
+
+The system has learned from this unsuccessful query. It will:
+- Remember to avoid this SQL pattern for similar questions  
+- Use this as a negative example to prevent similar mistakes
+- Generate alternative approaches for related queries in the future
+
+Your feedback helps the AI improve - thank you! 🔄"""
+                
+        except Exception as e:
+            logger.error(f"Error submitting feedback: {e}")
+            return f"⚠️ Feedback noted locally but couldn't sync with server: {e}"
+
+    async def _handle_get_learning_stats(self, args: Dict[str, Any]) -> str:
+        """Handles the learning statistics tool call."""
+        try:
+            # Get server-side learning stats if available
+            if self.universal_client:
+                # Try to get health info from server which includes learning stats
+                health_result = await self.universal_client.call_tool('get_database_status', {})
+                
+                stats_output = ["📊 **LEARNING SYSTEM STATISTICS**", "=" * 40]
+                
+                # Local session stats
+                stats_output.extend([
+                    f"**This Session:**",
+                    f"• Total queries processed: {self.learning_stats['total_queries']}",
+                    f"• Positive feedback given: {self.learning_stats['positive_feedback']}",
+                    f"• Negative feedback given: {self.learning_stats['negative_feedback']}",
+                    ""
+                ])
+                
+                # Server-side stats if available
+                if health_result.success and health_result.data:
+                    server_data = health_result.data
+                    if 'learning_stats' in server_data:
+                        learning_stats = server_data['learning_stats']
+                        stats_output.extend([
+                            f"**Overall System Learning:**",
+                            f"• Total learned queries: {learning_stats.get('total_learned_queries', 'N/A')}",
+                            f"• Positive examples stored: {learning_stats.get('positive_examples', 'N/A')}",
+                            f"• Negative examples stored: {learning_stats.get('negative_examples', 'N/A')}",
+                            f"• Semantic learning: {server_data.get('semantic_learning', 'Unknown')}",
+                            ""
+                        ])
+                    
+                    stats_output.extend([
+                        f"**System Status:**",
+                        f"• Server status: {server_data.get('status', 'Unknown')}",
+                        f"• Available tools: {server_data.get('available_tools', 'N/A')}",
+                        f"• Stability level: {server_data.get('stability', 'Unknown')}",
+                        f"• Last updated: {server_data.get('timestamp', 'Unknown')}"
+                    ])
+                
+                return "\n".join(stats_output)
+            else:
+                return "⚠️ Learning statistics not available - client not initialized."
+                
+        except Exception as e:
+            logger.error(f"Error getting learning stats: {e}")
+            return f"❌ Error retrieving learning statistics: {e}"
+
+    async def cleanup(self):
+        """Enhanced cleanup with learning statistics summary."""
+        if self.universal_client:
+            await self.universal_client.__aexit__(None, None, None)
+            logger.info("✅ Enhanced Universal client cleaned up.")
+        
+        # Log session learning summary
+        total_feedback = self.learning_stats['positive_feedback'] + self.learning_stats['negative_feedback']
+        logger.info(f"📊 Session Summary: {self.learning_stats['total_queries']} queries, "
+                   f"{total_feedback} feedback responses ({self.learning_stats['positive_feedback']} positive, "
+                   f"{self.learning_stats['negative_feedback']} negative)")
+
+# --- Main Execution Block ---
+async def main():
+    print("🌉 Starting Enhanced MCP Server (v1.9.4 Compatible) with Negative Feedback Learning", file=sys.stderr)
+    print(f"🐍 Python: {sys.executable}", file=sys.stderr)
+    print(f"📁 Working dir: {os.getcwd()}", file=sys.stderr)
     
-    # Check if being called by MCP client (Claude Desktop)
-    if not sys.stdin.isatty():
-        # Being called by Claude Desktop - run MCP server
-        logger.info("🚀 Starting in MCP server mode (non-interactive mode detected)")
-        await run_mcp_server()
-    else:
-        # Interactive mode
-        logger.info("💻 Starting in interactive mode")
-        await run_interactive()
+    server_instance = UniversalClientMCPServer()
+    try:
+        async with mcp.server.stdio.stdio_server() as (reader, writer):
+            print("🚀 Enhanced MCP Server is running and ready for Claude to connect.", file=sys.stderr)
+            print("🧠 Features: Context awareness, auto-fix, positive & negative feedback learning", file=sys.stderr)
+            
+            # MCP v1.9.4 requires InitializationOptions with capabilities
+            initialization_options = InitializationOptions(
+                server_name="subscription-analytics-v1.9.4",
+                server_version="2.0.0",
+                capabilities={}  # Empty capabilities for basic server
+            )
+            
+            await server_instance.server.run(reader, writer, initialization_options)
+    except Exception as e:
+        print(f"❌ Critical error in Enhanced MCP Server: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+    finally:
+        await server_instance.cleanup()
+        print("👋 Enhanced MCP Server shutdown complete.", file=sys.stderr)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Enhanced MCP Server shut down by user.", file=sys.stderr)
+    except Exception as e:
+        print(f"Fatal error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)

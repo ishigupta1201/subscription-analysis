@@ -1,8 +1,5 @@
-#!/usr/bin/env python3
-"""
-Complete Fixed Universal Client with SSL fixes and proper async context management
-Enhanced version with better error handling and date range support
-"""
+# client/universal_client.py
+
 import asyncio
 import aiohttp
 import os
@@ -10,1115 +7,846 @@ import json
 import sys
 import ssl
 import certifi
-from typing import Dict, List, Optional, Union
-from dataclasses import dataclass
-from google import genai
-from google.genai import types
-
-# Set up logging
 import logging
-logging.basicConfig(level=logging.INFO)
+import re
+from typing import Dict, List, Optional, Union, Any
+from dataclasses import dataclass
+import google.generativeai as genai
+
+# Use the ConfigManager from the same package
+from .config_manager import ConfigManager
+
+# Basic Setup
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Data Structures
 @dataclass
 class QueryResult:
-    """Result of a query execution"""
     success: bool
-    data: Optional[Dict] = None
+    data: Optional[Any] = None
     error: Optional[str] = None
     tool_used: Optional[str] = None
     parameters: Optional[Dict] = None
+    is_dynamic: bool = False
+    original_query: Optional[str] = None
+    generated_sql: Optional[str] = None
+    message: Optional[str] = None
 
+# Formatting Logic
 class ResultFormatter:
-    """Format results in a beautiful, user-friendly way - FIXED VERSION"""
-    
-    @staticmethod
-    def safe_int(value) -> int:
-        """Safely convert any value to int"""
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            # Remove commas and convert
-            cleaned = value.replace(',', '').replace('$', '').strip()
-            try:
-                return int(float(cleaned))
-            except (ValueError, TypeError):
-                return 0
-        return 0
-    
-    @staticmethod
-    def safe_float(value) -> float:
-        """Safely convert any value to float"""
-        if isinstance(value, (int, float)):
-            return float(value)
-        if isinstance(value, str):
-            # Remove commas, dollar signs and convert
-            cleaned = value.replace(',', '').replace('$', '').strip()
-            try:
-                return float(cleaned)
-            except (ValueError, TypeError):
-                return 0.0
-        return 0.0
-    
     @staticmethod
     def format_single_result(result: QueryResult) -> str:
-        """Format a single result for display"""
         if not result.success:
             return f"❌ ERROR: {result.error}"
         
-        data = result.data
-        if not data:
-            return f"❌ No data returned from {result.tool_used}"
+        if result.message:
+            return f"ℹ️ {result.message}"
+        
+        if result.data is None:
+            return "✅ Query succeeded, but the result set was empty."
         
         output = []
+        is_dynamic = result.tool_used == 'execute_dynamic_sql'
+        header = f"📊 DYNAMIC QUERY RESULT" if is_dynamic else f"📊 RESULT FROM TOOL: {result.tool_used.upper()}"
+        output.append(header)
+        output.append("=" * len(header))
         
-        # Format based on tool type
-        if 'subscription' in result.tool_used and 'summary' not in result.tool_used and 'date_range' not in result.tool_used:
-            # This is get_subscriptions_in_last_days
-            period = data.get('period_days', 'unknown')
-            date_range = data.get('date_range', {})
-            start_date = date_range.get('start', 'unknown')
-            end_date = date_range.get('end', 'unknown')
+        if isinstance(result.data, list) and len(result.data) > 0:
+            # Check if this looks like a success rate analysis
+            headers = list(result.data[0].keys())
+            has_success_data = any('success' in str(h).lower() for h in headers) and any('total' in str(h).lower() for h in headers)
             
-            # Safely convert to integers
-            new_subs = ResultFormatter.safe_int(data.get('new_subscriptions', 0))
-            active = ResultFormatter.safe_int(data.get('active_subscriptions', 0))
-            cancelled = ResultFormatter.safe_int(data.get('cancelled_subscriptions', 0))
+            # Table formatting
+            col_widths = {h: len(str(h)) for h in headers}
             
-            output.append(f"📈 SUBSCRIPTION METRICS ({period} days)")
-            output.append(f"📅 Period: {start_date} to {end_date}")
-            output.append(f"🆕 New Subscriptions: {new_subs:,}")
-            output.append(f"✅ Currently Active: {active:,}")
-            output.append(f"❌ Cancelled: {cancelled:,}")
+            # Calculate column widths
+            for row in result.data:
+                for h in headers:
+                    col_widths[h] = max(col_widths[h], len(str(row.get(h, ''))))
             
-            # Calculate percentages
-            if new_subs > 0:
-                retention_rate = (active / new_subs) * 100
-                churn_rate = (cancelled / new_subs) * 100
-                output.append(f"📊 Retention Rate: {retention_rate:.1f}%")
-                output.append(f"📉 Churn Rate: {churn_rate:.1f}%")
-        
-        elif 'payment' in result.tool_used and 'summary' not in result.tool_used and 'date_range' not in result.tool_used:
-            # This is get_payment_success_rate_in_last_days
-            period = data.get('period_days', 'unknown')
-            date_range = data.get('date_range', {})
-            start_date = date_range.get('start', 'unknown')
-            end_date = date_range.get('end', 'unknown')
+            # Create table
+            header_line = " | ".join(h.ljust(col_widths[h]) for h in headers)
+            output.append(header_line)
+            output.append("-" * len(header_line))
             
-            # Safely convert to integers
-            total_payments = ResultFormatter.safe_int(data.get('total_payments', 0))
-            successful = ResultFormatter.safe_int(data.get('successful_payments', 0))
-            failed = ResultFormatter.safe_int(data.get('failed_payments', 0))
+            for row in result.data:
+                output.append(" | ".join(str(row.get(h, '')).ljust(col_widths[h]) for h in headers))
             
-            output.append(f"💳 PAYMENT METRICS ({period} days)")
-            output.append(f"📅 Period: {start_date} to {end_date}")
-            output.append(f"📊 Total Payments: {total_payments:,}")
-            output.append(f"✅ Successful: {successful:,}")
-            output.append(f"❌ Failed: {failed:,}")
-            output.append(f"📈 Success Rate: {data.get('success_rate', '0%')}")
-            output.append(f"📉 Failure Rate: {data.get('failure_rate', '0%')}")
+            output.append("")  # Empty line
+            output.append(f"📈 Total rows: {len(result.data)}")
             
-            # Handle revenue safely
-            total_revenue = ResultFormatter.safe_float(data.get('total_revenue', '$0.00'))
-            lost_revenue = ResultFormatter.safe_float(data.get('lost_revenue', '$0.00'))
+            # Add analysis for success rate data
+            if has_success_data and len(result.data) > 1:
+                output.append("\n💡 **Quick Analysis:**")
+                try:
+                    for i, row in enumerate(result.data[:3]):  # Top 3
+                        merchant_id = row.get('merchant_user_id', 'Unknown')
+                        total = row.get('total_payments', 0)
+                        successful = row.get('successful_payments', 0)
+                        
+                        if total and total > 0:
+                            rate = (successful / total) * 100
+                            volume_desc = "High" if total >= 20 else "Medium" if total >= 5 else "Low"
+                            output.append(f"   {i+1}. Merchant {merchant_id}: {rate:.1f}% success rate ({successful}/{total}) - {volume_desc} volume")
+                except:
+                    pass  # Skip analysis if data structure is unexpected
             
-            output.append(f"💰 Total Revenue: ${total_revenue:,.2f}")
-            output.append(f"💸 Lost Revenue: ${lost_revenue:,.2f}")
-            
-            # Calculate average transaction
-            if successful > 0:
-                avg_transaction = total_revenue / successful
-                output.append(f"📊 Average Transaction: ${avg_transaction:.2f}")
-        
-        elif 'database' in result.tool_used:
-            # Safely convert database metrics
-            unique_users = ResultFormatter.safe_int(data.get('unique_users', 0))
-            total_subs = ResultFormatter.safe_int(data.get('total_subscriptions', 0))
-            total_payments = ResultFormatter.safe_int(data.get('total_payments', 0))
-            
-            output.append(f"🗄️ DATABASE STATUS")
-            output.append(f"📊 Connection: {data.get('status', 'Unknown').upper()}")
-            output.append(f"👥 Total Users: {unique_users:,}")
-            output.append(f"📝 Total Subscriptions: {total_subs:,}")
-            output.append(f"💳 Total Payments: {total_payments:,}")
-            output.append(f"📈 Overall Success Rate: {data.get('overall_success_rate', '0%')}")
-            
-            if data.get('latest_subscription'):
-                output.append(f"📅 Latest Subscription: {data['latest_subscription']}")
-            if data.get('latest_payment'):
-                output.append(f"💰 Latest Payment: {data['latest_payment']}")
-        
-        elif 'summary' in result.tool_used:
-            # This is get_subscription_summary
-            period = data.get('period_days', 'unknown')
-            output.append(f"📋 COMPREHENSIVE SUMMARY ({period} days)")
-            
-            if 'summary' in data:
-                output.append(f"📝 {data['summary']}")
-            
-            # Show subscription data if available
-            if 'subscriptions' in data:
-                subs = data['subscriptions']
-                new_subs = ResultFormatter.safe_int(subs.get('new_subscriptions', 0))
-                active_subs = ResultFormatter.safe_int(subs.get('active_subscriptions', 0))
-                cancelled_subs = ResultFormatter.safe_int(subs.get('cancelled_subscriptions', 0))
-                
-                output.append(f"\n📈 SUBSCRIPTION DETAILS:")
-                output.append(f"   🆕 New Subscriptions: {new_subs:,}")
-                output.append(f"   ✅ Active: {active_subs:,}")
-                output.append(f"   ❌ Cancelled: {cancelled_subs:,}")
-                
-                if new_subs > 0:
-                    retention_rate = (active_subs / new_subs) * 100
-                    output.append(f"   📊 Retention Rate: {retention_rate:.1f}%")
-            
-            # Show payment data if available
-            if 'payments' in data:
-                payments = data['payments']
-                total_payments = ResultFormatter.safe_int(payments.get('total_payments', 0))
-                successful_payments = ResultFormatter.safe_int(payments.get('successful_payments', 0))
-                
-                output.append(f"\n💳 PAYMENT DETAILS:")
-                output.append(f"   📊 Total Payments: {total_payments:,}")
-                output.append(f"   ✅ Successful: {successful_payments:,}")
-                output.append(f"   📈 Success Rate: {payments.get('success_rate', '0%')}")
-                
-                revenue = payments.get('total_revenue', '$0.00')
-                if isinstance(revenue, str) and revenue.startswith('$'):
-                    output.append(f"   💰 Revenue: {revenue}")
-                else:
-                    revenue_float = ResultFormatter.safe_float(revenue)
-                    output.append(f"   💰 Revenue: ${revenue_float:,.2f}")
-
+            if result.generated_sql:
+                output.append(f"\n🔍 Generated SQL:")
+                output.append("-" * 20)
+                output.append(result.generated_sql)
+        elif isinstance(result.data, dict):
+            # Dictionary formatting
+            for key, value in result.data.items():
+                output.append(f"{key}: {value}")
         else:
-            # Unknown tool type - show raw data
-            output.append(f"📊 RESULTS FROM {result.tool_used.upper()}")
-            for key, value in data.items():
-                output.append(f"   {key}: {value}")
+            output.append(json.dumps(result.data, indent=2, default=str))
         
         return "\n".join(output)
-    
+
     @staticmethod
     def format_multi_result(results: List[QueryResult], original_query: str) -> str:
-        """Format multiple results for display - FIXED VERSION"""
-        output = []
-        output.append(f"🎯 RESULTS FOR: '{original_query}'")
-        output.append("=" * 80)
-        
-        for i, result in enumerate(results, 1):
-            output.append(f"\n📊 RESULT {i}/{len(results)}")
-            output.append("-" * 40)
-            
-            if result.success:
-                formatted = ResultFormatter.format_single_result(result)
-                output.append(formatted)
-            else:
-                output.append(f"❌ ERROR: {result.error}")
-        
-        # Add comparison summary for multi-results
-        if len(results) > 1:
-            output.append(f"\n🔍 SIDE-BY-SIDE COMPARISON")
-            output.append("=" * 50)
-            
-            # Create a comparison table - FIXED TO HANDLE MISSING DATA
-            comparison_data = []
-            for i, result in enumerate(results, 1):
-                if result.success and result.data:
-                    data = result.data
-                    days = result.parameters.get('days', 'unknown') if result.parameters else 'unknown'
-                    
-                    # Initialize comparison item with defaults
-                    comparison_item = {
-                        'period': f"{days} days",
-                        'tool_type': result.tool_used,
-                        'new_subs': 0,
-                        'active': 0,
-                        'total_payments': 0,
-                        'success_rate': '0%'
-                    }
-                    
-                    # Extract data based on tool type - with safe handling
-                    if 'subscription' in result.tool_used and 'summary' not in result.tool_used:
-                        # get_subscriptions_in_last_days - only has subscription data
-                        comparison_item.update({
-                            'new_subs': ResultFormatter.safe_int(data.get('new_subscriptions', 0)),
-                            'active': ResultFormatter.safe_int(data.get('active_subscriptions', 0)),
-                            'type': 'subscription_only'
-                        })
-                    elif 'payment' in result.tool_used and 'summary' not in result.tool_used:
-                        # get_payment_success_rate_in_last_days - only has payment data
-                        comparison_item.update({
-                            'total_payments': ResultFormatter.safe_int(data.get('total_payments', 0)),
-                            'success_rate': data.get('success_rate', '0%'),
-                            'type': 'payment_only'
-                        })
-                    elif 'summary' in result.tool_used:
-                        # get_subscription_summary - has both subscription and payment data
-                        if 'subscriptions' in data:
-                            comparison_item.update({
-                                'new_subs': ResultFormatter.safe_int(data['subscriptions'].get('new_subscriptions', 0)),
-                                'active': ResultFormatter.safe_int(data['subscriptions'].get('active_subscriptions', 0))
-                            })
-                        
-                        if 'payments' in data:
-                            comparison_item.update({
-                                'total_payments': ResultFormatter.safe_int(data['payments'].get('total_payments', 0)),
-                                'success_rate': data['payments'].get('success_rate', '0%')
-                            })
-                        
-                        comparison_item['type'] = 'summary'
-                    
-                    comparison_data.append(comparison_item)
-            
-            # Display comparison - group by data type available
-            subscription_data = [item for item in comparison_data if item.get('new_subs', 0) > 0 or item['type'] in ['subscription_only', 'summary']]
-            payment_data = [item for item in comparison_data if item.get('total_payments', 0) > 0 or item['type'] in ['payment_only', 'summary']]
-            
-            if subscription_data:
-                output.append("📈 SUBSCRIPTION COMPARISON:")
-                for item in subscription_data:
-                    if item['type'] == 'subscription_only':
-                        output.append(f"   {item['period']}: {item['new_subs']:,} new, {item['active']:,} active")
-                    elif item['type'] == 'summary':
-                        output.append(f"   {item['period']}: {item['new_subs']:,} new, {item['active']:,} active")
-            
-            if payment_data:
-                output.append("💳 PAYMENT COMPARISON:")
-                for item in payment_data:
-                    if item['type'] == 'payment_only':
-                        output.append(f"   {item['period']}: {item['total_payments']:,} payments, {item['success_rate']} success")
-                    elif item['type'] == 'summary':
-                        output.append(f"   {item['period']}: {item['total_payments']:,} payments, {item['success_rate']} success")
-            
-            # If we have mixed data types, show a combined summary
-            if subscription_data and payment_data:
-                output.append("📊 COMBINED OVERVIEW:")
-                # Create a table showing all metrics side by side
-                for item in comparison_data:
-                    if item['type'] == 'summary':
-                        output.append(f"   {item['period']} (Complete):")
-                        output.append(f"     📈 {item['new_subs']:,} new subs, {item['active']:,} active")
-                        output.append(f"     💳 {item['total_payments']:,} payments, {item['success_rate']} success")
-                    elif item['type'] == 'subscription_only':
-                        output.append(f"   {item['period']} (Subscriptions Only):")
-                        output.append(f"     📈 {item['new_subs']:,} new subs, {item['active']:,} active")
-                    elif item['type'] == 'payment_only':
-                        output.append(f"   {item['period']} (Payments Only):")
-                        output.append(f"     💳 {item['total_payments']:,} payments, {item['success_rate']} success")
-        
+        output = [f"🎯 RESULTS FOR COMPARISON: '{original_query}'", "="*70]
+        for i, res in enumerate(results, 1):
+            output.append(f"\n--- Result {i}/{len(results)} ---")
+            output.append(ResultFormatter.format_single_result(res))
         return "\n".join(output)
+
+# Enhanced AI Logic
 class GeminiNLPProcessor:
-    """Uses Gemini API for natural language understanding"""
-    
-    def __init__(self, api_key: str):
-        self.client = genai.Client(api_key=api_key)
+    def __init__(self):
+        self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        self.db_schema = """
+Database Schema:
+Tables:
+1. subscription_contract_v2:
+   - subscription_id (VARCHAR, PRIMARY KEY)
+   - merchant_user_id (VARCHAR)
+   - status (ENUM: 'ACTIVE', 'INACTIVE')
+   - subcription_start_date (DATE)
+
+2. subscription_payment_details:
+   - subcription_payment_details_id (VARCHAR, PRIMARY KEY)
+   - subscription_id (VARCHAR, FOREIGN KEY)
+   - status (ENUM: 'ACTIVE', 'FAILED', 'FAIL', 'INIT')
+   - trans_amount_decimal (DECIMAL)
+   - created_date (DATE)
+
+Important Notes:
+- To get payment success rates by individual users, JOIN the tables on subscription_id
+- Use 'ACTIVE' status in subscription_payment_details for successful payments
+- Use proper table aliases: subscription_contract_v2 AS sc, subscription_payment_details AS pd
+- Always use WHERE clauses for date filtering when analyzing recent data
+"""
         
-        # Define available tools for Gemini
-        self.available_tools = [
-            {
-                "name": "get_subscriptions_in_last_days",
-                "description": "Get subscription statistics for the last N days",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back (1-365)"
-                        }
-                    },
-                    "required": ["days"]
-                }
-            },
-            {
-                "name": "get_payment_success_rate_in_last_days",
-                "description": "Get payment success rate statistics for the last N days",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back (1-365)"
-                        }
-                    },
-                    "required": ["days"]
-                }
-            },
-            {
-                "name": "get_subscription_summary",
-                "description": "Get comprehensive subscription and payment summary",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back (default: 30)"
-                        }
-                    },
-                    "required": []
-                }
-            },
-            {
-                "name": "get_database_status",
-                "description": "Check database connection and get basic statistics",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            },
-            {
-                "name": "get_user_payment_history",
-                "description": "Get payment history for a specific user",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "merchant_user_id": {
-                            "type": "string",
-                            "description": "The user ID to query"
-                        },
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back (default: 90)"
-                        }
-                    },
-                    "required": ["merchant_user_id"]
-                }
-            },
-            {
-                "name": "get_subscriptions_by_date_range",
-                "description": "Get subscription statistics for a specific date range",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
-                        "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"}
-                    },
-                    "required": ["start_date", "end_date"]
-                }
-            },
-            {
-                "name": "get_payments_by_date_range", 
-                "description": "Get payment statistics for a specific date range",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
-                        "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"}
-                    },
-                    "required": ["start_date", "end_date"]
-                }
-            },
-            {
-                "name": "get_analytics_by_date_range",
-                "description": "Get comprehensive analytics for a specific date range", 
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
-                        "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"}
-                    },
-                    "required": ["start_date", "end_date"]
-                }
-            }
-        ]
-    
-    def parse_query(self, user_query: str) -> List[Dict]:
-        """Use Gemini to understand the query and return tool calls"""
-        print(f"🤖 Asking Gemini to understand: '{user_query}'")
-        
-        # Get current date for context
-        from datetime import datetime
-        today = datetime.now().strftime("%Y-%m-%d")
-        current_year = datetime.now().year
-        
-        # Convert tools to Gemini format
-        gemini_tools = [
-            types.Tool(
+        # Define available tools for the AI
+        self.tools = [
+            genai.protos.Tool(
                 function_declarations=[
-                    {
-                        "name": tool["name"],
-                        "description": tool["description"],
-                        "parameters": tool["parameters"]
-                    }
+                    genai.protos.FunctionDeclaration(
+                        name="get_subscriptions_in_last_days",
+                        description="Get subscription statistics for the last N days. Use this for general subscription overview questions.",
+                        parameters=genai.protos.Schema(
+                            type=genai.protos.Type.OBJECT,
+                            properties={
+                                "days": genai.protos.Schema(
+                                    type=genai.protos.Type.INTEGER, 
+                                    description="Number of days to look back (1-365)"
+                                )
+                            },
+                            required=["days"]
+                        )
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="get_payment_success_rate_in_last_days",
+                        description="Get payment success rate and revenue statistics for the last N days. Use this for payment performance questions.",
+                        parameters=genai.protos.Schema(
+                            type=genai.protos.Type.OBJECT,
+                            properties={
+                                "days": genai.protos.Schema(
+                                    type=genai.protos.Type.INTEGER, 
+                                    description="Number of days to look back (1-365)"
+                                )
+                            },
+                            required=["days"]
+                        )
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="get_user_payment_history",
+                        description="Get payment history for a specific user by merchant_user_id. Use this when the user asks about a specific user.",
+                        parameters=genai.protos.Schema(
+                            type=genai.protos.Type.OBJECT,
+                            properties={
+                                "merchant_user_id": genai.protos.Schema(
+                                    type=genai.protos.Type.STRING, 
+                                    description="The merchant user ID to query"
+                                ),
+                                "days": genai.protos.Schema(
+                                    type=genai.protos.Type.INTEGER, 
+                                    description="Number of days to look back (default: 90)"
+                                )
+                            },
+                            required=["merchant_user_id"]
+                        )
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="get_database_status",
+                        description="Check database connection and get basic statistics. Use this for health checks or general database info.",
+                        parameters=genai.protos.Schema(
+                            type=genai.protos.Type.OBJECT,
+                            properties={}
+                        )
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="execute_dynamic_sql",
+                        description="Generate and execute a custom SQL SELECT query for complex analytics that can't be answered with pre-built tools. Use this for specific analytical questions, rankings, aggregations, or complex filtering.",
+                        parameters=genai.protos.Schema(
+                            type=genai.protos.Type.OBJECT,
+                            properties={
+                                "sql_query": genai.protos.Schema(
+                                    type=genai.protos.Type.STRING, 
+                                    description="The SELECT SQL query to execute. Must start with SELECT. Use proper JOINs between tables when needed."
+                                )
+                            },
+                            required=["sql_query"]
+                        )
+                    )
                 ]
             )
-            for tool in self.available_tools
+        ]
+
+    def parse_query(self, user_query: str, history: List[str]) -> List[Dict]:
+        """Parse user query and determine which tool(s) to use with enhanced context awareness"""
+        
+        # Build context from conversation history
+        history_context = "\n".join(history[-6:]) if history else "No previous context."
+        
+        # Enhanced context analysis for follow-up questions
+        follow_up_indicators = [
+            "than that", "greater than that", "higher than that", "lower than that", "above that", "below that",
+            "compared to that", "versus that", "against that", "from that result", "from those results",
+            "among them", "of those", "from these", "from the previous", "from that list", 
+            "out of these", "which one", "who has the", "how many have", "how many people", "how many users",
+            "the worst", "the best", "bottom", "top one", "that rate", "that percentage",
+            "individual", "personal", "each user", "each merchant", "per user", "per merchant",
+            "breakdown", "detailed", "specific users", "more than that", "less than that", 
+            "same time", "same period", "same timeframe"
         ]
         
+        # Check if this is a contextual follow-up
+        is_contextual = any(indicator in user_query.lower() for indicator in follow_up_indicators)
+        
+        # Enhanced context extraction from history
+        context_data = self._extract_context_from_history(history)
+        
+        prompt = f"""
+You are a subscription analytics assistant. Analyze the user's query and choose the most appropriate tool.
+
+CONVERSATION HISTORY:
+{history_context}
+
+EXTRACTED CONTEXT DATA:
+{context_data}
+
+CURRENT USER QUERY: "{user_query}"
+
+CRITICAL INSTRUCTIONS FOR SQL GENERATION:
+
+1. **ALWAYS START WITH SELECT**: Every SQL query must begin with "SELECT"
+2. **USE PROPER TABLE ALIASES**: Always use aliases like "sc" for subscription_contract_v2 and "pd" for subscription_payment_details
+3. **QUALIFY ALL COLUMNS**: Always specify table alias (e.g., sc.merchant_user_id, pd.status)
+4. **JOIN TABLES CORRECTLY**: Use proper JOIN syntax when needed
+5. **USE MYSQL SYNTAX**: Generate MySQL-compatible queries, not SQLite:
+   - For date arithmetic: DATE_SUB(CURDATE(), INTERVAL 30 DAY) not DATE('now', '-30 days')
+   - For current date: CURDATE() not DATE('now')
+   - For current datetime: NOW() not DATETIME('now')
+
+6. **HANDLE SUCCESS RATES PROPERLY**: For individual user success rates, use this pattern:
+   ```sql
+   SELECT sc.merchant_user_id, 
+          COUNT(*) as total_payments,
+          SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
+          ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent
+   FROM subscription_contract_v2 AS sc 
+   JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
+   GROUP BY sc.merchant_user_id
+   HAVING COUNT(*) >= 3
+   ORDER BY success_rate_percent DESC
+   ```
+
+7. **SUBQUERY COLUMN REFERENCES**: When using subqueries, reference columns correctly:
+   - WRONG: `SELECT sc.merchant_user_id FROM (SELECT sc.merchant_user_id ...) AS sub WHERE ...`
+   - CORRECT: `SELECT merchant_user_id FROM (SELECT sc.merchant_user_id ...) AS sub WHERE ...`
+   - In outer query, use column names as they appear in subquery SELECT, not with inner aliases
+
+8. **AVOID COMPLEX SUBQUERIES**: When possible, use single queries with HAVING clauses instead of subqueries:
+   - COMPLEX: `SELECT ... FROM (SELECT ... FROM ... GROUP BY ...) AS sub WHERE ...`
+   - SIMPLE: `SELECT ... FROM ... GROUP BY ... HAVING ... AND ...`
+
+9. **SUBQUERY COLUMN SELECTION**: If you must use subqueries, ensure all needed columns are selected:
+   - If outer query needs `pd.status`, the subquery must SELECT it
+   - If outer query needs aggregate calculations, do them in the subquery, not outside
+
+10. **CONTEXT AWARENESS**: When user refers to "that", "those", etc., extract values from conversation history:
+   - If previous result showed success_rate_percent: 14.86, and user asks "how many users have higher than that"
+   - Generate SQL with WHERE success_rate_percent > 14.86
+
+{self.db_schema}
+
+TOOL SELECTION LOGIC:
+
+1. **For simple, standalone questions:**
+   - "subscriptions in last X days" → get_subscriptions_in_last_days
+   - "payment success rate" → get_payment_success_rate_in_last_days  
+   - "payment history for user X" → get_user_payment_history
+   - "database status" → get_database_status
+
+2. **For complex analytics or context-dependent questions:**
+   - Individual comparisons, breakdowns, detailed analysis → execute_dynamic_sql
+   - Questions referring to previous results → execute_dynamic_sql with context values
+   - "How many users/merchants..." → execute_dynamic_sql with COUNT
+   - Any question requiring granular data → execute_dynamic_sql
+
+3. **SPECIFIC EXAMPLES FOR CONTEXT-AWARE QUERIES:**
+   
+   Example 1: Previous result showed "success_rate_percent: 14.86", user asks "how many users have higher than that"
+   Generate SQL:
+   ```sql
+   SELECT COUNT(*) as users_above_average
+   FROM (
+       SELECT sc.merchant_user_id, 
+              ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent
+       FROM subscription_contract_v2 AS sc 
+       JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
+       GROUP BY sc.merchant_user_id
+       HAVING COUNT(*) >= 3
+   ) AS user_rates WHERE success_rate_percent > 14.86
+   ```
+
+   Example 2: User asks "show me individual user success rates"
+   Generate SQL:
+   ```sql
+   SELECT sc.merchant_user_id, 
+          COUNT(*) as total_payments,
+          SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
+          ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent
+   FROM subscription_contract_v2 AS sc 
+   JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
+   GROUP BY sc.merchant_user_id
+   HAVING COUNT(*) >= 3
+   ORDER BY success_rate_percent DESC
+   LIMIT 20
+   ```
+
+   Example 3: User asks "show me their ids" (referring to users above threshold)
+   Generate SQL:
+   ```sql
+   SELECT merchant_user_id, success_rate_percent
+   FROM (
+       SELECT sc.merchant_user_id, 
+              ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent
+       FROM subscription_contract_v2 AS sc 
+       JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
+       GROUP BY sc.merchant_user_id
+       HAVING COUNT(*) >= 3
+   ) AS user_rates 
+   WHERE success_rate_percent > 14.86
+   ORDER BY success_rate_percent DESC
+   ```
+
+   Example 4: User asks "what's their failure rate?" (referring to users above threshold)
+   Generate SQL (single query approach - PREFERRED):
+   ```sql
+   SELECT sc.merchant_user_id,
+          COUNT(*) as total_payments,
+          ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent,
+          ROUND((SUM(CASE WHEN pd.status != 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as failure_rate_percent
+   FROM subscription_contract_v2 AS sc 
+   JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
+   GROUP BY sc.merchant_user_id
+   HAVING COUNT(*) >= 3 AND ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) > 14.86
+   ORDER BY success_rate_percent DESC
+   ```
+
+   Example 5: Previous query was "subscriptions in last 30 days", user asks "payments in same time"
+   Generate SQL:
+   ```sql
+   SELECT COUNT(*) AS total_payments 
+   FROM subscription_payment_details 
+   WHERE created_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+   ```
+
+Choose the most appropriate tool and provide necessary parameters. Make sure all SQL queries are valid MySQL and start with SELECT.
+"""
+
         try:
-            # Enhanced prompt with current date context
-            enhanced_query = f"""
-            You are an expert in subscription analytics. Today's date is {today}.
-            
-            Analyze this user query: "{user_query}"
-            
-            IMPORTANT RULES:
-            1. For date range queries, use get_analytics_by_date_range or get_subscriptions_by_date_range
-            2. Convert relative dates like "1st June" to "2024-06-01" (assume current year {current_year} if not specified)
-            3. "today" means {today}
-            4. For comparison queries with multiple time periods, use get_subscription_summary for each period
-            5. Extract ALL numbers and dates mentioned
-            
-            DATE PARSING EXAMPLES:
-            - "1st June to today" → start_date: "2024-06-01", end_date: "{today}"
-            - "between May 15 and June 30" → start_date: "2024-05-15", end_date: "2024-06-30"
-            - "from January 1st to March 31st" → start_date: "2024-01-01", end_date: "2024-03-31"
-            
-            TOOL SELECTION:
-            - For date ranges: use get_analytics_by_date_range(start_date, end_date)
-            - For comparisons: use get_subscription_summary for each period
-            - For general queries: use appropriate specific tools
-            
-            Current query: "{user_query}"
-            Today's date: {today}
-            
-            Please call the appropriate tool(s) for this query.
-            """
-            
-            response = self.client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=enhanced_query,
-                config=types.GenerateContentConfig(
-                    temperature=0,
-                    tools=gemini_tools,
-                ),
+            response = self.model.generate_content(
+                prompt,
+                tools=self.tools,
+                tool_config={'function_calling_config': {'mode': 'ANY'}}
             )
             
-            # Extract tool calls from response
             tool_calls = []
-            
             if response.candidates and response.candidates[0].content.parts:
                 for part in response.candidates[0].content.parts:
                     if hasattr(part, 'function_call') and part.function_call:
-                        function_call = part.function_call
+                        fc = part.function_call
+                        
+                        # Validate SQL if it's a dynamic query
+                        params = dict(fc.args)
+                        if fc.name == 'execute_dynamic_sql' and 'sql_query' in params:
+                            sql_query = params['sql_query'].strip()
+                            
+                            # Remove any surrounding quotes that might have been added
+                            if sql_query.startswith('"') and sql_query.endswith('"'):
+                                sql_query = sql_query[1:-1]
+                            if sql_query.startswith("'") and sql_query.endswith("'"):
+                                sql_query = sql_query[1:-1]
+                            
+                            # Clean the query
+                            sql_query = sql_query.strip()
+                            
+                            # Check if it actually starts with SELECT (case insensitive)
+                            if not sql_query.upper().startswith('SELECT'):
+                                logger.warning(f"Generated SQL doesn't start with SELECT: {sql_query}")
+                                # Try to fix simple cases
+                                if 'SELECT' in sql_query.upper():
+                                    select_pos = sql_query.upper().find('SELECT')
+                                    sql_query = sql_query[select_pos:]
+                                    logger.info(f"Fixed SQL query: {sql_query}")
+                                else:
+                                    logger.error(f"Cannot fix SQL query: {sql_query}")
+                                    continue
+                            
+                            # Update the cleaned query
+                            params['sql_query'] = sql_query
+                        
                         tool_calls.append({
-                            'tool': function_call.name,
-                            'parameters': dict(function_call.args),
+                            'tool': fc.name,
+                            'parameters': params,
                             'original_query': user_query
                         })
-                        print(f"🔧 Gemini suggests: {function_call.name} with {dict(function_call.args)}")
-            
-            # If no tool calls, try to extract from text response
-            if not tool_calls and response.text:
-                print(f"🤖 Gemini response: {response.text}")
-                # Fallback to improved parsing
-                tool_calls = self._improved_fallback_parse(user_query)
             
             if not tool_calls:
-                print("⚠️ Gemini couldn't understand the query, using improved default")
-                tool_calls = self._improved_fallback_parse(user_query)
+                logger.warning("AI did not return a valid function call, defaulting to database status")
+                return [{
+                    'tool': 'get_database_status',
+                    'parameters': {},
+                    'original_query': user_query
+                }]
             
+            logger.info(f"AI selected tool(s): {[tc['tool'] for tc in tool_calls]}")
             return tool_calls
             
         except Exception as e:
-            print(f"❌ Gemini API error: {e}")
-            print("🔄 Falling back to improved parsing...")
-            return self._improved_fallback_parse(user_query)
-    
-    def _improved_fallback_parse(self, query: str) -> List[Dict]:
-        """Improved fallback parsing with date range support"""
-        import re
-        from datetime import datetime
-        
-        query_lower = query.lower()
-        today = datetime.now().strftime("%Y-%m-%d")
-        current_year = datetime.now().year
-        
-        print(f"🔍 Fallback parsing query: '{query}'")
-        print(f"🗓️ Today's date: {today}")
-        
-        # Check for date range indicators
-        has_date_range = any(phrase in query_lower for phrase in [
-            'between', 'from', 'to', 'june', 'may', 'april', 'march', 
-            'january', 'february', 'july', 'august', 'september', 
-            'october', 'november', 'december', 'today', 'yesterday',
-            'this month', 'last month', 'this year', 'last year'
-        ])
-        
-        # Month name to number mapping
-        months = {
-            'january': '01', 'jan': '01',
-            'february': '02', 'feb': '02', 
-            'march': '03', 'mar': '03',
-            'april': '04', 'apr': '04',
-            'may': '05',
-            'june': '06', 'jun': '06',
-            'july': '07', 'jul': '07',
-            'august': '08', 'aug': '08',
-            'september': '09', 'sep': '09', 'sept': '09',
-            'october': '10', 'oct': '10',
-            'november': '11', 'nov': '11',
-            'december': '12', 'dec': '12'
-        }
-        
-        results = []
-        
-        # Try to handle date range queries
-        if has_date_range:
-            print("🗓️ Detected date range query")
-            
-            # Pattern 1: "between X and Y" or "from X to Y"
-            date_patterns = [
-                r'between\s+(.+?)\s+and\s+(.+?)(?:\s|$)',
-                r'from\s+(.+?)\s+to\s+(.+?)(?:\s|$)',
-                r'(.+?)\s+to\s+(.+?)(?:\s|$)',
-                r'(.+?)\s+and\s+(.+?)(?:\s|$)'
-            ]
-            
-            for pattern in date_patterns:
-                match = re.search(pattern, query_lower)
-                if match:
-                    start_phrase = match.group(1).strip()
-                    end_phrase = match.group(2).strip()
-                    print(f"🔍 Found date pattern: '{start_phrase}' to '{end_phrase}'")
-                    
-                    # Parse start date
-                    start_date = self._parse_date_phrase(start_phrase, current_year, months)
-                    # Parse end date
-                    end_date = self._parse_date_phrase(end_phrase, current_year, months, today)
-                    
-                    if start_date and end_date:
-                        print(f"📅 Parsed dates: {start_date} to {end_date}")
-                        return [{
-                            'tool': 'get_analytics_by_date_range',
-                            'parameters': {
-                                'start_date': start_date,
-                                'end_date': end_date
-                            },
-                            'original_query': query
-                        }]
-            
-            # Pattern 2: Single month mentions
-            for month_name, month_num in months.items():
-                if month_name in query_lower:
-                    if 'today' in query_lower or 'now' in query_lower:
-                        # "june to today" or "since june"
-                        start_date = f"{current_year}-{month_num}-01"
-                        end_date = today
-                        print(f"📅 Month to today: {start_date} to {end_date}")
-                        return [{
-                            'tool': 'get_analytics_by_date_range',
-                            'parameters': {
-                                'start_date': start_date,
-                                'end_date': end_date
-                            },
-                            'original_query': query
-                        }]
-                    elif 'this month' in query_lower and month_name == datetime.now().strftime('%B').lower():
-                        # "this month" and it matches current month
-                        start_date = f"{current_year}-{month_num}-01"
-                        end_date = today
-                        return [{
-                            'tool': 'get_analytics_by_date_range',
-                            'parameters': {
-                                'start_date': start_date,
-                                'end_date': end_date
-                            },
-                            'original_query': query
-                        }]
-        
-        # Extract ALL numbers for "last X days" queries
-        numbers = []
-        # Look for patterns like "10 days", "7 days", "2 weeks", etc.
-        day_matches = re.findall(r'(\d+)\s*days?', query_lower)
-        week_matches = re.findall(r'(\d+)\s*weeks?', query_lower)
-        month_matches = re.findall(r'(\d+)\s*months?', query_lower)
-        
-        # Convert to days
-        for day in day_matches:
-            numbers.append(int(day))
-        for week in week_matches:
-            numbers.append(int(week) * 7)
-        for month in month_matches:
-            numbers.append(int(month) * 30)
-        
-        # Remove duplicates and sort
-        numbers = sorted(list(set(numbers)))
-        
-        print(f"🔍 Extracted time periods: {numbers} days")
-        
-        # Check for keywords
-        has_compare = any(word in query_lower for word in ['compare', 'comparison', 'vs', 'versus', 'against'])
-        has_subscription = any(word in query_lower for word in ['subscription', 'subs', 'sub'])
-        has_payment = any(word in query_lower for word in ['payment', 'pay', 'rate', 'success'])
-        has_summary = any(word in query_lower for word in ['summary', 'overview', 'performance', 'stats', 'statistics'])
-        has_database = any(word in query_lower for word in ['database', 'db', 'status'])
-        
-        # For comparison queries, use summary tool
-        if has_compare or (len(numbers) > 1):
-            print("🔍 Detected comparison query - using summary tool")
-            if numbers:
-                for day_count in numbers:
-                    results.append({
-                        'tool': 'get_subscription_summary', 
-                        'parameters': {'days': day_count}, 
-                        'original_query': query
-                    })
-            else:
-                # Default comparison
-                results.extend([
-                    {'tool': 'get_subscription_summary', 'parameters': {'days': 10}, 'original_query': query},
-                    {'tool': 'get_subscription_summary', 'parameters': {'days': 7}, 'original_query': query}
-                ])
-        else:
-            # Single metric queries
-            if has_database:
-                results.append({'tool': 'get_database_status', 'parameters': {}, 'original_query': query})
-            elif has_summary or has_subscription:
-                days = numbers[0] if numbers else 30
-                results.append({'tool': 'get_subscription_summary', 'parameters': {'days': days}, 'original_query': query})
-            elif has_payment:
-                days = numbers[0] if numbers else 7
-                results.append({'tool': 'get_payment_success_rate_in_last_days', 'parameters': {'days': days}, 'original_query': query})
-            else:
-                # Default to summary
-                days = numbers[0] if numbers else 30
-                results.append({'tool': 'get_subscription_summary', 'parameters': {'days': days}, 'original_query': query})
-        
-        print(f"🔧 Fallback parser suggests: {[r['tool'] + str(r['parameters']) for r in results]}")
-        return results
+            logger.error(f"Error in parse_query: {e}", exc_info=True)
+            # Fallback to database status
+            return [{
+                'tool': 'get_database_status',
+                'parameters': {},
+                'original_query': user_query
+            }]
 
-    def _parse_date_phrase(self, phrase: str, current_year: int, months: dict, today: str = None) -> str:
-        """Parse a date phrase into YYYY-MM-DD format"""
+    def _extract_context_from_history(self, history: List[str]) -> str:
+        """Extract relevant numerical and contextual data from conversation history."""
+        if not history:
+            return "No previous context available."
+        
+        context_data = []
+        recent_history = "\n".join(history[-4:])  # Last 2 exchanges
+        
+        # Extract percentages
         import re
-        from datetime import datetime, timedelta
+        percentages = re.findall(r'success_rate_percent:\s*(\d+\.?\d*)|(\d+\.?\d*)\s*%', recent_history)
+        if percentages:
+            # Flatten and filter out empty matches
+            flat_percentages = [p for pair in percentages for p in pair if p]
+            if flat_percentages:
+                context_data.append(f"Recent success rate: {flat_percentages[-1]}%")
         
-        phrase = phrase.strip()
+        # Extract payment counts
+        payment_counts = re.findall(r'total_payments:\s*(\d+)|(\d+)\s*total payments', recent_history)
+        if payment_counts:
+            flat_counts = [p for pair in payment_counts for p in pair if p]
+            if flat_counts:
+                context_data.append(f"Recent total payments: {flat_counts[-1]}")
         
-        # Handle "today"
-        if phrase == 'today' or phrase == 'now':
-            return today if today else datetime.now().strftime("%Y-%m-%d")
+        # Extract revenue amounts
+        revenue = re.findall(r'total_revenue:\s*([\d,]+\.?\d*)|revenue.*?(\d+)', recent_history)
+        if revenue:
+            flat_revenue = [p for pair in revenue for p in pair if p]
+            if flat_revenue:
+                context_data.append(f"Recent revenue: {flat_revenue[-1]}")
         
-        # Handle "1st june", "june 1st", "june 1", etc.
-        for month_name, month_num in months.items():
-            if month_name in phrase:
-                # Look for day number
-                day_match = re.search(r'(\d+)', phrase)
-                if day_match:
-                    day = int(day_match.group(1))
-                    if 1 <= day <= 31:
-                        return f"{current_year}-{month_num}-{day:02d}"
-                else:
-                    # Just month name, assume 1st
-                    return f"{current_year}-{month_num}-01"
+        # Extract days/time periods for context
+        days_mentioned = re.findall(r'(\d+)\s*days?', recent_history)
+        if days_mentioned:
+            context_data.append(f"Recent time period: {days_mentioned[-1]} days")
         
-        # Handle YYYY-MM-DD format
-        if re.match(r'\d{4}-\d{2}-\d{2}', phrase):
-            return phrase
+        # Check for merchant lists or user discussions
+        if 'merchant_user_id' in recent_history:
+            context_data.append("Previous query involved individual merchant analysis")
         
-        # Handle MM/DD/YYYY or DD/MM/YYYY
-        date_match = re.match(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', phrase)
-        if date_match:
-            # Assume MM/DD/YYYY format (US style)
-            month, day, year = date_match.groups()
-            return f"{year}-{int(month):02d}-{int(day):02d}"
+        if 'success_rate_percent' in recent_history:
+            context_data.append("Previous query involved success rate analysis")
         
-        # Handle relative terms
-        if 'yesterday' in phrase:
-            yesterday = datetime.now() - timedelta(days=1)
-            return yesterday.strftime("%Y-%m-%d")
+        if 'subscription' in recent_history.lower():
+            context_data.append("Previous query involved subscription data")
+            
+        if 'payment' in recent_history.lower():
+            context_data.append("Previous query involved payment data")
         
-        # If we can't parse it, return None
-        print(f"⚠️ Could not parse date phrase: '{phrase}'")
-        return None
+        return "\n".join(context_data) if context_data else "No specific numerical context found."
 
+# Core Client Class
 class UniversalClient:
-    """Universal Client with SSL fixes and proper async context management"""
-    
-    def __init__(self, config_path: Optional[str] = None, **kwargs):
-        self.config = self._load_config(config_path, **kwargs)
-        self.session: Optional[aiohttp.ClientSession] = None
+    def __init__(self, config: dict):
+        self.config = config
+        self.nlp = GeminiNLPProcessor()
+        self.session = None
         self.formatter = ResultFormatter()
-        
-        # Initialize Gemini NLP processor
-        gemini_api_key = self.config.get('gemini_api_key')
-        if not gemini_api_key:
-            raise ValueError("Missing required configuration: gemini_api_key")
-        
-        self.nlp = GeminiNLPProcessor(gemini_api_key)
-        
-        # Validate required config
-        required_keys = ['server_url', 'api_key', 'gemini_api_key']
-        for key in required_keys:
-            if key not in self.config:
-                raise ValueError(f"Missing required configuration: {key}")
-    
-    def _load_config(self, config_path: Optional[str] = None, **kwargs) -> Dict:
-        """Load configuration from file or environment variables with enhanced fallbacks"""
-        config = {}
-        
-        # Try to load from .env file
-        try:
-            from dotenv import load_dotenv
-            
-            # Try multiple .env locations
-            env_paths = [
-                '.env',
-                '../.env',
-                os.path.join(os.getcwd(), '.env'),
-                os.path.join(os.path.dirname(__file__), '.env') if '__file__' in globals() else None
-            ]
-            
-            env_loaded = False
-            for env_path in env_paths:
-                if env_path and os.path.exists(env_path):
-                    load_dotenv(env_path)
-                    env_loaded = True
-                    logger.debug(f"Loaded .env from: {env_path}")
-                    break
-            
-            if not env_loaded:
-                logger.warning("No .env file found, using environment variables only")
-                
-        except ImportError:
-            logger.warning("python-dotenv not available, using environment variables only")
-        
-        # Override with environment variables
-        env_config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL'),
-            'api_key': os.getenv('SUBSCRIPTION_API_KEY') or os.getenv('API_KEY_1'),
-            'gemini_api_key': os.getenv('GEMINI_API_KEY'),
-            'timeout': int(os.getenv('SUBSCRIPTION_API_TIMEOUT', '30')),
-            'retry_attempts': int(os.getenv('SUBSCRIPTION_API_RETRIES', '3')),
-            'debug': os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
-        }
-        
-        for key, value in env_config.items():
-            if value is not None:
-                config[key] = value
-        
-        # Override with direct kwargs
-        config.update(kwargs)
-        
-        # Set defaults
-        config.setdefault('timeout', 30)
-        config.setdefault('retry_attempts', 3)
-        config.setdefault('server_url', 'https://subscription-analysis-production.up.railway.app')
-        
-        return config
-    
+        self.history = []
+
     async def __aenter__(self):
-        """Async context manager entry with enhanced SSL handling"""
-        import ssl
-        
-        # Create SSL context with debug option from config
-        ssl_context = ssl.create_default_context()
-        
-        # Check if we should disable SSL verification (for development only)
-        if self.config.get('debug', False):
-            logger.warning("⚠️ Running in debug mode with SSL verification disabled")
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-        else:
-            try:
-                # Try to use system CA certificates
-                ssl_context = ssl.create_default_context(cafile=certifi.where())
-                logger.info("✓ Using system CA certificates for SSL verification")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not load system CA certificates: {e}")
-                logger.warning("⚠️ Falling back to default SSL context (less secure)")
-        
-        # Configure connection pooling
+        # FIXED: Better connection handling to prevent connection resets
         connector = aiohttp.TCPConnector(
-            ssl=ssl_context,
-            limit=10,  # Max number of simultaneous connections
-            keepalive_timeout=30  # Keep connections alive for 30 seconds
+            ssl=ssl.create_default_context(cafile=certifi.where()),
+            limit=10,           # Total connection limit
+            limit_per_host=5,   # Per-host connection limit
+            enable_cleanup_closed=True,  # Clean up closed connections
+            force_close=True,   # Force close connections after each request
+            ttl_dns_cache=300   # DNS cache TTL
         )
-        
         self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.config.get('timeout', 30)),
-            connector=connector
+            connector=connector,
+            timeout=aiohttp.ClientTimeout(total=120),  # Increased timeout
+            headers={'Connection': 'close'}  # Force connection close
         )
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit"""
         if self.session:
             await self.session.close()
-    
-    async def call_tool(self, tool_name: str, parameters: Dict = None) -> QueryResult:
-        """Execute a tool on the HTTP API server with enhanced error handling"""
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use 'async with' context manager.")
+
+    def _fix_sql_syntax(self, sql_query: str) -> str:
+        """Automatically fix common SQL syntax errors for MySQL"""
+        original_sql = sql_query
         
-        api_key = self.config['api_key'].strip()
-        headers = {"Authorization": f"Bearer {api_key}"}
-        payload = {
-            "tool_name": tool_name,
-            "parameters": parameters or {}
+        # Fix SQLite date functions to MySQL equivalents
+        sql_fixes = [
+            # SQLite DATE('now', '-N days') → MySQL DATE_SUB(CURDATE(), INTERVAL N DAY)
+            (r"DATE\('now',\s*'-(\d+)\s+days?'\)", r"DATE_SUB(CURDATE(), INTERVAL \1 DAY)"),
+            (r"DATE\('now',\s*'-(\d+)\s+day'\)", r"DATE_SUB(CURDATE(), INTERVAL \1 DAY)"),
+            
+            # SQLite DATETIME('now') → MySQL NOW()
+            (r"DATETIME\('now'\)", "NOW()"),
+            (r"DATE\('now'\)", "CURDATE()"),
+            
+            # SQLite strftime → MySQL DATE_FORMAT
+            (r"strftime\('%Y-%m-%d',\s*([^)]+)\)", r"DATE_FORMAT(\1, '%Y-%m-%d')"),
+            
+            # SQLite julianday differences → MySQL DATEDIFF
+            (r"julianday\(([^)]+)\)\s*-\s*julianday\(([^)]+)\)", r"DATEDIFF(\1, \2)"),
+            
+            # SQLite || for concatenation → MySQL CONCAT()
+            (r"(['\"][^'\"]*['\"])\s*\|\|\s*(['\"][^'\"]*['\"])", r"CONCAT(\1, \2)"),
+            
+            # Fix common quote issues
+            (r"'(\d{4}-\d{2}-\d{2})'", r"'\1'"),  # Ensure proper date format
+        ]
+        
+        for pattern, replacement in sql_fixes:
+            sql_query = re.sub(pattern, replacement, sql_query, flags=re.IGNORECASE)
+        
+        # If SQL was changed, log what was fixed
+        if sql_query != original_sql:
+            logger.info(f"🔧 SQL auto-fix applied:")
+            logger.info(f"   Before: {original_sql}")
+            logger.info(f"   After:  {sql_query}")
+        
+        return sql_query
+
+    async def call_tool(self, tool_name: str, parameters: Dict = None, original_query: str = "") -> QueryResult:
+        """Call a tool on the API server with enhanced error handling and auto-fix retry logic"""
+        headers = {
+            "Authorization": f"Bearer {self.config['API_KEY_1']}",
+            "Connection": "close"  # Force connection close
         }
+        payload = {"tool_name": tool_name, "parameters": parameters or {}}
+        server_url = self.config['SUBSCRIPTION_API_URL']
         
-        print(f"🔧 Calling API: {tool_name} with {parameters}")
-        print(f"🔗 URL: {self.config['server_url']}/execute")
+        # Log the request for debugging
+        if tool_name == 'execute_dynamic_sql':
+            logger.info(f"🔍 Executing SQL: {parameters.get('sql_query', 'N/A')}")
         
-        for attempt in range(self.config.get('retry_attempts', 3)):
+        # Retry logic for connection issues and SQL syntax errors
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                async with self.session.post(
-                    f"{self.config['server_url']}/execute",
-                    json=payload,
-                    headers=headers
-                ) as response:
-                    
-                    print(f"📡 Response status: {response.status}")
-                    
-                    # Handle different response types
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'application/json' in content_type:
-                        data = await response.json()
-                        print(f"📊 Response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
-                    else:
-                        # Handle non-JSON responses
-                        text_data = await response.text()
-                        print(f"📊 Response (text): {text_data[:200]}...")
-                        data = {"error": f"Non-JSON response: {text_data[:200]}"}
-                    
-                    if response.status == 200 and data.get('success'):
-                        print(f"✅ Tool {tool_name} succeeded")
+                async with self.session.post(f"{server_url}/execute", json=payload, headers=headers) as response:
+                    if response.status == 401:
                         return QueryResult(
-                            success=True,
-                            data=data['data'],
-                            tool_used=tool_name,
-                            parameters=parameters
+                            success=False,
+                            error="Authentication failed. Please check your API key.",
+                            tool_used=tool_name
                         )
-                    else:
-                        error_msg = data.get('error', f"HTTP {response.status}")
-                        print(f"❌ Tool failed: {error_msg}")
+                    elif response.status == 404:
+                        return QueryResult(
+                            success=False,
+                            error=f"Tool '{tool_name}' not found on server.",
+                            tool_used=tool_name
+                        )
+                    elif response.status == 400:
+                        error_text = await response.text()
+                        return QueryResult(
+                            success=False,
+                            error=f"Bad request: {error_text}",
+                            tool_used=tool_name
+                        )
+                    elif response.status != 200:
+                        error_text = await response.text()
+                        return QueryResult(
+                            success=False,
+                            error=f"Server error (HTTP {response.status}): {error_text}",
+                            tool_used=tool_name
+                        )
+                    
+                    result_data = await response.json()
+                    
+                    # Check for SQL syntax errors and auto-fix
+                    if (not result_data.get('success', False) and 
+                        tool_name == 'execute_dynamic_sql' and 
+                        'sql_query' in parameters and
+                        attempt < max_retries - 1 and
+                        'SQL syntax' in str(result_data.get('error', ''))):
                         
-                        # For final attempt, return the error
-                        if attempt == self.config.get('retry_attempts', 3) - 1:
-                            return QueryResult(
-                                success=False,
-                                error=f"Tool execution failed: {error_msg}",
-                                tool_used=tool_name,
-                                parameters=parameters
-                            )
+                        logger.warning(f"🔧 SQL syntax error detected, attempting auto-fix...")
                         
-                        # Wait before retry
-                        await asyncio.sleep(2 ** attempt)
-                        
+                        # Try to fix common SQL syntax issues
+                        fixed_sql = self._fix_sql_syntax(parameters['sql_query'])
+                        if fixed_sql != parameters['sql_query']:
+                            logger.info(f"🔧 Auto-fixed SQL: {fixed_sql}")
+                            payload['parameters']['sql_query'] = fixed_sql
+                            parameters['sql_query'] = fixed_sql  # Update for next iteration
+                            continue  # Retry with fixed SQL
+                    
+                    return QueryResult(
+                        success=result_data.get('success', False),
+                        data=result_data.get('data'),
+                        error=result_data.get('error'),
+                        message=result_data.get('message'),
+                        tool_used=tool_name,
+                        parameters=parameters,
+                        is_dynamic=(tool_name == 'execute_dynamic_sql'),
+                        original_query=original_query,
+                        generated_sql=parameters.get('sql_query') if tool_name == 'execute_dynamic_sql' else None
+                    )
+                    
             except aiohttp.ClientError as e:
-                print(f"🌐 Network error: {e}")
-                if attempt == self.config.get('retry_attempts', 3) - 1:
+                if "Connection reset by peer" in str(e) and attempt < max_retries - 1:
+                    logger.warning(f"⚠️ Connection reset on attempt {attempt + 1}, retrying...")
+                    await asyncio.sleep(1)  # Brief delay before retry
+                    continue
+                else:
+                    logger.error(f"Network error calling tool {tool_name}: {e}")
                     return QueryResult(
                         success=False,
-                        error=f"Network error: {str(e)}",
-                        tool_used=tool_name,
-                        parameters=parameters
+                        error=f"Network error: {str(e)}. Check if the server is running.",
+                        tool_used=tool_name
                     )
-                await asyncio.sleep(2 ** attempt)
+            except asyncio.TimeoutError:
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️ Timeout on attempt {attempt + 1}, retrying...")
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    logger.error(f"Timeout calling tool {tool_name}")
+                    return QueryResult(
+                        success=False,
+                        error="Request timed out. The server may be overloaded.",
+                        tool_used=tool_name
+                    )
             except Exception as e:
-                print(f"🚨 Unexpected error: {e}")
-                if attempt == self.config.get('retry_attempts', 3) - 1:
-                    return QueryResult(
-                        success=False,
-                        error=f"Unexpected error: {str(e)}",
-                        tool_used=tool_name,
-                        parameters=parameters
-                    )
-                await asyncio.sleep(2 ** attempt)
-    
-    async def query(self, natural_language_query: str) -> Union[QueryResult, List[QueryResult]]:
-        """Process natural language query using Gemini NLP"""
-        print(f"\n🎯 Processing: '{natural_language_query}'")
+                logger.error(f"Unexpected error calling tool {tool_name}: {e}", exc_info=True)
+                return QueryResult(
+                    success=False,
+                    error=f"Unexpected error: {str(e)}",
+                    tool_used=tool_name
+                )
         
-        # Use Gemini to understand the query
-        parsed_queries = self.nlp.parse_query(natural_language_query)
-        
-        if len(parsed_queries) == 1:
-            # Single query
-            query = parsed_queries[0]
-            return await self.call_tool(query['tool'], query['parameters'])
-        else:
-            # Multi-query execution
-            print(f"🔄 Executing {len(parsed_queries)} operations...")
-            results = []
-            for i, query in enumerate(parsed_queries, 1):
-                print(f"📊 Operation {i}/{len(parsed_queries)}: {query['tool']} with {query['parameters']}")
-                result = await self.call_tool(query['tool'], query['parameters'])
-                results.append(result)
-            return results
-    
-    async def query_formatted(self, natural_language_query: str) -> str:
-        """Query and return beautifully formatted output"""
-        result = await self.query(natural_language_query)
-        
-        if isinstance(result, list):
-            return self.formatter.format_multi_result(result, natural_language_query)
-        else:
-            return self.formatter.format_single_result(result)
+        # If we get here, all retries failed
+        return QueryResult(
+            success=False,
+            error="All retry attempts failed. Connection issues with server.",
+            tool_used=tool_name
+        )
 
-# ==================================================
-# COMMAND LINE AND INTERACTIVE MODES
-# ==================================================
+    async def query(self, nl_query: str) -> Union[QueryResult, List[QueryResult]]:
+        """Process a natural language query"""
+        try:
+            parsed_calls = self.nlp.parse_query(nl_query, self.history)
+            
+            if len(parsed_calls) > 1:
+                # Multiple tool calls
+                results = await asyncio.gather(*[
+                    self.call_tool(call['tool'], call['parameters'], call['original_query'])
+                    for call in parsed_calls
+                ])
+                return results
+            else:
+                # Single tool call
+                call = parsed_calls[0]
+                return await self.call_tool(call['tool'], call['parameters'], call['original_query'])
+                
+        except Exception as e:
+            logger.error(f"Error in query processing: {e}", exc_info=True)
+            return QueryResult(
+                success=False,
+                error=f"Query processing failed: {e}"
+            )
 
+    def manage_history(self, query: str, response: str):
+        """Manage conversation history"""
+        self.history.extend([f"User: {query}", f"Assistant: {response}"])
+        # Keep only last 6 entries (3 turns)
+        self.history = self.history[-6:]
+    
+    async def submit_feedback(self, result: QueryResult, helpful: bool):
+        """Submit feedback for a dynamic query with enhanced negative feedback handling."""
+        if result.is_dynamic and result.generated_sql and result.original_query:
+            try:
+                feedback_result = await self.call_tool(
+                    'record_query_feedback',
+                    {
+                        'original_question': result.original_query,
+                        'sql_query': result.generated_sql,
+                        'was_helpful': helpful
+                    }
+                )
+                
+                if feedback_result.success and feedback_result.message:
+                    print(f"✅ {feedback_result.message}")
+                    
+                    # If negative feedback, offer to show similar queries to help understand the issue
+                    if not helpful:
+                        print("🔍 The system will now remember this as an example to avoid.")
+                        print("💡 This helps improve future query generation for similar questions.")
+                        
+                        try:
+                            # Get suggestions to show what the system learned
+                            suggestions_result = await self.call_tool(
+                                'get_query_suggestions',
+                                {'original_question': result.original_query}
+                            )
+                            
+                            if suggestions_result.success and suggestions_result.data:
+                                suggestions = suggestions_result.data
+                                if suggestions.get('recommendations'):
+                                    print(f"\n📚 Found {suggestions['similar_queries_found']} similar queries in memory:")
+                                    for i, rec in enumerate(suggestions['recommendations'][:2], 1):
+                                        feedback_type = "✅ Positive" if rec['was_helpful'] else "❌ Negative"
+                                        print(f"   {i}. {feedback_type} example (similarity: {rec['similarity_score']})")
+                                        print(f"      Question: {rec['previous_question'][:60]}...")
+                        except:
+                            pass  # Don't break if suggestions fail
+                else:
+                    print(f"⚠️ Feedback not recorded: {feedback_result.error or 'Server may not support learning'}")
+            except Exception as e:
+                print(f"⚠️ Could not submit feedback (server may be offline): {str(e)}")
+                print("💡 Your feedback is noted locally. The system will still work without this feature.")
+
+# Standalone Interactive Mode
 async def interactive_mode():
-    """Interactive mode for users with enhanced error handling"""
-    print("✨ SUBSCRIPTION ANALYTICS - GEMINI POWERED (ENHANCED VERSION)")
-    print("=" * 60)
+    """Run the interactive CLI mode"""
+    print("✨ Subscription Analytics AI Agent ✨")
+    print("=" * 50)
     
-    # Try to load configuration
-    config = {}
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-        
-        config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
-            'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
-            'gemini_api_key': os.getenv('GEMINI_API_KEY')
-        }
-        
-        # Check for missing keys
-        missing_keys = []
-        if not config['api_key']:
-            missing_keys.append('API_KEY_1 or SUBSCRIPTION_API_KEY')
-        if not config['gemini_api_key']:
-            missing_keys.append('GEMINI_API_KEY')
-        
-        if missing_keys:
-            print(f"⚠️ Missing environment variables: {', '.join(missing_keys)}")
-            
-            # Interactive fallback
-            if not config['api_key']:
-                config['api_key'] = input("🔑 Enter your API key: ").strip()
-            if not config['gemini_api_key']:
-                config['gemini_api_key'] = input("🤖 Enter your Gemini API key: ").strip()
-        
-        if not config['api_key'] or not config['gemini_api_key']:
-            print("❌ Both API keys are required.")
-            return
-            
-    except ImportError:
-        print("📝 Environment configuration not available. Please enter manually:")
-        config['server_url'] = input("🔗 Enter API server URL (default: https://subscription-analysis-production.up.railway.app): ").strip()
-        if not config['server_url']:
-            config['server_url'] = 'https://subscription-analysis-production.up.railway.app'
-        
-        config['api_key'] = input("🔑 Enter your API key: ").strip()
-        config['gemini_api_key'] = input("🤖 Enter your Gemini API key: ").strip()
-        
-        if not config['api_key'] or not config['gemini_api_key']:
-            print("❌ Both API keys are required.")
-            return
-    
-    print(f"🔗 Connected to: {config['server_url']}")
-    print(f"🔑 Using API key: {config['api_key'][:20]}...")
-    print(f"🤖 Using Gemini API: {config['gemini_api_key'][:20]}...")
+    # Get configuration
+    config_manager = ConfigManager()
     
     try:
-        async with UniversalClient(**config) as client:
-            print("\n💬 Enter your queries in natural language (or 'quit' to exit):")
-            print("📚 Examples:")
-            print("  • 'database status'")
-            print("  • 'subscription performance for last 7 days'")
-            print("  • 'compare 7 days vs 30 days'")
-            print("  • 'analytics from June 1st to today'")
+        user_config = config_manager.get_config()
+        
+        # Configure Gemini AI
+        genai.configure(api_key=user_config['GOOGLE_API_KEY'])
+        
+        print(f"🔗 Connected to server: {user_config['SUBSCRIPTION_API_URL']}")
+        
+        async with UniversalClient(config=user_config) as client:
+            print("\n💬 Enter questions in natural language. Type 'quit' or 'exit' to leave.")
+            print("\n📚 Example queries:")
+            print("  • How many new subscriptions in the last 7 days?")
+            print("  • What's the payment success rate for the last month?")
+            print("  • Show me payment history for user abc123")
+            print("  • Which users have the highest success rates?")
+            print("  • How many users have success rate above 15%?")
             
             while True:
                 try:
-                    query = input("\n🎯 Your query: ").strip()
-                    
-                    if query.lower() in ['quit', 'exit', 'q', 'bye']:
-                        print("👋 Goodbye!")
+                    query = input("\n> ").strip()
+                    if query.lower() in ['quit', 'exit', 'q']:
                         break
-                    
                     if not query:
                         continue
                     
-                    if query.lower() in ['help', 'h']:
-                        print("\n📚 You can ask anything in natural language!")
-                        print("  • Time periods: 'last 7 days', 'past 2 weeks', 'this month'")
-                        print("  • Metrics: 'subscriptions', 'payments', 'success rates'")
-                        print("  • Comparisons: 'compare X and Y', 'X versus Y'")
-                        print("  • Date ranges: 'from June 1st to today', 'between May 15 and June 30'")
-                        print("  • Database: 'database status', 'db health'")
-                        continue
+                    print("🤔 Processing your query...")
+                    result = await client.query(query)
                     
-                    if query.lower() in ['debug', 'test']:
-                        print("🔍 Running debug test...")
-                        debug_result = await client.query_formatted("database status")
-                        print(debug_result)
-                        continue
+                    # Format and display result
+                    if isinstance(result, list):
+                        output = client.formatter.format_multi_result(result, query)
+                    else:
+                        output = client.formatter.format_single_result(result)
                     
-                    print("\n🔄 Processing with Gemini AI...")
-                    formatted_output = await client.query_formatted(query)
-                    print("\n" + formatted_output)
+                    print(f"\n{output}")
+                    
+                    # Update conversation history
+                    client.manage_history(query, output)
+                    
+                    # Handle feedback for dynamic queries
+                    if (isinstance(result, QueryResult) and 
+                        result.is_dynamic and 
+                        result.success and 
+                        result.data is not None):
                         
-                except KeyboardInterrupt:
-                    print("\n👋 Goodbye!")
+                        print("\n" + "="*50)
+                        print("📝 This answer was generated using a custom SQL query.")
+                        while True:
+                            feedback_input = input("Was this answer helpful and accurate? (y/n/skip): ").lower().strip()
+                            if feedback_input in ['y', 'yes']:
+                                await client.submit_feedback(result, True)
+                                break
+                            elif feedback_input in ['n', 'no']:
+                                await client.submit_feedback(result, False)
+                                print("Thank you for the feedback. This helps improve the system.")
+                                break
+                            elif feedback_input in ['s', 'skip', '']:
+                                break
+                            else:
+                                print("Please enter 'y' for yes, 'n' for no, or 'skip'.")
+                
+                except (KeyboardInterrupt, EOFError):
                     break
                 except Exception as e:
-                    print(f"❌ Error processing query: {e}")
-                    logger.exception("Error in interactive mode")
-    except Exception as e:
-        print(f"❌ Failed to initialize client: {e}")
-        logger.exception("Client initialization error")
-
-async def single_query_mode(query: str):
-    """Single query mode with enhanced error handling"""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-        
-        config = {
-            'server_url': os.getenv('SUBSCRIPTION_API_URL', 'https://subscription-analysis-production.up.railway.app'),
-            'api_key': os.getenv('API_KEY_1') or os.getenv('SUBSCRIPTION_API_KEY'),
-            'gemini_api_key': os.getenv('GEMINI_API_KEY')
-        }
-        
-        missing_keys = []
-        if not config['api_key']:
-            missing_keys.append('API_KEY_1 or SUBSCRIPTION_API_KEY')
-        if not config['gemini_api_key']:
-            missing_keys.append('GEMINI_API_KEY')
-        
-        if missing_keys:
-            print(f"❌ Missing environment variables: {', '.join(missing_keys)}")
-            print("Please set the following environment variables:")
-            for key in missing_keys:
-                print(f"  - {key}")
-            return 1
-            
-    except ImportError:
-        print("❌ python-dotenv not available. Please set environment variables manually.")
-        return 1
+                    logger.error("Error in interactive loop", exc_info=True)
+                    print(f"❌ Error: {e}")
+                    
+    except Exception as e:  
+        logger.error("Client failed to initialize", exc_info=True)
+        print(f"❌ Critical Error: {e}")
+        print("\n🔧 Troubleshooting:")
+        print("1. Check your internet connection")
+        print("2. Verify your API keys in client/config.json")
+        print("3. Ensure the server is running and accessible")
     
-    try:
-        async with UniversalClient(**config) as client:
-            formatted_output = await client.query_formatted(query)
-            print(formatted_output)
-            return 0
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        logger.exception("Single query mode error")
-        return 1
-
-def main():
-    """Main function with enhanced help and error handling"""
-    if len(sys.argv) > 1:
-        if sys.argv[1] in ['--help', '-h', 'help']:
-            print("Enhanced Universal Client - Subscription Analytics")
-            print("\nUsage:")
-            print("  python universal_client.py                    # Interactive mode")
-            print("  python universal_client.py 'your query'       # Single query mode")
-            print("  python universal_client.py --help             # Show help")
-            print("\nExample queries:")
-            print("  python universal_client.py 'database status'")
-            print("  python universal_client.py 'compare 7 vs 30 days'")
-            print("  python universal_client.py 'analytics from June 1st to today'")
-            print("\nEnvironment variables needed:")
-            print("  - API_KEY_1 or SUBSCRIPTION_API_KEY")
-            print("  - GEMINI_API_KEY")
-            print("  - SUBSCRIPTION_API_URL (optional, defaults to production)")
-            return
-        
-        # Single query mode
-        query = " ".join(sys.argv[1:])
-        exit_code = asyncio.run(single_query_mode(query))
-        sys.exit(exit_code)
-    else:
-        # Interactive mode
-        asyncio.run(interactive_mode())
+    print("\n👋 Goodbye!")
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(interactive_mode())
+    except KeyboardInterrupt:
+        print("\n👋 Goodbye!")
+    except Exception as e:
+        print(f"❌ Failed to start client: {e}")
+        print("\n💡 The client only needs Google API key and server API key, not database credentials!")
