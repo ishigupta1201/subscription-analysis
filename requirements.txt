@@ -4,9 +4,15 @@ uvicorn[standard]
 pydantic
 python-dotenv
 mysql-connector-python
+requests
 
 # Semantic learning dependencies (let pip choose compatible versions)
 sentence-transformers
 torch
 faiss-cpu
 numpy
+
+# HTTP and SSL dependencies
+certifi
+urllib3[secure]
+aiohttp
