@@ -1,20 +1,22 @@
-# requirements.txt
+# Core API Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+python-dotenv==1.0.0
 
-# Core Server
-fastapi
-uvicorn[standard]
-python-dotenv
-mysql-connector-python
+# Database
+mysql-connector-python==8.2.0
 
 # AI & NLP
-google-generativeai
-sentence-transformers
-faiss-cpu
-numpy
+google-generativeai==0.3.2
+sentence-transformers==2.2.2
+torch==2.1.1
+faiss-cpu==1.7.4
+numpy==1.24.3
 
-# Client & Networking
-aiohttp
-certifi
+# Client & Networking  
+aiohttp==3.9.1
+certifi==2023.11.17
 
 # MCP Integration
-mcp
+mcp==0.6.0
