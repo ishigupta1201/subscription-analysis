@@ -33,12 +33,3 @@ Thumbs.db
 # Exclude logs
 *.log
 logs/
-
-# Exclude any local model files
-model/
-*.model
-*.bin
-
-# Exclude Railway specific files
-Procfile
-railway.json
