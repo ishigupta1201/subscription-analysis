@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-CRASH-RESISTANT API Server for Subscription Analytics
-- Fixes connection reset issues
-- Improved error handling for dynamic SQL
-- Stable semantic learning with LOCAL MODEL
-- Better validation and logging
-- NO DOWNLOADS - Uses local model only
+RENDER.COM OPTIMIZED API Server for Subscription Analytics
+- Fixed authentication for health checks
+- Improved semantic learning compatibility
+- Stable deployment configuration
+- Works with Render.com platform
 """
 
 import datetime
@@ -54,7 +53,7 @@ os.environ.update({
     'CUDA_VISIBLE_DEVICES': '',
 })
 
-# SEMANTIC LEARNING WITH LOCAL MODEL ONLY
+# SEMANTIC LEARNING WITH COMPATIBLE VERSIONS
 SEMANTIC_LEARNING_ENABLED = False
 try:
     import numpy as np
@@ -569,7 +568,8 @@ def get_database_status() -> Dict:
     status_data = {
         "status": "connected",
         "timestamp": datetime.datetime.now().isoformat(),
-        "semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled"
+        "semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled",
+        "platform": "render.com"
     }
     
     if results:
@@ -794,19 +794,18 @@ def verify_api_key(authorization: str = Header(None)):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    logger.info("🚀 Starting CRASH-RESISTANT Subscription Analytics API Server")
+    logger.info("🚀 Starting RENDER.COM Subscription Analytics API Server")
     logger.info(f"Semantic learning: {'enabled' if SEMANTIC_LEARNING_ENABLED else 'disabled'}")
     logger.info(f"Available tools: {len(TOOL_REGISTRY)}")
     yield
     logger.info("🛑 Shutting down API Server")
 
-# Create FastAPI app
+# Create FastAPI app - NO GLOBAL AUTHENTICATION
 app = FastAPI(
     title="Subscription Analytics API",
-    description="Crash-resistant AI-powered subscription analytics",
-    version="6.0.0-crash-resistant-local-model",
-    lifespan=lifespan,
-    dependencies=[Depends(verify_api_key)]
+    description="Render.com optimized AI-powered subscription analytics",
+    version="6.0.0-render-deployment",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -818,35 +817,40 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# API Endpoints
+# Health endpoint - NO AUTHENTICATION (for Render.com health checks)
 @app.get("/health")
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint - NO AUTHENTICATION for Render health checks."""
     health_data = {
         "status": "ok",
         "semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled",
         "timestamp": datetime.datetime.now().isoformat(),
         "available_tools": len(TOOL_REGISTRY),
-        "stability": "crash-resistant-local-model-negative-feedback"
+        "platform": "render.com",
+        "version": "6.0.0-render-deployment"
     }
     
-    # Add learning system stats
+    # Add learning system stats if available
     if semantic_learner and hasattr(semantic_learner, 'known_queries'):
-        total_queries = len(semantic_learner.known_queries)
-        positive_count = sum(1 for q in semantic_learner.known_queries if q.get('was_helpful', True))
-        negative_count = total_queries - positive_count
-        
-        health_data.update({
-            "learning_stats": {
-                "total_learned_queries": total_queries,
-                "positive_examples": positive_count,
-                "negative_examples": negative_count
-            }
-        })
+        try:
+            total_queries = len(semantic_learner.known_queries)
+            positive_count = sum(1 for q in semantic_learner.known_queries if q.get('was_helpful', True))
+            negative_count = total_queries - positive_count
+            
+            health_data.update({
+                "learning_stats": {
+                    "total_learned_queries": total_queries,
+                    "positive_examples": positive_count,
+                    "negative_examples": negative_count
+                }
+            })
+        except:
+            pass  # Don't break health check if learning stats fail
     
     return health_data
 
-@app.get("/tools", response_model=List[ToolInfo])
+# Tools endpoint - WITH AUTHENTICATION
+@app.get("/tools", response_model=List[ToolInfo], dependencies=[Depends(verify_api_key)])
 def list_tools():
     """List all available tools."""
     return [
@@ -855,7 +859,8 @@ def list_tools():
         if name not in ["record_query_feedback", "get_query_suggestions"]  # Hide internal tools
     ]
 
-@app.post("/execute", response_model=ToolResponse)
+# Execute endpoint - WITH AUTHENTICATION  
+@app.post("/execute", response_model=ToolResponse, dependencies=[Depends(verify_api_key)])
 def execute_tool(request: ToolRequest):
     """Execute a specific tool with comprehensive error handling."""
     start_time = datetime.datetime.now()
@@ -925,21 +930,21 @@ if __name__ == "__main__":
         logger.error(f"❌ FATAL: Missing required environment variables: {missing_vars}")
         sys.exit(1)
     
-    # Cloud Run sets PORT environment variable
+    # Render.com sets PORT environment variable
     port = int(os.getenv("PORT", 8000))
     
-    logger.info(f"🚀 Starting server on port {port}")
+    logger.info(f"🚀 Starting RENDER.COM server on port {port}")
     logger.info("🛡️ Enhanced error handling and logging enabled")
-    logger.info("🧠 Semantic learning enabled for Cloud Run")
+    logger.info("🧠 Semantic learning support available")
     
-    # Optimized configuration for Cloud Run
+    # Render.com optimized configuration
     uvicorn.run(
         "api_server:app",
         host="0.0.0.0",
         port=port,
-        reload=False,
-        workers=1,
+        reload=False,           # Critical: prevent reloads
+        workers=1,              # Single worker for stability
         log_level="info",
         access_log=True,
-        loop="asyncio"
+        loop="asyncio"          # Use asyncio loop
     )

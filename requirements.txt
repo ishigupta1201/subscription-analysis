@@ -1,12 +1,12 @@
-# Core API dependencies
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-python-dotenv==1.0.0
-mysql-connector-python==8.2.0
+# Core API dependencies (required)
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+mysql-connector-python
 
-# Semantic learning dependencies (full functionality)
-sentence-transformers==2.2.2
-torch==2.7.1
-faiss-cpu==1.7.4
-numpy==1.26.0
+# Semantic learning dependencies (let pip choose compatible versions)
+sentence-transformers
+torch
+faiss-cpu
+numpy
