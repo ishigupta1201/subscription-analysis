@@ -13,8 +13,15 @@ from typing import Dict, List, Optional, Union, Any
 from dataclasses import dataclass
 import google.generativeai as genai
 
-# Use the ConfigManager from the same package
-from .config_manager import ConfigManager
+# FIXED: Remove relative import and use absolute import
+# Add current directory to path to ensure imports work
+from pathlib import Path
+current_dir = Path(__file__).parent.absolute()
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
+# Now import config manager
+from config_manager import ConfigManager
 
 # Basic Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -307,75 +314,6 @@ TOOL SELECTION LOGIC:
    - Questions referring to previous results → execute_dynamic_sql with context values
    - "How many users/merchants..." → execute_dynamic_sql with COUNT
    - Any question requiring granular data → execute_dynamic_sql
-
-3. **SPECIFIC EXAMPLES FOR CONTEXT-AWARE QUERIES:**
-   
-   Example 1: Previous result showed "success_rate_percent: 14.86", user asks "how many users have higher than that"
-   Generate SQL:
-   ```sql
-   SELECT COUNT(*) as users_above_average
-   FROM (
-       SELECT sc.merchant_user_id, 
-              ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent
-       FROM subscription_contract_v2 AS sc 
-       JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
-       GROUP BY sc.merchant_user_id
-       HAVING COUNT(*) >= 3
-   ) AS user_rates WHERE success_rate_percent > 14.86
-   ```
-
-   Example 2: User asks "show me individual user success rates"
-   Generate SQL:
-   ```sql
-   SELECT sc.merchant_user_id, 
-          COUNT(*) as total_payments,
-          SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
-          ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent
-   FROM subscription_contract_v2 AS sc 
-   JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
-   GROUP BY sc.merchant_user_id
-   HAVING COUNT(*) >= 3
-   ORDER BY success_rate_percent DESC
-   LIMIT 20
-   ```
-
-   Example 3: User asks "show me their ids" (referring to users above threshold)
-   Generate SQL:
-   ```sql
-   SELECT merchant_user_id, success_rate_percent
-   FROM (
-       SELECT sc.merchant_user_id, 
-              ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent
-       FROM subscription_contract_v2 AS sc 
-       JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
-       GROUP BY sc.merchant_user_id
-       HAVING COUNT(*) >= 3
-   ) AS user_rates 
-   WHERE success_rate_percent > 14.86
-   ORDER BY success_rate_percent DESC
-   ```
-
-   Example 4: User asks "what's their failure rate?" (referring to users above threshold)
-   Generate SQL (single query approach - PREFERRED):
-   ```sql
-   SELECT sc.merchant_user_id,
-          COUNT(*) as total_payments,
-          ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent,
-          ROUND((SUM(CASE WHEN pd.status != 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as failure_rate_percent
-   FROM subscription_contract_v2 AS sc 
-   JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
-   GROUP BY sc.merchant_user_id
-   HAVING COUNT(*) >= 3 AND ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) > 14.86
-   ORDER BY success_rate_percent DESC
-   ```
-
-   Example 5: Previous query was "subscriptions in last 30 days", user asks "payments in same time"
-   Generate SQL:
-   ```sql
-   SELECT COUNT(*) AS total_payments 
-   FROM subscription_payment_details 
-   WHERE created_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-   ```
 
 Choose the most appropriate tool and provide necessary parameters. Make sure all SQL queries are valid MySQL and start with SELECT.
 """
