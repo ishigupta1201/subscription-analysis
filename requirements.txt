@@ -1,20 +1,18 @@
-# requirements.txt
-
-# Core Server
+# Core API dependencies (required)
 fastapi
 uvicorn[standard]
+pydantic
 python-dotenv
 mysql-connector-python
+requests
 
-# AI & NLP
-google-generativeai
+# Semantic learning dependencies (let pip choose compatible versions)
 sentence-transformers
+torch
 faiss-cpu
 numpy
 
-# Client & Networking
-aiohttp
+# HTTP and SSL dependencies
 certifi
-
-# MCP Integration
-mcp
+urllib3[secure]
+aiohttp

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-CRASH-RESISTANT API Server for Subscription Analytics
-- Fixes connection reset issues
-- Improved error handling for dynamic SQL
-- Stable semantic learning with LOCAL MODEL
-- Better validation and logging
-- NO DOWNLOADS - Uses local model only
+ENHANCED API Server with Graph Generation Capabilities
+- All original functionality preserved
+- New graph generation tool added
+- Intelligent graph type detection
+- Graph data optimization for visualization
 """
 
 import datetime
@@ -54,7 +53,7 @@ os.environ.update({
     'CUDA_VISIBLE_DEVICES': '',
 })
 
-# SEMANTIC LEARNING WITH LOCAL MODEL ONLY
+# SEMANTIC LEARNING WITH COMPATIBLE VERSIONS
 SEMANTIC_LEARNING_ENABLED = False
 try:
     import numpy as np
@@ -161,8 +160,8 @@ class SemanticQueryLearner:
         except Exception as e:
             logger.warning(f"⚠️ Failed to save query memory: {e}")
 
-    def add_successful_query(self, original_question: str, sql_query: str, was_helpful: bool = True):
-        """Add query feedback to memory - both positive and negative."""
+    def add_successful_query(self, original_question: str, sql_query: str, was_helpful: bool = True, improvement_suggestion: str = None):
+        """Add query feedback to memory - both positive and negative with improvement suggestions."""
         if not self.model:
             logger.info("📝 Feedback noted (semantic learning not available)")
             return
@@ -213,14 +212,21 @@ class SemanticQueryLearner:
             elif hasattr(vector, 'numpy'):
                 vector = vector.numpy()
             
-            # Add to memory with feedback information
-            self.known_queries.append({
+            # Add to memory with feedback information and improvement suggestion
+            feedback_entry = {
                 'question': original_question,
                 'sql': sql_query,
                 'was_helpful': was_helpful,
                 'feedback_type': feedback_type,
                 'timestamp': datetime.datetime.now().isoformat()
-            })
+            }
+            
+            # Add improvement suggestion for negative feedback
+            if not was_helpful and improvement_suggestion:
+                feedback_entry['improvement_suggestion'] = improvement_suggestion.strip()
+                logger.info(f"💡 Improvement suggestion recorded: {improvement_suggestion[:100]}...")
+            
+            self.known_queries.append(feedback_entry)
             
             if self.known_vectors is None:
                 self.known_vectors = np.array([vector])
@@ -294,6 +300,69 @@ class SemanticQueryLearner:
             
         except Exception as e:
             logger.warning(f"⚠️ Similar query search failed: {e}")
+            return []
+
+    def get_improvement_suggestions_for_query(self, question: str, threshold: float = 0.85):
+        """Get improvement suggestions from similar failed queries."""
+        if not self.model or not self.index or len(self.known_queries) == 0:
+            return []
+        
+        try:
+            # Encode the question
+            import torch
+            with torch.no_grad():
+                self.model.eval()
+                question_vector = self.model.encode([question], 
+                                                  show_progress_bar=False, 
+                                                  convert_to_tensor=False,
+                                                  device='cpu')[0]
+            
+            # Ensure vector is numpy array
+            if hasattr(question_vector, 'cpu'):
+                question_vector = question_vector.cpu().numpy()
+            elif hasattr(question_vector, 'numpy'):
+                question_vector = question_vector.numpy()
+            
+            # Search for similar queries
+            k = min(10, len(self.known_queries))  # Search more entries
+            distances, indices = self.index.search(np.array([question_vector]).astype('float32'), k=k)
+            
+            improvement_suggestions = []
+            for distance, idx in zip(distances[0], indices[0]):
+                if distance < threshold and idx < len(self.known_queries):
+                    query_data = self.known_queries[idx]
+                    
+                    # Only include entries with improvement suggestions (negative feedback)
+                    if (not query_data.get('was_helpful', True) and 
+                        'improvement_suggestion' in query_data and 
+                        query_data['improvement_suggestion']):
+                        
+                        similarity = 1.0 - (distance / 2.0)
+                        improvement_suggestions.append({
+                            'similarity': similarity,
+                            'question': query_data['question'],
+                            'failed_sql': query_data['sql'],
+                            'improvement_suggestion': query_data['improvement_suggestion'],
+                            'timestamp': query_data['timestamp']
+                        })
+            
+            # Sort by similarity and return unique suggestions
+            improvement_suggestions.sort(key=lambda x: x['similarity'], reverse=True)
+            
+            # Remove duplicate suggestions
+            seen_suggestions = set()
+            unique_suggestions = []
+            for suggestion in improvement_suggestions:
+                suggestion_text = suggestion['improvement_suggestion'].lower()
+                if suggestion_text not in seen_suggestions:
+                    seen_suggestions.add(suggestion_text)
+                    unique_suggestions.append(suggestion)
+            
+            logger.info(f"💡 Found {len(unique_suggestions)} improvement suggestions for similar queries")
+            return unique_suggestions[:3]  # Return top 3 unique suggestions
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Improvement suggestions search failed: {e}")
             return []
 
 # Initialize with error handling
@@ -451,7 +520,267 @@ def validate_sql_query(sql_query: str) -> tuple[bool, str]:
     
     return True, "Query validation passed"
 
-# Enhanced Tool Functions
+# NEW: Graph Generation Functions
+class GraphAnalyzer:
+    """Analyzes data and determines optimal graph types and configurations."""
+    
+    @staticmethod
+    def analyze_data_for_graphing(data: List[Dict]) -> Dict:
+        """Analyze data structure and recommend graph types."""
+        if not data or not isinstance(data, list) or len(data) == 0:
+            return {"error": "No data available for graphing"}
+        
+        # Get column information
+        columns = list(data[0].keys())
+        num_rows = len(data)
+        
+        # Analyze column types
+        column_analysis = {}
+        for col in columns:
+            values = [row.get(col) for row in data if row.get(col) is not None]
+            if not values:
+                continue
+                
+            # Determine column type
+            sample_value = values[0]
+            if isinstance(sample_value, (int, float, decimal.Decimal)):
+                column_analysis[col] = {
+                    'type': 'numeric',
+                    'min': min(values),
+                    'max': max(values),
+                    'unique_count': len(set(values))
+                }
+            elif isinstance(sample_value, (datetime.date, datetime.datetime)) or 'date' in col.lower():
+                column_analysis[col] = {
+                    'type': 'datetime',
+                    'unique_count': len(set(values))
+                }
+            else:
+                column_analysis[col] = {
+                    'type': 'categorical',
+                    'unique_count': len(set(values)),
+                    'categories': list(set(str(v) for v in values))[:10]  # First 10 categories
+                }
+        
+        # Determine best graph types
+        recommended_graphs = GraphAnalyzer._recommend_graph_types(column_analysis, num_rows)
+        
+        return {
+            "columns": columns,
+            "num_rows": num_rows,
+            "column_analysis": column_analysis,
+            "recommended_graphs": recommended_graphs
+        }
+    
+    @staticmethod
+    def _recommend_graph_types(column_analysis: Dict, num_rows: int) -> List[Dict]:
+        """Recommend graph types based on data structure."""
+        recommendations = []
+        
+        numeric_cols = [col for col, info in column_analysis.items() if info['type'] == 'numeric']
+        datetime_cols = [col for col, info in column_analysis.items() if info['type'] == 'datetime']
+        categorical_cols = [col for col, info in column_analysis.items() if info['type'] == 'categorical']
+        
+        # Time series (if we have datetime + numeric)
+        if datetime_cols and numeric_cols:
+            recommendations.append({
+                'type': 'line',
+                'title': 'Time Series Analysis',
+                'x_axis': datetime_cols[0],
+                'y_axis': numeric_cols[0],
+                'description': f'Shows trends over time for {numeric_cols[0]}',
+                'priority': 1
+            })
+        
+        # Bar chart for categorical data with numeric values
+        if categorical_cols and numeric_cols and num_rows <= 50:
+            recommendations.append({
+                'type': 'bar',
+                'title': 'Categorical Comparison',
+                'x_axis': categorical_cols[0],
+                'y_axis': numeric_cols[0],
+                'description': f'Compare {numeric_cols[0]} across {categorical_cols[0]}',
+                'priority': 2
+            })
+        
+        # Pie chart for categories with counts
+        if categorical_cols and len(categorical_cols) == 1 and len(numeric_cols) == 1 and num_rows <= 10:
+            recommendations.append({
+                'type': 'pie',
+                'title': 'Distribution Analysis',
+                'category': categorical_cols[0],
+                'value': numeric_cols[0],
+                'description': f'Distribution of {numeric_cols[0]} by {categorical_cols[0]}',
+                'priority': 3
+            })
+        
+        # Scatter plot for two numeric columns
+        if len(numeric_cols) >= 2:
+            recommendations.append({
+                'type': 'scatter',
+                'title': 'Correlation Analysis',
+                'x_axis': numeric_cols[0],
+                'y_axis': numeric_cols[1],
+                'description': f'Relationship between {numeric_cols[0]} and {numeric_cols[1]}',
+                'priority': 3
+            })
+        
+        # Horizontal bar for rankings
+        if categorical_cols and numeric_cols and any('rate' in col.lower() or 'percent' in col.lower() for col in numeric_cols):
+            recommendations.append({
+                'type': 'horizontal_bar',
+                'title': 'Rankings',
+                'x_axis': numeric_cols[0],
+                'y_axis': categorical_cols[0],
+                'description': f'Ranking by {numeric_cols[0]}',
+                'priority': 2
+            })
+        
+        # Sort by priority
+        recommendations.sort(key=lambda x: x['priority'])
+        return recommendations
+
+def generate_graph_data(data: List[Dict], graph_type: str = None, custom_config: Dict = None) -> Dict:
+    """Generate graph-ready data from SQL results."""
+    try:
+        if not data or not isinstance(data, list) or len(data) == 0:
+            return {"error": "No data provided for graph generation"}
+        
+        # Analyze the data
+        analysis = GraphAnalyzer.analyze_data_for_graphing(data)
+        if "error" in analysis:
+            return analysis
+        
+        # Use provided graph type or auto-select the best one
+        if graph_type:
+            selected_graph = None
+            for rec in analysis['recommended_graphs']:
+                if rec['type'] == graph_type:
+                    selected_graph = rec
+                    break
+            if not selected_graph:
+                return {"error": f"Graph type '{graph_type}' not suitable for this data"}
+        else:
+            if not analysis['recommended_graphs']:
+                return {"error": "No suitable graph types found for this data"}
+            selected_graph = analysis['recommended_graphs'][0]  # Use the highest priority
+        
+        # Generate graph-specific data
+        graph_data = {
+            "graph_type": selected_graph['type'],
+            "title": selected_graph['title'],
+            "description": selected_graph['description'],
+            "data_summary": {
+                "total_rows": len(data),
+                "columns": analysis['columns']
+            }
+        }
+        
+        # Apply custom configuration if provided
+        if custom_config:
+            selected_graph.update(custom_config)
+        
+        # Generate data based on graph type
+        if selected_graph['type'] == 'line':
+            graph_data.update(GraphAnalyzer._prepare_line_data(data, selected_graph))
+        elif selected_graph['type'] == 'bar':
+            graph_data.update(GraphAnalyzer._prepare_bar_data(data, selected_graph))
+        elif selected_graph['type'] == 'horizontal_bar':
+            graph_data.update(GraphAnalyzer._prepare_horizontal_bar_data(data, selected_graph))
+        elif selected_graph['type'] == 'pie':
+            graph_data.update(GraphAnalyzer._prepare_pie_data(data, selected_graph))
+        elif selected_graph['type'] == 'scatter':
+            graph_data.update(GraphAnalyzer._prepare_scatter_data(data, selected_graph))
+        else:
+            return {"error": f"Graph type '{selected_graph['type']}' not implemented"}
+        
+        # Add metadata for client rendering
+        graph_data['metadata'] = {
+            'all_recommendations': analysis['recommended_graphs'],
+            'column_analysis': analysis['column_analysis'],
+            'generated_at': datetime.datetime.now().isoformat()
+        }
+        
+        logger.info(f"📊 Generated {selected_graph['type']} graph with {len(data)} data points")
+        return {"data": graph_data}
+        
+    except Exception as e:
+        logger.error(f"❌ Graph generation failed: {e}")
+        return {"error": f"Graph generation failed: {str(e)}"}
+
+# Graph data preparation methods for GraphAnalyzer
+def _prepare_line_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for line chart."""
+    x_col = config['x_axis']
+    y_col = config['y_axis']
+    
+    # Sort by x-axis for proper line progression
+    sorted_data = sorted(data, key=lambda x: x.get(x_col, ''))
+    
+    return {
+        "x_values": [row.get(x_col) for row in sorted_data],
+        "y_values": [float(row.get(y_col, 0)) if row.get(y_col) is not None else 0 for row in sorted_data],
+        "x_label": x_col.replace('_', ' ').title(),
+        "y_label": y_col.replace('_', ' ').title()
+    }
+
+def _prepare_bar_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for bar chart."""
+    x_col = config['x_axis']
+    y_col = config['y_axis']
+    
+    return {
+        "categories": [str(row.get(x_col, '')) for row in data],
+        "values": [float(row.get(y_col, 0)) if row.get(y_col) is not None else 0 for row in data],
+        "x_label": x_col.replace('_', ' ').title(),
+        "y_label": y_col.replace('_', ' ').title()
+    }
+
+def _prepare_horizontal_bar_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for horizontal bar chart."""
+    x_col = config['x_axis']  # numeric values
+    y_col = config['y_axis']  # categories
+    
+    # Sort by values for better visualization
+    sorted_data = sorted(data, key=lambda x: float(x.get(x_col, 0)) if x.get(x_col) is not None else 0, reverse=True)
+    
+    return {
+        "categories": [str(row.get(y_col, '')) for row in sorted_data],
+        "values": [float(row.get(x_col, 0)) if row.get(x_col) is not None else 0 for row in sorted_data],
+        "x_label": x_col.replace('_', ' ').title(),
+        "y_label": y_col.replace('_', ' ').title()
+    }
+
+def _prepare_pie_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for pie chart."""
+    category_col = config['category']
+    value_col = config['value']
+    
+    return {
+        "labels": [str(row.get(category_col, '')) for row in data],
+        "values": [float(row.get(value_col, 0)) if row.get(value_col) is not None else 0 for row in data]
+    }
+
+def _prepare_scatter_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for scatter plot."""
+    x_col = config['x_axis']
+    y_col = config['y_axis']
+    
+    return {
+        "x_values": [float(row.get(x_col, 0)) if row.get(x_col) is not None else 0 for row in data],
+        "y_values": [float(row.get(y_col, 0)) if row.get(y_col) is not None else 0 for row in data],
+        "x_label": x_col.replace('_', ' ').title(),
+        "y_label": y_col.replace('_', ' ').title()
+    }
+
+# Add these methods to GraphAnalyzer class
+GraphAnalyzer._prepare_line_data = staticmethod(_prepare_line_data)
+GraphAnalyzer._prepare_bar_data = staticmethod(_prepare_bar_data)
+GraphAnalyzer._prepare_horizontal_bar_data = staticmethod(_prepare_horizontal_bar_data)
+GraphAnalyzer._prepare_pie_data = staticmethod(_prepare_pie_data)
+GraphAnalyzer._prepare_scatter_data = staticmethod(_prepare_scatter_data)
+
+# Enhanced Tool Functions (all original functions preserved)
 def get_subscriptions_in_last_days(days: int) -> Dict:
     """Get subscription statistics for the last N days."""
     try:
@@ -481,7 +810,7 @@ def get_subscriptions_in_last_days(days: int) -> Dict:
     return {"data": sanitize_for_json(results[0]) if results else {}}
 
 def get_payment_success_rate_in_last_days(days: int) -> Dict:
-    """Get payment success rate and revenue for the last N days."""
+    """Get payment success rate and revenue statistics for the last N days."""
     try:
         days = int(days)
         if days <= 0 or days > 365:
@@ -569,7 +898,8 @@ def get_database_status() -> Dict:
     status_data = {
         "status": "connected",
         "timestamp": datetime.datetime.now().isoformat(),
-        "semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled"
+        "semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled",
+        "platform": "render.com"
     }
     
     if results:
@@ -623,8 +953,8 @@ def execute_dynamic_sql(sql_query: str) -> Dict:
         logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return {"error": f"Unexpected error during SQL execution: {str(e)}"}
 
-def record_query_feedback(original_question: str, sql_query: str, was_helpful: bool) -> Dict:
-    """Record user feedback - both positive and negative for learning."""
+def record_query_feedback(original_question: str, sql_query: str, was_helpful: bool, improvement_suggestion: str = None) -> Dict:
+    """Record user feedback - both positive and negative with optional improvement suggestions."""
     try:
         if not original_question or not sql_query:
             return {"error": "Both original_question and sql_query are required"}
@@ -632,14 +962,33 @@ def record_query_feedback(original_question: str, sql_query: str, was_helpful: b
         if not isinstance(was_helpful, bool):
             return {"error": "was_helpful must be a boolean value"}
         
+        # Validate improvement suggestion for negative feedback
+        if not was_helpful and improvement_suggestion:
+            improvement_suggestion = improvement_suggestion.strip()
+            if len(improvement_suggestion) < 10:
+                return {"error": "Improvement suggestion must be at least 10 characters long"}
+            if len(improvement_suggestion) > 500:
+                return {"error": "Improvement suggestion must be less than 500 characters"}
+        
         if semantic_learner:
-            # Store both positive and negative feedback
-            semantic_learner.add_successful_query(original_question, sql_query, was_helpful)
+            # Store feedback with improvement suggestion
+            semantic_learner.add_successful_query(
+                original_question, 
+                sql_query, 
+                was_helpful, 
+                improvement_suggestion
+            )
             
             if was_helpful:
                 return {"message": "Thank you! Your positive feedback has been recorded and will help improve the system."}
             else:
-                return {"message": "Thank you! Your negative feedback has been recorded and will help the system avoid similar mistakes in the future."}
+                if improvement_suggestion:
+                    return {
+                        "message": "Thank you! Your negative feedback and improvement suggestion have been recorded. The system will try to avoid similar mistakes and incorporate your suggestions in future queries.",
+                        "data": {"improvement_recorded": True}
+                    }
+                else:
+                    return {"message": "Thank you! Your negative feedback has been recorded and will help the system avoid similar mistakes in the future."}
         else:
             return {"message": "Thank you for your feedback."}
             
@@ -686,7 +1035,39 @@ def get_query_suggestions(original_question: str) -> Dict:
         logger.warning(f"⚠️ Query suggestions failed: {e}")
         return {"error": f"Query suggestions failed: {str(e)}"}
 
-# Tool Registry
+def get_improvement_suggestions(original_question: str) -> Dict:
+    """Get improvement suggestions for a query based on similar failed queries."""
+    try:
+        if not semantic_learner:
+            return {"message": "Improvement suggestions not available (semantic learning disabled)"}
+        
+        suggestions = semantic_learner.get_improvement_suggestions_for_query(original_question)
+        
+        if not suggestions:
+            return {"message": "No improvement suggestions found for similar queries"}
+        
+        result = {
+            "suggestions_found": len(suggestions),
+            "improvements": []
+        }
+        
+        for suggestion in suggestions:
+            improvement = {
+                "similarity_score": f"{suggestion['similarity']:.2f}",
+                "similar_question": suggestion['question'],
+                "what_failed": suggestion['failed_sql'][:100] + "..." if len(suggestion['failed_sql']) > 100 else suggestion['failed_sql'],
+                "user_suggestion": suggestion['improvement_suggestion'],
+                "timestamp": suggestion['timestamp']
+            }
+            result["improvements"].append(improvement)
+        
+        return {"data": result}
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Improvement suggestions retrieval failed: {e}")
+        return {"error": f"Failed to get improvement suggestions: {str(e)}"}
+
+# Tool Registry - Enhanced with new graph generation tool
 TOOL_REGISTRY = {
     "get_subscriptions_in_last_days": {
         "function": get_subscriptions_in_last_days,
@@ -738,15 +1119,42 @@ TOOL_REGISTRY = {
             "required": ["sql_query"]
         }
     },
+    "generate_graph_data": {
+        "function": generate_graph_data,
+        "description": "Generate graph-ready data from SQL query results. Automatically analyzes data and recommends optimal visualization types (line, bar, pie, scatter, etc.)",
+        "parameters": {
+            "type": "object", 
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "description": "Array of dictionaries containing the data to visualize (from SQL results)"
+                },
+                "graph_type": {
+                    "type": "string",
+                    "description": "Optional: Force specific graph type (line, bar, horizontal_bar, pie, scatter). If not provided, system will auto-select the best type.",
+                    "enum": ["line", "bar", "horizontal_bar", "pie", "scatter"]
+                },
+                "custom_config": {
+                    "type": "object",
+                    "description": "Optional: Custom configuration to override automatic settings (x_axis, y_axis, title, etc.)"
+                }
+            },
+            "required": ["data"]
+        }
+    },
     "record_query_feedback": {
         "function": record_query_feedback,
-        "description": "Record user feedback on a dynamic query - both positive and negative",
+        "description": "Record user feedback on a dynamic query - both positive and negative with optional improvement suggestions",
         "parameters": {
             "type": "object",
             "properties": {
                 "original_question": {"type": "string"},
                 "sql_query": {"type": "string"},
-                "was_helpful": {"type": "boolean"}
+                "was_helpful": {"type": "boolean"},
+                "improvement_suggestion": {
+                    "type": "string", 
+                    "description": "Optional improvement suggestion for negative feedback"
+                }
             },
             "required": ["original_question", "sql_query", "was_helpful"]
         }
@@ -761,10 +1169,24 @@ TOOL_REGISTRY = {
             },
             "required": ["original_question"]
         }
+    },
+    "get_improvement_suggestions": {
+        "function": get_improvement_suggestions,
+        "description": "Get improvement suggestions based on similar failed queries to help generate better SQL",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "original_question": {
+                    "type": "string", 
+                    "description": "The question to find improvement suggestions for"
+                }
+            },
+            "required": ["original_question"]
+        }
     }
 }
 
-# API Configuration
+# API Configuration (rest of the file remains the same)
 API_KEY = os.getenv("API_KEY_1")
 if not API_KEY:
     logger.error("❌ FATAL: API_KEY_1 environment variable is not set")
@@ -794,19 +1216,18 @@ def verify_api_key(authorization: str = Header(None)):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    logger.info("🚀 Starting CRASH-RESISTANT Subscription Analytics API Server")
+    logger.info("🚀 Starting ENHANCED Subscription Analytics API Server with Graph Generation")
     logger.info(f"Semantic learning: {'enabled' if SEMANTIC_LEARNING_ENABLED else 'disabled'}")
-    logger.info(f"Available tools: {len(TOOL_REGISTRY)}")
+    logger.info(f"Available tools: {len(TOOL_REGISTRY)} (including graph generation)")
     yield
-    logger.info("🛑 Shutting down API Server")
+    logger.info("🛑 Shutting down Enhanced API Server")
 
 # Create FastAPI app
 app = FastAPI(
-    title="Subscription Analytics API",
-    description="Crash-resistant AI-powered subscription analytics",
-    version="6.0.0-crash-resistant-local-model",
-    lifespan=lifespan,
-    dependencies=[Depends(verify_api_key)]
+    title="Enhanced Subscription Analytics API with Graphs",
+    description="Render.com deployment with graph generation capabilities",
+    version="8.0.0-with-graphs",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -818,35 +1239,51 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# API Endpoints
+# Health endpoint - NO AUTHENTICATION (for Render.com health checks)
 @app.get("/health")
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint - NO AUTHENTICATION for Render health checks."""
     health_data = {
         "status": "ok",
         "semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled",
         "timestamp": datetime.datetime.now().isoformat(),
         "available_tools": len(TOOL_REGISTRY),
-        "stability": "crash-resistant-local-model-negative-feedback"
+        "platform": "render.com",
+        "version": "8.0.0-with-graphs",
+        "features": [
+            "dynamic_sql_generation",
+            "semantic_learning",
+            "feedback_with_improvements",
+            "query_suggestions",
+            "graph_generation",
+            "auto_graph_detection"
+        ]
     }
     
-    # Add learning system stats
+    # Add learning system stats if available
     if semantic_learner and hasattr(semantic_learner, 'known_queries'):
-        total_queries = len(semantic_learner.known_queries)
-        positive_count = sum(1 for q in semantic_learner.known_queries if q.get('was_helpful', True))
-        negative_count = total_queries - positive_count
-        
-        health_data.update({
-            "learning_stats": {
-                "total_learned_queries": total_queries,
-                "positive_examples": positive_count,
-                "negative_examples": negative_count
-            }
-        })
+        try:
+            total_queries = len(semantic_learner.known_queries)
+            positive_count = sum(1 for q in semantic_learner.known_queries if q.get('was_helpful', True))
+            negative_count = total_queries - positive_count
+            improvement_count = sum(1 for q in semantic_learner.known_queries 
+                                  if not q.get('was_helpful', True) and 'improvement_suggestion' in q)
+            
+            health_data.update({
+                "learning_stats": {
+                    "total_learned_queries": total_queries,
+                    "positive_examples": positive_count,
+                    "negative_examples": negative_count,
+                    "improvement_suggestions": improvement_count
+                }
+            })
+        except:
+            pass  # Don't break health check if learning stats fail
     
     return health_data
 
-@app.get("/tools", response_model=List[ToolInfo])
+# Tools endpoint - WITH AUTHENTICATION
+@app.get("/tools", response_model=List[ToolInfo], dependencies=[Depends(verify_api_key)])
 def list_tools():
     """List all available tools."""
     return [
@@ -855,7 +1292,8 @@ def list_tools():
         if name not in ["record_query_feedback", "get_query_suggestions"]  # Hide internal tools
     ]
 
-@app.post("/execute", response_model=ToolResponse)
+# Execute endpoint - WITH AUTHENTICATION  
+@app.post("/execute", response_model=ToolResponse, dependencies=[Depends(verify_api_key)])
 def execute_tool(request: ToolRequest):
     """Execute a specific tool with comprehensive error handling."""
     start_time = datetime.datetime.now()
@@ -925,13 +1363,16 @@ if __name__ == "__main__":
         logger.error(f"❌ FATAL: Missing required environment variables: {missing_vars}")
         sys.exit(1)
     
+    # Render.com sets PORT environment variable
     port = int(os.getenv("PORT", 8000))
     
-    logger.info(f"🚀 Starting CRASH-RESISTANT server on port {port}")
+    logger.info(f"🚀 Starting ENHANCED RENDER.COM server on port {port}")
     logger.info("🛡️ Enhanced error handling and logging enabled")
-    logger.info("🧠 Local model support enabled - NO DOWNLOADS")
+    logger.info("🧠 Full semantic learning support enabled")
+    logger.info("💡 Enhanced feedback system with improvement suggestions enabled")
+    logger.info("📊 NEW: Graph generation capabilities enabled")
     
-    # Ultra-stable configuration
+    # Render.com optimized configuration
     uvicorn.run(
         "api_server:app",
         host="0.0.0.0",
