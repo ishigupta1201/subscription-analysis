@@ -655,6 +655,76 @@ Important Notes:
             )
         ]
 
+    ENHANCED_SQL_RULES = """
+🔥 CRITICAL SQL GENERATION RULES - FIXED FOR SUBSCRIPTION vs PAYMENT TRENDS:
+
+1. **ALWAYS START WITH SELECT**: Every SQL query must begin with "SELECT"
+
+2. **SUBSCRIPTION TRENDS vs PAYMENT TRENDS - CRITICAL DISTINCTION**:
+   
+   🏢 **SUBSCRIPTION TRENDS** (new signups over time):
+   - Query: "subscription trends", "new subscriptions over time", "subscription chart"
+   - Table: subscription_contract_v2 AS sc
+   - Date: subcription_start_date
+   - Example SQL:
+   ```sql
+   SELECT 
+       DATE_FORMAT(sc.subcription_start_date, '%Y-%m-%d') AS subscription_date,
+       COUNT(*) AS new_subscriptions
+   FROM subscription_contract_v2 AS sc 
+   WHERE sc.subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+   GROUP BY subscription_date ORDER BY subscription_date
+   ```
+   
+   💳 **PAYMENT TRENDS** (transaction activity over time):
+   - Query: "payment trends", "payment activity over time", "payment chart"
+   - Table: subscription_payment_details AS pd
+   - Date: created_date
+   - Example SQL:
+   ```sql
+   SELECT 
+       DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date,
+       COUNT(*) AS total_payments,
+       SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments
+   FROM subscription_payment_details AS pd 
+   WHERE pd.created_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+   GROUP BY payment_date ORDER BY payment_date
+   ```
+
+3. **LINE CHART REQUIREMENTS - CRITICAL FIX**:
+   🚨 Line charts MUST return MULTIPLE ROWS with time-series data
+   
+   ❌ **WRONG** (single row - causes "not suitable for line chart" error):
+   ```sql
+   SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2
+   ```
+   
+   ✅ **CORRECT** (multiple rows - works with line charts):
+   ```sql
+   SELECT 
+       DATE_FORMAT(subcription_start_date, '%Y-%m-%d') AS date,
+       COUNT(*) AS daily_subscriptions
+   FROM subscription_contract_v2 
+   WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+   GROUP BY date ORDER BY date
+   ```
+
+4. **USER FEEDBACK INTEGRATION**:
+   🔄 When user says "try again" after giving feedback:
+   - If feedback was "subscription trends not payment trends" → Use subscription_contract_v2
+   - If feedback was "wrong graph type" → Change graph_type parameter
+   - If feedback was about data structure → Modify GROUP BY or columns
+
+5. **FOR RATE/PERCENTAGE QUERIES**: When user asks for success vs failure rates, ESPECIALLY for pie charts:
+   ```sql
+   SELECT 
+       ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate,
+       ROUND((SUM(CASE WHEN pd.status != 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS failure_rate
+   FROM subscription_payment_details AS pd 
+   WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = 2025
+   ```
+"""
+
     async def parse_query(self, user_query: str, history: List[str], client=None) -> List[Dict]:
         """FIXED: Parse user query with enhanced pie chart detection for rate data."""
         
@@ -824,96 +894,14 @@ CURRENT USER QUERY: "{user_query}"
    - Simple data extraction requests without "visualize" keywords
    - Follow-up questions with "try again" but no visualization request
 
-🔥 CRITICAL SQL GENERATION RULES:
-
-1. **ALWAYS START WITH SELECT**: Every SQL query must begin with "SELECT"
-
-2. **FOR RATE/PERCENTAGE QUERIES**: When user asks for success vs failure rates, ESPECIALLY for pie charts:
-   ```sql
-   SELECT 
-       ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate,
-       ROUND((SUM(CASE WHEN pd.status != 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS failure_rate
-   FROM subscription_payment_details AS pd 
-   WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = 2025
-   ```
-
-3. **FOR MONTH COMPARISONS** - Use this pattern:
-   ```sql
-   SELECT 
-       (SELECT COUNT(DISTINCT sc.subscription_id) 
-        FROM subscription_contract_v2 AS sc 
-        WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions,
-       (SELECT COUNT(DISTINCT sc.subscription_id) 
-        FROM subscription_contract_v2 AS sc 
-        WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions
-   ```
-
-4. **NEVER USE UNION FOR COMPARISONS** - Use separate columns or subqueries
-
-5. **FOR GRAPH-WORTHY QUERIES** - Structure data to be graph-friendly:
-   - For time series: Include date/time column and numeric values
-   - For comparisons: Include category column and numeric values  
-   - For rankings: ORDER BY the metric being ranked
-   - Limit to reasonable number of rows (2-100) for good visualization
-
-6. **🚨 INCORPORATE IMPROVEMENT SUGGESTIONS**: If improvement suggestions are provided above:
-   - If user complained about missing May data - CREATE SEPARATE MAY COLUMNS
-   - If user said "no column for may" - ENSURE MAY DATA HAS SEPARATE COLUMNS
-   - If user wants comparison - SEPARATE COLUMNS FOR EACH TIME PERIOD
-   - If user said "show payment rates" - ADD payment success rate calculations
-
-7. **FOR COMPREHENSIVE ANALYTICS**: When user asks for "subscription analytics", include:
-   ```sql
-   SELECT 
-       COUNT(DISTINCT sc.subscription_id) as total_subscriptions,
-       COUNT(DISTINCT sc.merchant_user_id) as unique_users,
-       COUNT(pd.subcription_payment_details_id) as total_payments,
-       SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
-       ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(pd.subcription_payment_details_id)), 2) as payment_success_rate,
-       SUM(CASE WHEN pd.status = 'ACTIVE' THEN pd.trans_amount_decimal ELSE 0 END) as total_revenue
-   FROM subscription_contract_v2 AS sc 
-   LEFT JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
-   WHERE sc.subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL X DAY)
-   
-   ```
-
-{self.db_schema}
-
-🚨 EXAMPLES OF CORRECT TOOL SELECTION:
-
-✅ "How many new subscriptions in the last 7 days" → get_subscriptions_in_last_days (days: 7)
-✅ "Payment success rate last month" → get_payment_success_rate_in_last_days (days: 30)  
-✅ "Show payment history for user abc123" → get_user_payment_history (merchant_user_id: "abc123")
-✅ "Database status" → get_database_status
-
-🥧 **PIE CHART EXAMPLES - FIXED**:
-✅ "pie chart of success vs failure rates" → execute_dynamic_sql_with_graph(graph_type="pie")
-✅ "show me distribution of payment rates" → execute_dynamic_sql_with_graph(graph_type="pie") 
-✅ "breakdown of success and failure rates" → execute_dynamic_sql_with_graph(graph_type="pie")
-✅ "success rate vs failure rate pie chart" → execute_dynamic_sql_with_graph(graph_type="pie")
-✅ "give me the success rate vs failure rate pie chart" → execute_dynamic_sql_with_graph(graph_type="pie")
-
-📊 **OTHER GRAPH EXAMPLES**:
-✅ "chart comparing April vs May subscriptions" → execute_dynamic_sql_with_graph(graph_type="bar")
-✅ "line chart of payments over time" → execute_dynamic_sql_with_graph(graph_type="line")
-✅ "visualize top 10 users by success rate" → execute_dynamic_sql_with_graph(graph_type="bar")
-
-❌ **NO GRAPH EXAMPLES**:
-❌ "compare April vs May subscriptions" (no chart mentioned) → execute_dynamic_sql
-❌ "top 10 users by success rate" (no chart mentioned) → execute_dynamic_sql
-
-🔥 GRAPH TYPE GUIDANCE:
-- Rate/percentage data (success vs failure) → "pie"
-- Time series data (dates + values) → "line" 
-- Category comparisons → "bar" or "horizontal_bar"
-- Parts of a whole → "pie"
-- Two numeric relationships → "scatter"
-- Leave graph_type empty for auto-detection
-
-🚨 CRITICAL: When user asks for pie chart or rate distributions, the system is now FIXED to handle single-row data like {{'success_rate': 16.68985, 'failure_rate': 83.31015}} properly as pie chart slices.
-
-Choose the most appropriate tool and provide necessary parameters. For pie chart requests with rate data, use execute_dynamic_sql_with_graph with graph_type="pie".
 """
+        # NEW: Add prompt logic for feedback-based context
+        if 'SUPPRESS_GRAPH' in context_data:
+            prompt += "\n\n🚨 USER FEEDBACK: The user previously said 'I didn't ask for a graph'. DO NOT generate a graph, even if the query would normally trigger one. Use execute_dynamic_sql (NO graph).\n"
+        if 'FORCE_PAYMENT_TREND' in context_data:
+            prompt += "\n\n🚨 USER FEEDBACK: The user previously said 'compare with payment trends'. Use payment trend SQL (subscription_payment_details, created_date) for this query.\n"
+        prompt += self.ENHANCED_SQL_RULES
+        prompt += f"\n\n{{self.db_schema}}\n"
 
         try:
             response = self.model.generate_content(
@@ -993,109 +981,127 @@ Choose the most appropriate tool and provide necessary parameters. For pie chart
             }]
 
     def _extract_context_from_history(self, history: List[str]) -> str:
-        """Extract relevant numerical and contextual data from conversation history."""
+        """FIXED: Extract context including user feedback corrections and graph suppression/payment trend flags."""
         if not history:
             return "No previous context available."
         
         context_data = []
-        recent_history = "\n".join(history[-4:])  # Last 2 exchanges
+        recent_history = "\n".join(history[-10:])  # Look at more history for feedback
         
-        # Extract percentages
+        # CRITICAL: Look for user corrections in feedback
+        if 'subscription trends not payment trends' in recent_history.lower():
+            context_data.append("🚨 USER CORRECTION: Wants subscription trends, NOT payment trends")
+            context_data.append("🚨 MUST USE: subscription_contract_v2 table with subcription_start_date")
+            context_data.append("🚨 MUST AVOID: subscription_payment_details table")
+        
+        if 'payment trends not subscription trends' in recent_history.lower():
+            context_data.append("🚨 USER CORRECTION: Wants payment trends, NOT subscription trends")
+            context_data.append("🚨 MUST USE: subscription_payment_details table with created_date")
+        
+        if 'wrong graph type' in recent_history.lower() or 'should be line chart' in recent_history.lower():
+            context_data.append("🚨 USER CORRECTION: Wrong graph type was used")
+            context_data.append("🚨 CHECK: User's preferred graph type in their feedback")
+        
+        if 'single row' in recent_history.lower() or 'not suitable for' in recent_history.lower():
+            context_data.append("🚨 USER ISSUE: Data structure not suitable for requested chart type")
+            context_data.append("🚨 NEED: Multiple rows with time grouping for line charts")
+        
+        # NEW: Detect feedback to suppress graph generation
+        if "i didn't ask for graph" in recent_history.lower() or "didn't ask for a graph" in recent_history.lower() or "no graph" in recent_history.lower():
+            context_data.append("SUPPRESS_GRAPH: User requested no graph generation")
+        
+        # NEW: Detect feedback to force payment trend comparison
+        if "compare with payment trends" in recent_history.lower() or "compare this with the trends in payment" in recent_history.lower():
+            context_data.append("FORCE_PAYMENT_TREND: User wants payment trend comparison")
+        
+        # Existing context extraction...
         import re
         percentages = re.findall(r'success_rate_percent:\s*(\d+\.?\d*)|(\d+\.?\d*)\s*%', recent_history)
         if percentages:
-            # Flatten and filter out empty matches
             flat_percentages = [p for pair in percentages for p in pair if p]
             if flat_percentages:
                 context_data.append(f"Recent success rate: {flat_percentages[-1]}%")
         
-        # Extract payment counts
-        payment_counts = re.findall(r'total_payments:\s*(\d+)|(\d+)\s*total payments', recent_history)
-        if payment_counts:
-            flat_counts = [p for pair in payment_counts for p in pair if p]
-            if flat_counts:
-                context_data.append(f"Recent total payments: {flat_counts[-1]}")
-        
-        # Extract revenue amounts
-        revenue = re.findall(r'total_revenue:\s*([\d,]+\.?\d*)|revenue.*?(\d+)', recent_history)
-        if revenue:
-            flat_revenue = [p for pair in revenue for p in pair if p]
-            if flat_revenue:
-                context_data.append(f"Recent revenue: {flat_revenue[-1]}")
-        
-        # Extract days/time periods for context
         days_mentioned = re.findall(r'(\d+)\s*days?', recent_history)
         if days_mentioned:
             context_data.append(f"Recent time period: {days_mentioned[-1]} days")
         
-        # Check for merchant lists or user discussions
-        if 'merchant_user_id' in recent_history:
-            context_data.append("Previous query involved individual merchant analysis")
+        if 'subscription_contract_v2' in recent_history:
+            context_data.append("Previous query used subscription table")
+        if 'subscription_payment_details' in recent_history:
+            context_data.append("Previous query used payment table")
         
-        if 'success_rate_percent' in recent_history:
-            context_data.append("Previous query involved success rate analysis")
-        
-        if 'subscription' in recent_history.lower():
-            context_data.append("Previous query involved subscription data")
-            
-        if 'payment' in recent_history.lower():
-            context_data.append("Previous query involved payment data")
-        
-        return "\n".join(context_data) if context_data else "No specific numerical context found."
+        return "\n".join(context_data) if context_data else "No specific context found."
 
     def _get_pattern_based_improvements(self, user_query: str) -> str:
-        """Get pattern-based improvement suggestions as fallback."""
+        """FIXED: Get pattern-based improvement suggestions with subscription vs payment distinction and graph suppression/payment trend feedback."""
         improvement_hints = []
         query_lower = user_query.lower()
         
-        # Pattern-based improvement suggestions
+        # CRITICAL: Subscription vs Payment trend detection
+        if any(phrase in query_lower for phrase in ['subscription trend', 'subscription over time', 'subscription chart', 'new subscription']):
+            improvement_hints.append("🚨 SUBSCRIPTION TRENDS: Use subscription_contract_v2 table with subcription_start_date")
+            improvement_hints.append("🚨 For subscription trends: COUNT new signups by date, NOT payment transactions")
+            improvement_hints.append("🚨 SQL: GROUP BY DATE_FORMAT(sc.subcription_start_date, '%Y-%m-%d')")
+            improvement_hints.append("🚨 Focus on subscription creation dates, not payment dates")
+        
+        if any(phrase in query_lower for phrase in ['payment trend', 'payment over time', 'payment chart', 'payment activity']):
+            improvement_hints.append("🚨 PAYMENT TRENDS: Use subscription_payment_details table with created_date")
+            improvement_hints.append("🚨 For payment trends: COUNT payment transactions by date")
+            improvement_hints.append("🚨 SQL: GROUP BY DATE_FORMAT(pd.created_date, '%Y-%m-%d')")
+        
+        # CRITICAL: Line chart requirements
+        if any(phrase in query_lower for phrase in ['line graph', 'line chart', 'try a line', 'line plot', 'trend']):
+            improvement_hints.append("📈 LINE CHARTS: MUST return multiple rows with time-series data")
+            improvement_hints.append("📈 NEVER use single-row aggregates for line charts")
+            improvement_hints.append("📈 Always include DATE_FORMAT and GROUP BY for time grouping")
+            improvement_hints.append("📈 Example: GROUP BY DATE_FORMAT(date_column, '%Y-%m-%d') ORDER BY date")
+        
+        # CRITICAL: Try again after feedback
+        if 'try again' in query_lower:
+            improvement_hints.append("🔄 TRY AGAIN: Must apply previous user feedback corrections")
+            improvement_hints.append("🔄 If user said 'subscription trends not payment trends' → Switch to subscription_contract_v2")
+            improvement_hints.append("🔄 If user said 'wrong graph type' → Use different graph_type parameter")
+            improvement_hints.append("🔄 If user complained about single row data → Add time grouping")
+            # NEW: If user said 'I didn't ask for graph', suppress graph generation
+            if "i didn't ask for graph" in query_lower or "didn't ask for a graph" in query_lower or "no graph" in query_lower:
+                improvement_hints.append("🔄 User said 'I didn't ask for a graph' - DO NOT generate a graph on retry")
+            # NEW: If user said 'compare with payment trends', force payment trend
+            if "compare with payment trends" in query_lower or "compare this with the trends in payment" in query_lower:
+                improvement_hints.append("🔄 User said 'compare with payment trends' - Use payment trend SQL on retry")
+        
+        # Enhanced analytics suggestions
         if 'analytics' in query_lower or 'subscription' in query_lower:
-            improvement_hints.append("⚠️ For subscription analytics: Users expect comprehensive data including success rates, payment rates, revenue totals, and user counts - not just simple counts")
-            improvement_hints.append("⚠️ For complete analytics: JOIN subscription_contract_v2 with subscription_payment_details to get payment success rates")
+            improvement_hints.append("⚠️ For subscription analytics: Include signup trends, payment success rates, revenue")
+            improvement_hints.append("⚠️ Join subscription_contract_v2 with subscription_payment_details when needed")
         
         if 'success rate' in query_lower and ('user' in query_lower or 'merchant' in query_lower):
-            improvement_hints.append("For user success rates: Always use GROUP BY merchant_user_id and include minimum payment thresholds (HAVING COUNT(*) >= 3)")
+            improvement_hints.append("For user success rates: GROUP BY merchant_user_id and include payment thresholds")
         
+        # Month comparison fixes
         if 'compare' in query_lower or 'comparison' in query_lower or ('april' in query_lower and 'may' in query_lower):
-            improvement_hints.append("🚨 For comparisons: Use separate columns for each time period, NOT UNION queries")
-            improvement_hints.append("🚨 For month comparisons: Use subqueries with clear column names like april_subscriptions, may_subscriptions")
+            improvement_hints.append("🚨 For comparisons: Use separate columns for each time period")
+            improvement_hints.append("🚨 For month comparisons: Use subqueries with clear column names")
         
-        if 'top' in query_lower or 'best' in query_lower or 'worst' in query_lower:
-            improvement_hints.append("For ranking queries: Use ORDER BY with LIMIT, and consider tie-breaking with secondary sort criteria")
-        
-        if 'failed' in query_lower or 'failure' in query_lower:
-            improvement_hints.append("For failure analysis: Use pd.status != 'ACTIVE' or pd.status IN ('FAILED', 'FAIL') for failed payments")
-        
-        if 'revenue' in query_lower or 'amount' in query_lower:
-            improvement_hints.append("For revenue calculations: Only sum amounts where pd.status = 'ACTIVE' for accurate totals")
-        
-        if 'last' in query_lower and ('day' in query_lower or 'week' in query_lower or 'month' in query_lower):
-            improvement_hints.append("For date filtering: Use proper MySQL date functions like DATE_SUB(CURDATE(), INTERVAL X DAY)")
-        
-        # FIXED: Graph-specific improvements with pie chart focus
-        if any(keyword in query_lower for keyword in ['chart', 'graph', 'plot', 'visualize', 'trend']):
-            improvement_hints.append("🎯 For graph queries: Structure data with clear x-axis (categories/dates) and y-axis (numeric values)")
+        # Graph-specific improvements
+        if any(keyword in query_lower for keyword in ['chart', 'graph', 'plot', 'visualize']):
+            improvement_hints.append("🎯 For graphs: Structure data with clear x-axis (dates/categories) and y-axis (values)")
             improvement_hints.append("🎯 For time series: Include date columns and order by date")
-            improvement_hints.append("🎯 For comparisons: Use meaningful category names and limit to 2-50 categories for readability")
-            improvement_hints.append("🚨 CRITICAL: When user asks for visualization, ALWAYS show data table even if graph generation fails")
-            improvement_hints.append("🚨 Single-row comparison data (April vs May) IS suitable for bar charts - don't reject it")
+            improvement_hints.append("🚨 ALWAYS show data table even if graph generation fails")
         
-        # FIXED: Specific pie chart improvements
+        # Pie chart improvements
         if any(keyword in query_lower for keyword in ['pie', 'pie chart', 'distribution', 'breakdown']):
-            improvement_hints.append("🥧 PIE CHART FIXED: Single-row rate data like {success_rate: 16.68, failure_rate: 83.32} IS perfect for pie charts")
-            improvement_hints.append("🥧 For rate data: Generate SQL that returns success_rate and failure_rate columns")
-            improvement_hints.append("🥧 System now handles column-to-pie transformation automatically")
+            improvement_hints.append("🥧 PIE CHARTS: Single-row rate data works perfectly for pie charts")
+            improvement_hints.append("🥧 For rate data: Generate success_rate and failure_rate columns")
+            improvement_hints.append("🥧 System automatically transforms columns to pie slices")
         
-        if 'visualize' in query_lower and 'data' in query_lower:
-            improvement_hints.append("🚨 USER FEEDBACK: 'when i ask for something and also to visualise, show me both the data and the graph'")
-            improvement_hints.append("🚨 ALWAYS show data table AND attempt graph generation for visualization requests")
-            improvement_hints.append("🚨 Single-row comparison data (April vs May) IS suitable for bar charts - don't reject it")
-            improvement_hints.append("🥧 Rate data (success vs failure) IS suitable for pie charts - system is now FIXED")
+        # NEW: Direct feedback for graph suppression/payment trend
+        if "i didn't ask for graph" in query_lower or "didn't ask for a graph" in query_lower or "no graph" in query_lower:
+            improvement_hints.append("🚨 USER FEEDBACK: Suppress graph generation for this query")
+        if "compare with payment trends" in query_lower or "compare this with the trends in payment" in query_lower:
+            improvement_hints.append("🚨 USER FEEDBACK: Use payment trend SQL (subscription_payment_details, created_date)")
         
-        if improvement_hints:
-            return "PATTERN-BASED IMPROVEMENT SUGGESTIONS:\n" + "\n".join(f"- {hint}" for hint in improvement_hints)
-        else:
-            return "No specific improvement patterns identified for this query type."
+        return "ENHANCED IMPROVEMENT SUGGESTIONS:\n" + "\n".join(f"- {hint}" for hint in improvement_hints) if improvement_hints else ""
 
 # Core Client Class (enhanced with graph generation)
 class UniversalClient:
