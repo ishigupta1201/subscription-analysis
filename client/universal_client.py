@@ -1,4 +1,4 @@
-# client/universal_client.py
+# client/universal_client.py - COMPLETELY FINAL VERSION WITH ALL FIXES
 
 import asyncio
 import aiohttp
@@ -223,8 +223,8 @@ Important Notes:
             )
         ]
 
-    def parse_query(self, user_query: str, history: List[str]) -> List[Dict]:
-        """Parse user query and determine which tool(s) to use with enhanced context awareness and improvement suggestions"""
+    async def parse_query(self, user_query: str, history: List[str], client=None) -> List[Dict]:
+        """Parse user query and determine which tool(s) to use with REAL improvement suggestions"""
         
         # Build context from conversation history
         history_context = "\n".join(history[-6:]) if history else "No previous context."
@@ -238,7 +238,7 @@ Important Notes:
             "the worst", "the best", "bottom", "top one", "that rate", "that percentage",
             "individual", "personal", "each user", "each merchant", "per user", "per merchant",
             "breakdown", "detailed", "specific users", "more than that", "less than that", 
-            "same time", "same period", "same timeframe"
+            "same time", "same period", "same timeframe", "try again"
         ]
         
         # Check if this is a contextual follow-up
@@ -247,8 +247,62 @@ Important Notes:
         # Enhanced context extraction from history
         context_data = self._extract_context_from_history(history)
         
-        # NEW: Get improvement suggestions for this type of query
-        improvement_context = self._get_improvement_context(user_query)
+        # FIXED: Actually fetch real improvement suggestions from the API
+        improvement_context = ""
+        improvement_found = False
+        if client:
+            try:
+                logger.info(f"🔍 Fetching improvement suggestions for: {user_query}")
+                suggestions_result = await client.call_tool('get_improvement_suggestions', {
+                    'original_question': user_query
+                })
+                
+                if (suggestions_result.success and 
+                    suggestions_result.data and 
+                    suggestions_result.data.get('improvements')):
+                    
+                    improvements = suggestions_result.data['improvements']
+                    improvement_lines = [
+                        "🚨🚨🚨 CRITICAL: PAST USER COMPLAINTS ABOUT SIMILAR QUERIES 🚨🚨🚨",
+                        "=" * 80,
+                        "THE USER HAS ALREADY COMPLAINED ABOUT THESE EXACT ISSUES:",
+                        ""
+                    ]
+                    
+                    for i, improvement in enumerate(improvements[:3], 1):
+                        improvement_lines.append(f"{i}. PREVIOUS FAILURE:")
+                        improvement_lines.append(f"   Question: {improvement['similar_question']}")
+                        improvement_lines.append(f"   Failed SQL: {improvement['what_failed']}")
+                        improvement_lines.append(f"   USER COMPLAINT: \"{improvement['user_suggestion']}\"")
+                        improvement_lines.append(f"   🚨 YOU MUST FIX THIS: {improvement['user_suggestion']}")
+                        improvement_lines.append("")
+                    
+                    improvement_lines.extend([
+                        "🚨 MANDATORY REQUIREMENTS:",
+                        "- If user said 'you didnt give me the may subscriptions' - CREATE SEPARATE COLUMNS FOR MAY DATA",
+                        "- If user said 'there is no column for may' - LABEL COLUMNS CLEARLY WITH MONTH NAMES", 
+                        "- If user wants comparison data - USE SEPARATE COLUMNS OR CLEAR ROW LABELS",
+                        "- DO NOT USE UNION - USE SEPARATE SUBQUERIES OR CASE STATEMENTS",
+                        "",
+                        "🚨 EXAMPLE FOR MONTH COMPARISON:",
+                        "SELECT ",
+                        "  (SELECT COUNT(*) FROM table WHERE MONTH(date) = 4) AS april_count,",
+                        "  (SELECT COUNT(*) FROM table WHERE MONTH(date) = 5) AS may_count",
+                        "",
+                        "🚨 FAILURE TO INCORPORATE THESE SUGGESTIONS WILL RESULT IN REPEATED USER COMPLAINTS!"
+                    ])
+                    
+                    improvement_context = "\n".join(improvement_lines)
+                    improvement_found = True
+                    logger.info(f"✅ Found {len(improvements)} improvement suggestions to apply")
+                else:
+                    improvement_context = self._get_pattern_based_improvements(user_query)
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to fetch improvement suggestions: {e}")
+                improvement_context = self._get_pattern_based_improvements(user_query)
+        else:
+            improvement_context = self._get_pattern_based_improvements(user_query)
         
         prompt = f"""
 You are a subscription analytics assistant. Analyze the user's query and choose the most appropriate tool.
@@ -259,71 +313,86 @@ CONVERSATION HISTORY:
 EXTRACTED CONTEXT DATA:
 {context_data}
 
-IMPROVEMENT SUGGESTIONS FROM PAST FAILURES:
 {improvement_context}
 
 CURRENT USER QUERY: "{user_query}"
 
-CRITICAL INSTRUCTIONS FOR SQL GENERATION:
+🚨 CRITICAL TOOL SELECTION RULES - FOLLOW THESE EXACTLY:
+
+1. **SIMPLE SUBSCRIPTION COUNT QUERIES** - Use pre-built tools:
+   - "subscriptions in last X days" → get_subscriptions_in_last_days
+   - "how many subscriptions" + time period → get_subscriptions_in_last_days
+   - "new subscriptions in last X days" → get_subscriptions_in_last_days
+
+2. **SIMPLE PAYMENT SUCCESS RATE QUERIES** - Use pre-built tools:
+   - "payment success rate" + time period → get_payment_success_rate_in_last_days
+   - "payment performance" + time period → get_payment_success_rate_in_last_days
+
+3. **SPECIFIC USER QUERIES** - Use pre-built tools:
+   - "payment history for user X" → get_user_payment_history
+   - mentions specific merchant_user_id → get_user_payment_history
+
+4. **HEALTH/STATUS QUERIES** - Use pre-built tools:
+   - "database status" → get_database_status
+   - "connection" queries → get_database_status
+
+5. **COMPLEX ANALYTICS** - Use dynamic SQL ONLY when:
+   - Multiple comparisons (April vs May)
+   - Rankings or TOP/BOTTOM queries  
+   - Custom analytics not covered by pre-built tools
+   - Follow-up questions with "try again"
+
+🔥 CRITICAL SQL GENERATION RULES:
 
 1. **ALWAYS START WITH SELECT**: Every SQL query must begin with "SELECT"
-2. **USE PROPER TABLE ALIASES**: Always use aliases like "sc" for subscription_contract_v2 and "pd" for subscription_payment_details
-3. **QUALIFY ALL COLUMNS**: Always specify table alias (e.g., sc.merchant_user_id, pd.status)
-4. **JOIN TABLES CORRECTLY**: Use proper JOIN syntax when needed
-5. **USE MYSQL SYNTAX**: Generate MySQL-compatible queries, not SQLite:
-   - For date arithmetic: DATE_SUB(CURDATE(), INTERVAL 30 DAY) not DATE('now', '-30 days')
-   - For current date: CURDATE() not DATE('now')
-   - For current datetime: NOW() not DATETIME('now')
 
-6. **INCORPORATE IMPROVEMENT SUGGESTIONS**: If improvement suggestions are provided above, carefully consider them:
-   - Follow specific syntax recommendations
-   - Avoid patterns that were marked as failures
-   - Use suggested approaches for similar query types
-   - Apply recommended filtering, grouping, or ordering techniques
-
-7. **HANDLE SUCCESS RATES PROPERLY**: For individual user success rates, use this pattern:
+2. **FOR MONTH COMPARISONS** - Use this pattern:
    ```sql
-   SELECT sc.merchant_user_id, 
-          COUNT(*) as total_payments,
-          SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
-          ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate_percent
-   FROM subscription_contract_v2 AS sc 
-   JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
-   GROUP BY sc.merchant_user_id
-   HAVING COUNT(*) >= 3
-   ORDER BY success_rate_percent DESC
+   SELECT 
+       (SELECT COUNT(DISTINCT sc.subscription_id) 
+        FROM subscription_contract_v2 AS sc 
+        WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions,
+       (SELECT COUNT(DISTINCT sc.subscription_id) 
+        FROM subscription_contract_v2 AS sc 
+        WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions
    ```
 
-8. **SUBQUERY COLUMN REFERENCES**: When using subqueries, reference columns correctly:
-   - WRONG: `SELECT sc.merchant_user_id FROM (SELECT sc.merchant_user_id ...) AS sub WHERE ...`
-   - CORRECT: `SELECT merchant_user_id FROM (SELECT sc.merchant_user_id ...) AS sub WHERE ...`
-   - In outer query, use column names as they appear in subquery SELECT, not with inner aliases
+3. **NEVER USE UNION FOR COMPARISONS** - Use separate columns or subqueries
 
-9. **AVOID COMPLEX SUBQUERIES**: When possible, use single queries with HAVING clauses instead of subqueries:
-   - COMPLEX: `SELECT ... FROM (SELECT ... FROM ... GROUP BY ...) AS sub WHERE ...`
-   - SIMPLE: `SELECT ... FROM ... GROUP BY ... HAVING ... AND ...`
+4. **🚨 INCORPORATE IMPROVEMENT SUGGESTIONS**: If improvement suggestions are provided above:
+   - If user complained about missing May data - CREATE SEPARATE MAY COLUMNS
+   - If user said "no column for may" - ENSURE MAY DATA HAS SEPARATE COLUMNS
+   - If user wants comparison - SEPARATE COLUMNS FOR EACH TIME PERIOD
+   - If user said "show payment rates" - ADD payment success rate calculations
 
-10. **CONTEXT AWARENESS**: When user refers to "that", "those", etc., extract values from conversation history:
-    - If previous result showed success_rate_percent: 14.86, and user asks "how many users have higher than that"
-    - Generate SQL with WHERE success_rate_percent > 14.86
+5. **FOR COMPREHENSIVE ANALYTICS**: When user asks for "subscription analytics", include:
+   ```sql
+   SELECT 
+       COUNT(DISTINCT sc.subscription_id) as total_subscriptions,
+       COUNT(DISTINCT sc.merchant_user_id) as unique_users,
+       COUNT(pd.subcription_payment_details_id) as total_payments,
+       SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_payments,
+       ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(pd.subcription_payment_details_id)), 2) as payment_success_rate,
+       SUM(CASE WHEN pd.status = 'ACTIVE' THEN pd.trans_amount_decimal ELSE 0 END) as total_revenue
+   FROM subscription_contract_v2 AS sc 
+   LEFT JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
+   WHERE sc.subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL X DAY)
+   ```
 
 {self.db_schema}
 
-TOOL SELECTION LOGIC:
+🚨 EXAMPLES OF CORRECT TOOL SELECTION:
 
-1. **For simple, standalone questions:**
-   - "subscriptions in last X days" → get_subscriptions_in_last_days
-   - "payment success rate" → get_payment_success_rate_in_last_days  
-   - "payment history for user X" → get_user_payment_history
-   - "database status" → get_database_status
+✅ "How many new subscriptions in the last 7 days" → get_subscriptions_in_last_days (days: 7)
+✅ "Payment success rate last month" → get_payment_success_rate_in_last_days (days: 30)  
+✅ "Show payment history for user abc123" → get_user_payment_history (merchant_user_id: "abc123")
+✅ "Database status" → get_database_status
+❌ "Compare April vs May subscriptions" → execute_dynamic_sql (complex comparison)
+❌ "Top 10 users by success rate" → execute_dynamic_sql (ranking)
 
-2. **For complex analytics or context-dependent questions:**
-   - Individual comparisons, breakdowns, detailed analysis → execute_dynamic_sql
-   - Questions referring to previous results → execute_dynamic_sql with context values
-   - "How many users/merchants..." → execute_dynamic_sql with COUNT
-   - Any question requiring granular data → execute_dynamic_sql
+🔥 IF IMPROVEMENT SUGGESTIONS ARE PROVIDED ABOVE, YOU MUST INCORPORATE THEM INTO YOUR SQL!
 
-Choose the most appropriate tool and provide necessary parameters. Make sure all SQL queries are valid MySQL and start with SELECT.
+Choose the most appropriate tool and provide necessary parameters. For simple queries, use pre-built tools. For complex queries, use dynamic SQL with proper improvement suggestions applied.
 """
 
         try:
@@ -383,6 +452,8 @@ Choose the most appropriate tool and provide necessary parameters. Make sure all
                 }]
             
             logger.info(f"AI selected tool(s): {[tc['tool'] for tc in tool_calls]}")
+            if improvement_found:
+                logger.info(f"🎯 Applied improvement suggestions to tool selection and SQL generation")
             return tool_calls
             
         except Exception as e:
@@ -445,42 +516,39 @@ Choose the most appropriate tool and provide necessary parameters. Make sure all
         
         return "\n".join(context_data) if context_data else "No specific numerical context found."
 
-    def _get_improvement_context(self, user_query: str) -> str:
-        """Get improvement suggestions context for the current query type."""
-        try:
-            # This is a simplified version - in practice, you might want to make an API call
-            # to get_improvement_suggestions, but to avoid circular dependencies, 
-            # we'll implement this as a local context builder for now
-            
-            # Check for query patterns that commonly need improvement
-            improvement_hints = []
-            
-            query_lower = user_query.lower()
-            
-            # Pattern-based improvement suggestions
-            if 'success rate' in query_lower and ('user' in query_lower or 'merchant' in query_lower):
-                improvement_hints.append("For user success rates: Always use GROUP BY merchant_user_id and include minimum payment thresholds (HAVING COUNT(*) >= 3)")
-            
-            if 'top' in query_lower or 'best' in query_lower or 'worst' in query_lower:
-                improvement_hints.append("For ranking queries: Use ORDER BY with LIMIT, and consider tie-breaking with secondary sort criteria")
-            
-            if 'failed' in query_lower or 'failure' in query_lower:
-                improvement_hints.append("For failure analysis: Use pd.status != 'ACTIVE' or pd.status IN ('FAILED', 'FAIL') for failed payments")
-            
-            if 'revenue' in query_lower or 'amount' in query_lower:
-                improvement_hints.append("For revenue calculations: Only sum amounts where pd.status = 'ACTIVE' for accurate totals")
-            
-            if 'last' in query_lower and ('day' in query_lower or 'week' in query_lower or 'month' in query_lower):
-                improvement_hints.append("For date filtering: Use proper MySQL date functions like DATE_SUB(CURDATE(), INTERVAL X DAY)")
-            
-            if improvement_hints:
-                return "RELEVANT IMPROVEMENT PATTERNS:\n" + "\n".join(f"- {hint}" for hint in improvement_hints)
-            else:
-                return "No specific improvement patterns identified for this query type."
-                
-        except Exception as e:
-            logger.warning(f"Failed to get improvement context: {e}")
-            return "Improvement context unavailable."
+    def _get_pattern_based_improvements(self, user_query: str) -> str:
+        """Get pattern-based improvement suggestions as fallback."""
+        improvement_hints = []
+        query_lower = user_query.lower()
+        
+        # Pattern-based improvement suggestions
+        if 'analytics' in query_lower or 'subscription' in query_lower:
+            improvement_hints.append("⚠️ For subscription analytics: Users expect comprehensive data including success rates, payment rates, revenue totals, and user counts - not just simple counts")
+            improvement_hints.append("⚠️ For complete analytics: JOIN subscription_contract_v2 with subscription_payment_details to get payment success rates")
+        
+        if 'success rate' in query_lower and ('user' in query_lower or 'merchant' in query_lower):
+            improvement_hints.append("For user success rates: Always use GROUP BY merchant_user_id and include minimum payment thresholds (HAVING COUNT(*) >= 3)")
+        
+        if 'compare' in query_lower or 'comparison' in query_lower or ('april' in query_lower and 'may' in query_lower):
+            improvement_hints.append("🚨 For comparisons: Use separate columns for each time period, NOT UNION queries")
+            improvement_hints.append("🚨 For month comparisons: Use subqueries with clear column names like april_subscriptions, may_subscriptions")
+        
+        if 'top' in query_lower or 'best' in query_lower or 'worst' in query_lower:
+            improvement_hints.append("For ranking queries: Use ORDER BY with LIMIT, and consider tie-breaking with secondary sort criteria")
+        
+        if 'failed' in query_lower or 'failure' in query_lower:
+            improvement_hints.append("For failure analysis: Use pd.status != 'ACTIVE' or pd.status IN ('FAILED', 'FAIL') for failed payments")
+        
+        if 'revenue' in query_lower or 'amount' in query_lower:
+            improvement_hints.append("For revenue calculations: Only sum amounts where pd.status = 'ACTIVE' for accurate totals")
+        
+        if 'last' in query_lower and ('day' in query_lower or 'week' in query_lower or 'month' in query_lower):
+            improvement_hints.append("For date filtering: Use proper MySQL date functions like DATE_SUB(CURDATE(), INTERVAL X DAY)")
+        
+        if improvement_hints:
+            return "PATTERN-BASED IMPROVEMENT SUGGESTIONS:\n" + "\n".join(f"- {hint}" for hint in improvement_hints)
+        else:
+            return "No specific improvement patterns identified for this query type."
 
 # Core Client Class
 class UniversalClient:
@@ -643,6 +711,8 @@ class UniversalClient:
         # Log the request for debugging
         if tool_name == 'execute_dynamic_sql':
             logger.info(f"🔍 Executing SQL: {parameters.get('sql_query', 'N/A')}")
+        elif tool_name in ['get_subscriptions_in_last_days', 'get_payment_success_rate_in_last_days']:
+            logger.info(f"✅ Using pre-built tool: {tool_name} with params: {parameters}")
         
         # Retry logic for connection issues and SQL syntax errors
         max_retries = 3
@@ -749,7 +819,8 @@ class UniversalClient:
     async def query(self, nl_query: str) -> Union[QueryResult, List[QueryResult]]:
         """Process a natural language query"""
         try:
-            parsed_calls = self.nlp.parse_query(nl_query, self.history)
+            # FIXED: Pass self (client) to parse_query so it can fetch improvement suggestions
+            parsed_calls = await self.nlp.parse_query(nl_query, self.history, client=self)
             
             if len(parsed_calls) > 1:
                 # Multiple tool calls
@@ -831,8 +902,8 @@ class UniversalClient:
 # Standalone Interactive Mode
 async def interactive_mode():
     """Run the interactive CLI mode"""
-    print("✨ Subscription Analytics AI Agent ✨")
-    print("=" * 50)
+    print("✨ Subscription Analytics AI Agent (COMPLETELY FIXED VERSION) ✨")
+    print("=" * 70)
     
     # Get configuration
     config_manager = ConfigManager()
@@ -844,15 +915,17 @@ async def interactive_mode():
         genai.configure(api_key=user_config['GOOGLE_API_KEY'])
         
         print(f"🔗 Connected to server: {user_config['SUBSCRIPTION_API_URL']}")
+        print("🧠 Enhanced with real-time improvement suggestion learning!")
+        print("🔧 Fixed tool selection + SQL generation learning!")
         
         async with UniversalClient(config=user_config) as client:
             print("\n💬 Enter questions in natural language. Type 'quit' or 'exit' to leave.")
             print("\n📚 Example queries:")
-            print("  • How many new subscriptions in the last 7 days?")
-            print("  • What's the payment success rate for the last month?")
-            print("  • Show me payment history for user abc123")
-            print("  • Which users have the highest success rates?")
-            print("  • How many users have success rate above 15%?")
+            print("  • How many new subscriptions in the last 7 days? (will use pre-built tool)")
+            print("  • What's the payment success rate for the last month? (will use pre-built tool)")
+            print("  • Show me payment history for user abc123 (will use pre-built tool)")
+            print("  • Compare April vs May subscriptions (will use dynamic SQL)")
+            print("  • Give me subscription analytics for 10 days (will use dynamic SQL)")
             
             while True:
                 try:
@@ -898,6 +971,9 @@ async def interactive_mode():
                                 print("  • 'Wrong aggregation function used'")
                                 print("  • 'Results should be sorted differently'")
                                 print("  • 'Query timeout - needs optimization'")
+                                print("  • 'Should also show payment rates and success rates'")
+                                print("  • 'Missing column for May data'")
+                                print("  • 'Should have separate columns for each month'")
                                 
                                 while True:
                                     improvement = input("\nHow can this be improved? (or 'skip' to not provide): ").strip()
