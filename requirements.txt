@@ -16,3 +16,7 @@ numpy
 certifi
 urllib3[secure]
 aiohttp
+
+# Additional dependencies
+matplotlib
+google-generativeai
