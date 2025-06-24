@@ -440,14 +440,14 @@ class ResultFormatter:
         if not result.success:
             return f"❌ ERROR: {result.error}"
         
-        if result.message:
+        if result.message and not result.data:
             return f"ℹ️ {result.message}"
         
         if result.data is None:
             return "✅ Query succeeded, but the result set was empty."
         
         output = []
-        is_dynamic = result.tool_used == 'execute_dynamic_sql'
+        is_dynamic = result.tool_used == 'execute_dynamic_sql' or result.tool_used == 'execute_dynamic_sql_with_graph'
         
         # Handle graph data first if available
         if result.graph_data and result.graph_generated:
@@ -458,7 +458,7 @@ class ResultFormatter:
             output.append(graph_info)
             output.append("")  # Add spacing
         
-        # Then show the data table
+        # ALWAYS show the data table for dynamic queries
         header = f"📊 DYNAMIC QUERY RESULT" if is_dynamic else f"📊 RESULT FROM TOOL: {result.tool_used.upper()}"
         output.append(header)
         output.append("=" * len(header))
@@ -503,6 +503,13 @@ class ResultFormatter:
                 except:
                     pass  # Skip analysis if data structure is unexpected
             
+            # Check for zero values in comparison data
+            if len(result.data) == 1 and len(headers) >= 2:
+                all_zeros = all(result.data[0].get(col, 0) == 0 for col in headers if isinstance(result.data[0].get(col), (int, float)))
+                if all_zeros:
+                    output.append("\n⚠️ **Data Issue:** All values are zero - check date ranges or data availability")
+                    output.append("💡 Suggestion: Try different years (2023, 2024, 2025) or verify data exists for these time periods")
+            
             if result.generated_sql:
                 output.append(f"\n🔍 Generated SQL:")
                 output.append("-" * 20)
@@ -513,6 +520,10 @@ class ResultFormatter:
                 output.append(f"{key}: {value}")
         else:
             output.append(json.dumps(result.data, indent=2, default=str))
+        
+        # Add any messages at the end
+        if result.message:
+            output.append(f"\n📝 {result.message}")
         
         return "\n".join(output)
 
@@ -714,7 +725,14 @@ Important Notes:
                         "- If user said 'you didnt give me the may subscriptions' - CREATE SEPARATE COLUMNS FOR MAY DATA",
                         "- If user said 'there is no column for may' - LABEL COLUMNS CLEARLY WITH MONTH NAMES", 
                         "- If user wants comparison data - USE SEPARATE COLUMNS OR CLEAR ROW LABELS",
+                        "- If user said 'when i ask for something and also to visualise, show me both the data and the graph' - ALWAYS SHOW DATA TABLE EVEN IF GRAPH FAILS",
                         "- DO NOT USE UNION - USE SEPARATE SUBQUERIES OR CASE STATEMENTS",
+                        "",
+                        "🚨 CRITICAL GRAPH REQUIREMENTS:",
+                        "- For single-row comparison data (April vs May) - this IS suitable for bar charts",
+                        "- Transform column-based comparisons into category-value pairs for graphing",
+                        "- Example: april_subscriptions=45, may_subscriptions=52 becomes Categories: [April, May], Values: [45, 52]",
+                        "- ALWAYS show data table AND attempt graph generation for visualization requests",
                         "",
                         "🚨 EXAMPLE FOR MONTH COMPARISON:",
                         "SELECT ",
@@ -751,33 +769,43 @@ CURRENT USER QUERY: "{user_query}"
 
 🚨 CRITICAL TOOL SELECTION RULES - FOLLOW THESE EXACTLY:
 
-1. **GRAPH/VISUALIZATION REQUESTS** - Use execute_dynamic_sql_with_graph:
-   - User asks for "chart", "graph", "plot", "visualize", "show trend"
-   - Comparison queries that would benefit from visualization
-   - Performance analysis, trending data, rankings
-   - Time-based analysis (over time, by month, etc.)
+1. **GRAPH/VISUALIZATION REQUESTS** - Use execute_dynamic_sql_with_graph ONLY when user explicitly requests visualization:
+   - User asks for "chart", "graph", "plot", "visualize", "show trend", "create chart"
+   - User says "compare X vs Y and visualize" or "compare X vs Y with a chart" 
+   - User explicitly mentions wanting to see graphics/visual/charts
+   - User says "show me a graph of" or "plot this data"
 
-2. **SIMPLE SUBSCRIPTION COUNT QUERIES** - Use pre-built tools:
+2. **REGULAR COMPARISON QUERIES** - Use execute_dynamic_sql (NO graph):
+   - "compare April vs May subscriptions" (no visualization words)
+   - "show me April vs May data" (no visualization words)
+   - "what's the difference between" (no visualization words)
+   - Any analysis request WITHOUT explicit visualization words
+
+3. **IMPORTANT**: Only generate graphs when user specifically asks for visualization
+   - Don't assume user wants graphs for comparisons
+   - Don't add visualization unless explicitly requested
+
+3. **SIMPLE SUBSCRIPTION COUNT QUERIES** - Use pre-built tools:
    - "subscriptions in last X days" → get_subscriptions_in_last_days
    - "how many subscriptions" + time period → get_subscriptions_in_last_days
    - "new subscriptions in last X days" → get_subscriptions_in_last_days
 
-3. **SIMPLE PAYMENT SUCCESS RATE QUERIES** - Use pre-built tools:
+4. **SIMPLE PAYMENT SUCCESS RATE QUERIES** - Use pre-built tools:
    - "payment success rate" + time period → get_payment_success_rate_in_last_days
    - "payment performance" + time period → get_payment_success_rate_in_last_days
 
-4. **SPECIFIC USER QUERIES** - Use pre-built tools:
+5. **SPECIFIC USER QUERIES** - Use pre-built tools:
    - "payment history for user X" → get_user_payment_history
    - mentions specific merchant_user_id → get_user_payment_history
 
-5. **HEALTH/STATUS QUERIES** - Use pre-built tools:
+6. **HEALTH/STATUS QUERIES** - Use pre-built tools:
    - "database status" → get_database_status
    - "connection" queries → get_database_status
 
-6. **COMPLEX ANALYTICS WITHOUT GRAPHS** - Use execute_dynamic_sql:
+7. **COMPLEX ANALYTICS WITHOUT GRAPHS** - Use execute_dynamic_sql:
    - Complex queries where user doesn't want visualization
-   - Simple data extraction requests
-   - Follow-up questions with "try again"
+   - Simple data extraction requests without "visualize" keywords
+   - Follow-up questions with "try again" but no visualization request
 
 🔥 CRITICAL SQL GENERATION RULES:
 
@@ -1008,6 +1036,13 @@ Choose the most appropriate tool and provide necessary parameters. For visualiza
             improvement_hints.append("🎯 For graph queries: Structure data with clear x-axis (categories/dates) and y-axis (numeric values)")
             improvement_hints.append("🎯 For time series: Include date columns and order by date")
             improvement_hints.append("🎯 For comparisons: Use meaningful category names and limit to 2-50 categories for readability")
+            improvement_hints.append("🚨 CRITICAL: When user asks for visualization, ALWAYS show data table even if graph generation fails")
+            improvement_hints.append("🚨 Single-row comparison data (April vs May) IS suitable for bar charts - don't reject it")
+        
+        if 'visualize' in query_lower and 'data' in query_lower:
+            improvement_hints.append("🚨 USER FEEDBACK: 'when i ask for something and also to visualise, show me both the data and the graph'")
+            improvement_hints.append("🚨 ALWAYS show data table AND attempt graph generation for visualization requests")
+            improvement_hints.append("🚨 Single-row comparison data (April vs May) IS suitable for bar charts - don't reject it")
         
         if improvement_hints:
             return "PATTERN-BASED IMPROVEMENT SUGGESTIONS:\n" + "\n".join(f"- {hint}" for hint in improvement_hints)
@@ -1025,52 +1060,22 @@ class UniversalClient:
         self.graph_generator = GraphGenerator()
 
     async def __aenter__(self):
-        # FIXED: Better connection handling to prevent connection resets
-        # Create SSL context with enhanced certificate verification and fallback
+        # Enhanced SSL configuration with better certificate handling
         ssl_context = None
         
-        # Try multiple SSL configurations with real connection tests
+        # Try multiple SSL configurations with improved fallbacks
         ssl_configs = [
             {
-                'name': 'Standard SSL with certifi',
-                'setup': lambda: (
-                    ssl.create_default_context(cafile=certifi.where()),
-                    lambda ctx: (
-                        setattr(ctx, 'check_hostname', True),
-                        setattr(ctx, 'verify_mode', ssl.CERT_REQUIRED),
-                        ctx.load_default_certs()
-                    )[-1]
-                )
+                'name': 'Certifi with system certs',
+                'setup': lambda: self._create_ssl_context_with_certifi()
             },
             {
-                'name': 'Standard SSL without system certs',
-                'setup': lambda: (
-                    ssl.create_default_context(cafile=certifi.where()),
-                    lambda ctx: (
-                        setattr(ctx, 'check_hostname', True),
-                        setattr(ctx, 'verify_mode', ssl.CERT_REQUIRED)
-                    )[-1]
-                )
-            },
-            {
-                'name': 'Default SSL context',
-                'setup': lambda: (
-                    ssl.create_default_context(),
-                    lambda ctx: (
-                        setattr(ctx, 'check_hostname', True),
-                        setattr(ctx, 'verify_mode', ssl.CERT_REQUIRED)
-                    )[-1]
-                )
+                'name': 'System default SSL',
+                'setup': lambda: ssl.create_default_context()
             },
             {
                 'name': 'Permissive SSL (hostname verification disabled)',
-                'setup': lambda: (
-                    ssl.create_default_context(cafile=certifi.where()),
-                    lambda ctx: (
-                        setattr(ctx, 'check_hostname', False),
-                        setattr(ctx, 'verify_mode', ssl.CERT_REQUIRED)
-                    )[-1]
-                )
+                'setup': lambda: self._create_permissive_ssl_context()
             },
             {
                 'name': 'Insecure SSL (verification disabled)',
@@ -1085,19 +1090,24 @@ class UniversalClient:
                     logger.warning(f"⚠️ Using insecure SSL configuration (no verification)")
                     break
                 else:
-                    ssl_context, setup_func = config['setup']()
-                    if setup_func:
-                        setup_func(ssl_context)
+                    ssl_context = config['setup']()
                 
-                # Test the SSL context with a real connection
-                test_connector = aiohttp.TCPConnector(ssl=ssl_context)
-                test_session = aiohttp.ClientSession(connector=test_connector, timeout=aiohttp.ClientTimeout(total=10))
+                # Test the SSL context with a real connection (but shorter timeout)
+                test_connector = aiohttp.TCPConnector(ssl=ssl_context, limit=1)
+                test_session = aiohttp.ClientSession(connector=test_connector, timeout=aiohttp.ClientTimeout(total=5))
                 
                 try:
-                    async with test_session.get('https://subscription-analytics.onrender.com/health') as test_response:
-                        logger.info(f"✅ SSL configuration '{config['name']}' tested successfully (status: {test_response.status})")
-                        await test_session.close()
-                        break
+                    server_url = self.config.get('SUBSCRIPTION_API_URL', 'https://subscription-analytics.onrender.com')
+                    test_url = f"{server_url}/health"
+                    async with test_session.get(test_url) as test_response:
+                        if test_response.status in [200, 404, 401]:  # Accept these as "connection working"
+                            logger.info(f"✅ SSL configuration '{config['name']}' tested successfully (status: {test_response.status})")
+                            await test_session.close()
+                            break
+                        else:
+                            logger.warning(f"⚠️ SSL configuration '{config['name']}' got unexpected status: {test_response.status}")
+                            await test_session.close()
+                            continue
                 except Exception as test_e:
                     await test_session.close()
                     logger.warning(f"⚠️ SSL configuration '{config['name']}' failed connection test: {test_e}")
@@ -1114,6 +1124,7 @@ class UniversalClient:
             enable_cleanup_closed=True,  # Clean up closed connections
             force_close=True,   # Force close connections after each request
             ttl_dns_cache=300   # DNS cache TTL
+            # Note: keepalive_timeout cannot be set when force_close=True
         )
         self.session = aiohttp.ClientSession(
             connector=connector,
@@ -1121,6 +1132,32 @@ class UniversalClient:
             headers={'Connection': 'close'}  # Force connection close
         )
         return self
+    
+    def _create_ssl_context_with_certifi(self):
+        """Create SSL context with certifi certificate bundle."""
+        try:
+            context = ssl.create_default_context(cafile=certifi.where())
+            context.check_hostname = True
+            context.verify_mode = ssl.CERT_REQUIRED
+            return context
+        except Exception as e:
+            logger.warning(f"Could not create SSL context with certifi: {e}")
+            return ssl.create_default_context()
+    
+    def _create_permissive_ssl_context(self):
+        """Create permissive SSL context that doesn't verify hostnames."""
+        try:
+            context = ssl.create_default_context(cafile=certifi.where())
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_REQUIRED
+            return context
+        except Exception as e:
+            logger.warning(f"Could not create permissive SSL context: {e}")
+            # Fallback to even more permissive
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            return context
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
@@ -1294,9 +1331,17 @@ class UniversalClient:
                 'sql_query': parameters['sql_query']
             }, original_query)
             
-            if not sql_result.success or not sql_result.data:
+            if not sql_result.success:
                 # If SQL failed, return the error
                 return sql_result
+            
+            if not sql_result.data:
+                # If no data, return the result with message
+                sql_result.message = (sql_result.message or "") + "\n💡 No data returned - cannot generate graph"
+                return sql_result
+            
+            # Always show the SQL data first, regardless of graph generation success
+            logger.info(f"📊 SQL returned {len(sql_result.data)} rows for graph analysis")
             
             # Check if we can generate graphs
             if not self.graph_generator.can_generate_graphs():
@@ -1304,13 +1349,7 @@ class UniversalClient:
                 sql_result.message = (sql_result.message or "") + "\n⚠️ Graph generation unavailable (matplotlib not installed)"
                 return sql_result
             
-            # Check if data is suitable for graphing
-            if not self.graph_generator.should_generate_graph(sql_result.data, original_query):
-                # Return SQL result with note
-                sql_result.message = (sql_result.message or "") + "\n💡 Data not suitable for automatic graph generation"
-                return sql_result
-            
-            # Generate graph data using the new API tool
+            # Try to generate graph data using the new API tool
             graph_config = {
                 'data': sql_result.data
             }
@@ -1319,11 +1358,13 @@ class UniversalClient:
             if parameters.get('graph_type'):
                 graph_config['graph_type'] = parameters['graph_type']
             
+            logger.info(f"📊 Attempting graph generation for data: {sql_result.data}")
             graph_result = await self.call_tool('generate_graph_data', graph_config)
             
             if not graph_result.success:
                 # Graph generation failed, but we still have SQL data
-                sql_result.message = (sql_result.message or "") + f"\n⚠️ Graph generation failed: {graph_result.error}"
+                logger.warning(f"⚠️ Graph generation failed: {graph_result.error}")
+                sql_result.message = (sql_result.message or "") + f"\n⚠️ Graph generation failed: {graph_result.error}\n💡 Showing data table instead"
                 return sql_result
             
             # Generate the actual graph file
@@ -1337,19 +1378,24 @@ class UniversalClient:
             
             if graph_filepath:
                 sql_result.graph_filepath = graph_filepath
-                sql_result.message = (sql_result.message or "") + f"\n📊 Graph generated and saved to {graph_filepath}"
+                sql_result.message = (sql_result.message or "") + f"\n📊 Graph generated and saved"
                 logger.info(f"✅ Graph successfully generated for query: {original_query}")
             else:
-                sql_result.message = (sql_result.message or "") + "\n⚠️ Graph data generated but file creation failed"
+                sql_result.message = (sql_result.message or "") + "\n⚠️ Graph data generated but file creation failed\n💡 Showing data table"
             
             return sql_result
             
         except Exception as e:
             logger.error(f"❌ Error in _handle_sql_with_graph: {e}")
-            # Fall back to regular SQL execution
-            return await self.call_tool('execute_dynamic_sql', {
+            # Fall back to regular SQL execution to ensure user gets data
+            fallback_result = await self.call_tool('execute_dynamic_sql', {
                 'sql_query': parameters['sql_query']
             }, original_query)
+            
+            if fallback_result.success:
+                fallback_result.message = (fallback_result.message or "") + f"\n⚠️ Graph generation failed: {str(e)}\n💡 Showing data table instead"
+            
+            return fallback_result
 
     async def query(self, nl_query: str) -> Union[QueryResult, List[QueryResult]]:
         """Process a natural language query with graph generation support"""

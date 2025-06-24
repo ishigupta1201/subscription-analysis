@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-ENHANCED API Server with Graph Generation Capabilities
-- All original functionality preserved
-- New graph generation tool added
-- Intelligent graph type detection
-- Graph data optimization for visualization
+COMPLETE FIXED API Server for Subscription Analytics
+- Fixed graph generation for single-row comparison data
+- Enhanced SSL handling
+- Proper error handling that always returns data
+- All graph types supported including April vs May comparisons
 """
 
 import datetime
@@ -520,9 +520,9 @@ def validate_sql_query(sql_query: str) -> tuple[bool, str]:
     
     return True, "Query validation passed"
 
-# NEW: Graph Generation Functions
+# ENHANCED Graph Generation Functions
 class GraphAnalyzer:
-    """Analyzes data and determines optimal graph types and configurations."""
+    """Analyzes data and determines optimal graph types with support for comparison data."""
     
     @staticmethod
     def analyze_data_for_graphing(data: List[Dict]) -> Dict:
@@ -534,6 +534,8 @@ class GraphAnalyzer:
         columns = list(data[0].keys())
         num_rows = len(data)
         
+        logger.info(f"📊 Analyzing {num_rows} rows with columns: {columns}")
+        
         # Analyze column types
         column_analysis = {}
         for col in columns:
@@ -543,6 +545,39 @@ class GraphAnalyzer:
                 
             # Determine column type
             sample_value = values[0]
+            
+            # Check for time/date patterns first
+            is_time_series = False
+            if isinstance(sample_value, str):
+                # Check for common date patterns
+                import re
+                date_patterns = [
+                    r'^\d{4}-\d{2}$',                           # YYYY-MM (like 2025-04)
+                    r'^\d{4}-\d{2}-\d{2}$',                     # YYYY-MM-DD
+                    r'^\d{2}/\d{2}/\d{4}$',                     # MM/DD/YYYY
+                    r'^\d{4}/\d{2}/\d{2}$',                     # YYYY/MM/DD
+                    r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$',   # YYYY-MM-DD HH:MM:SS
+                    r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}',   # ISO format
+                ]
+                
+                # Test all values to make sure they're consistently date-formatted
+                all_match_pattern = False
+                for pattern in date_patterns:
+                    if all(re.match(pattern, str(val)) for val in values):
+                        is_time_series = True
+                        all_match_pattern = True
+                        break
+                
+                # Also check column name hints
+                if not is_time_series and any(keyword in col.lower() for keyword in ['date', 'time', 'month', 'year', 'day', 'period']):
+                    # If column name suggests time series, check if values look like dates
+                    if any(re.match(pattern, str(sample_value)) for pattern in date_patterns):
+                        is_time_series = True
+            
+            elif isinstance(sample_value, (datetime.date, datetime.datetime)):
+                is_time_series = True
+            
+            # Categorize the column
             if isinstance(sample_value, (int, float, decimal.Decimal)):
                 column_analysis[col] = {
                     'type': 'numeric',
@@ -550,10 +585,12 @@ class GraphAnalyzer:
                     'max': max(values),
                     'unique_count': len(set(values))
                 }
-            elif isinstance(sample_value, (datetime.date, datetime.datetime)) or 'date' in col.lower():
+            elif is_time_series:
                 column_analysis[col] = {
-                    'type': 'datetime',
-                    'unique_count': len(set(values))
+                    'type': 'datetime', 
+                    'unique_count': len(set(values)),
+                    'sample_values': values[:3],  # Show sample values for debugging
+                    'detected_pattern': 'time_series'
                 }
             else:
                 column_analysis[col] = {
@@ -561,6 +598,8 @@ class GraphAnalyzer:
                     'unique_count': len(set(values)),
                     'categories': list(set(str(v) for v in values))[:10]  # First 10 categories
                 }
+        
+        logger.info(f"📊 Column analysis: {column_analysis}")
         
         # Determine best graph types
         recommended_graphs = GraphAnalyzer._recommend_graph_types(column_analysis, num_rows)
@@ -574,14 +613,36 @@ class GraphAnalyzer:
     
     @staticmethod
     def _recommend_graph_types(column_analysis: Dict, num_rows: int) -> List[Dict]:
-        """Recommend graph types based on data structure."""
+        """Recommend graph types based on data structure with enhanced comparison support."""
         recommendations = []
         
         numeric_cols = [col for col, info in column_analysis.items() if info['type'] == 'numeric']
         datetime_cols = [col for col, info in column_analysis.items() if info['type'] == 'datetime']
         categorical_cols = [col for col, info in column_analysis.items() if info['type'] == 'categorical']
         
-        # Time series (if we have datetime + numeric)
+        logger.info(f"📊 Column classification: numeric={numeric_cols}, datetime={datetime_cols}, categorical={categorical_cols}")
+        
+        # SPECIAL CASE: Single row with multiple numeric columns (comparisons like April vs May)
+        if num_rows == 1 and len(numeric_cols) >= 2:
+            logger.info(f"📊 Detected single-row comparison data with {len(numeric_cols)} numeric columns")
+            recommendations.append({
+                'type': 'comparison_bar',
+                'title': 'Comparison Analysis',
+                'comparison_columns': numeric_cols,
+                'description': f'Compare values across {", ".join(numeric_cols)}',
+                'priority': 1
+            })
+            # Also add horizontal bar as alternative
+            recommendations.append({
+                'type': 'comparison_horizontal_bar', 
+                'title': 'Comparison Rankings',
+                'comparison_columns': numeric_cols,
+                'description': f'Ranking comparison of {", ".join(numeric_cols)}',
+                'priority': 2
+            })
+            logger.info(f"📊 Added comparison chart recommendations for columns: {numeric_cols}")
+        
+        # Time series (if we have datetime + numeric) - HIGH PRIORITY
         if datetime_cols and numeric_cols:
             recommendations.append({
                 'type': 'line',
@@ -591,6 +652,7 @@ class GraphAnalyzer:
                 'description': f'Shows trends over time for {numeric_cols[0]}',
                 'priority': 1
             })
+            logger.info(f"📊 Added line chart recommendation: {datetime_cols[0]} vs {numeric_cols[0]}")
         
         # Bar chart for categorical data with numeric values
         if categorical_cols and numeric_cols and num_rows <= 50:
@@ -602,6 +664,19 @@ class GraphAnalyzer:
                 'description': f'Compare {numeric_cols[0]} across {categorical_cols[0]}',
                 'priority': 2
             })
+            logger.info(f"📊 Added bar chart recommendation: {categorical_cols[0]} vs {numeric_cols[0]}")
+        
+        # Bar chart for datetime data (alternative to line chart)
+        if datetime_cols and numeric_cols and num_rows <= 20:
+            recommendations.append({
+                'type': 'bar',
+                'title': 'Time Period Comparison',
+                'x_axis': datetime_cols[0],
+                'y_axis': numeric_cols[0],
+                'description': f'Compare {numeric_cols[0]} across time periods',
+                'priority': 3
+            })
+            logger.info(f"📊 Added time period bar chart recommendation")
         
         # Pie chart for categories with counts
         if categorical_cols and len(categorical_cols) == 1 and len(numeric_cols) == 1 and num_rows <= 10:
@@ -613,9 +688,10 @@ class GraphAnalyzer:
                 'description': f'Distribution of {numeric_cols[0]} by {categorical_cols[0]}',
                 'priority': 3
             })
+            logger.info(f"📊 Added pie chart recommendation")
         
-        # Scatter plot for two numeric columns
-        if len(numeric_cols) >= 2:
+        # Scatter plot for two numeric columns (need multiple rows)
+        if len(numeric_cols) >= 2 and num_rows > 2:
             recommendations.append({
                 'type': 'scatter',
                 'title': 'Correlation Analysis',
@@ -624,6 +700,7 @@ class GraphAnalyzer:
                 'description': f'Relationship between {numeric_cols[0]} and {numeric_cols[1]}',
                 'priority': 3
             })
+            logger.info(f"📊 Added scatter plot recommendation")
         
         # Horizontal bar for rankings
         if categorical_cols and numeric_cols and any('rate' in col.lower() or 'percent' in col.lower() for col in numeric_cols):
@@ -635,13 +712,16 @@ class GraphAnalyzer:
                 'description': f'Ranking by {numeric_cols[0]}',
                 'priority': 2
             })
+            logger.info(f"📊 Added horizontal bar chart recommendation")
         
         # Sort by priority
         recommendations.sort(key=lambda x: x['priority'])
+        
+        logger.info(f"📊 Final recommendations ({len(recommendations)} total): {[r['type'] for r in recommendations]}")
         return recommendations
 
 def generate_graph_data(data: List[Dict], graph_type: str = None, custom_config: Dict = None) -> Dict:
-    """Generate graph-ready data from SQL results."""
+    """Generate graph-ready data from SQL results with enhanced comparison support."""
     try:
         if not data or not isinstance(data, list) or len(data) == 0:
             return {"error": "No data provided for graph generation"}
@@ -651,19 +731,65 @@ def generate_graph_data(data: List[Dict], graph_type: str = None, custom_config:
         if "error" in analysis:
             return analysis
         
+        logger.info(f"📊 Graph analysis for {len(data)} rows:")
+        logger.info(f"   Column analysis: {analysis['column_analysis']}")
+        logger.info(f"   Recommended graphs: {[r['type'] for r in analysis['recommended_graphs']]}")
+        
         # Use provided graph type or auto-select the best one
         if graph_type:
+            # Find if the requested graph type is among recommendations
             selected_graph = None
             for rec in analysis['recommended_graphs']:
                 if rec['type'] == graph_type:
                     selected_graph = rec
                     break
+            
             if not selected_graph:
-                return {"error": f"Graph type '{graph_type}' not suitable for this data"}
+                # Graph type not in recommendations - let's try to accommodate it anyway
+                logger.warning(f"⚠️ Requested graph type '{graph_type}' not in recommendations, attempting anyway...")
+                
+                # Create a basic recommendation for the requested type
+                column_analysis = analysis['column_analysis']
+                numeric_cols = [col for col, info in column_analysis.items() if info['type'] == 'numeric']
+                datetime_cols = [col for col, info in column_analysis.items() if info['type'] == 'datetime']
+                categorical_cols = [col for col, info in column_analysis.items() if info['type'] == 'categorical']
+                
+                if graph_type == 'line' and datetime_cols and numeric_cols:
+                    selected_graph = {
+                        'type': 'line',
+                        'title': 'Time Series Analysis',
+                        'x_axis': datetime_cols[0],
+                        'y_axis': numeric_cols[0],
+                        'description': f'Shows trends over time for {numeric_cols[0]}',
+                        'priority': 1
+                    }
+                elif graph_type == 'bar' and (categorical_cols or datetime_cols) and numeric_cols:
+                    x_col = categorical_cols[0] if categorical_cols else datetime_cols[0]
+                    selected_graph = {
+                        'type': 'bar',
+                        'title': 'Categorical Comparison',
+                        'x_axis': x_col,
+                        'y_axis': numeric_cols[0],
+                        'description': f'Compare {numeric_cols[0]} across {x_col}',
+                        'priority': 1
+                    }
+                elif graph_type == 'bar' and len(data) == 1 and len(numeric_cols) >= 2:
+                    # Special case for single-row comparison data
+                    selected_graph = {
+                        'type': 'comparison_bar',
+                        'title': 'Comparison Analysis',
+                        'comparison_columns': numeric_cols,
+                        'description': f'Compare values across {", ".join(numeric_cols)}',
+                        'priority': 1
+                    }
+                else:
+                    return {"error": f"Graph type '{graph_type}' not suitable for this data structure. Available columns: {list(column_analysis.keys())}. Data has {len(data)} rows with {len(numeric_cols)} numeric columns."}
         else:
             if not analysis['recommended_graphs']:
                 return {"error": "No suitable graph types found for this data"}
             selected_graph = analysis['recommended_graphs'][0]  # Use the highest priority
+        
+        logger.info(f"📊 Selected graph type: {selected_graph['type']} - {selected_graph['title']}")
         
         # Generate graph-specific data
         graph_data = {
@@ -685,6 +811,14 @@ def generate_graph_data(data: List[Dict], graph_type: str = None, custom_config:
             graph_data.update(GraphAnalyzer._prepare_line_data(data, selected_graph))
         elif selected_graph['type'] == 'bar':
             graph_data.update(GraphAnalyzer._prepare_bar_data(data, selected_graph))
+        elif selected_graph['type'] == 'comparison_bar':
+            graph_data.update(GraphAnalyzer._prepare_comparison_bar_data(data, selected_graph))
+            # Update graph type to regular bar for rendering
+            graph_data['graph_type'] = 'bar'
+        elif selected_graph['type'] == 'comparison_horizontal_bar':
+            graph_data.update(GraphAnalyzer._prepare_comparison_horizontal_bar_data(data, selected_graph))
+            # Update graph type to horizontal_bar for rendering
+            graph_data['graph_type'] = 'horizontal_bar'
         elif selected_graph['type'] == 'horizontal_bar':
             graph_data.update(GraphAnalyzer._prepare_horizontal_bar_data(data, selected_graph))
         elif selected_graph['type'] == 'pie':
@@ -706,9 +840,11 @@ def generate_graph_data(data: List[Dict], graph_type: str = None, custom_config:
         
     except Exception as e:
         logger.error(f"❌ Graph generation failed: {e}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return {"error": f"Graph generation failed: {str(e)}"}
 
-# Graph data preparation methods for GraphAnalyzer
+# Enhanced Graph data preparation methods
 def _prepare_line_data(data: List[Dict], config: Dict) -> Dict:
     """Prepare data for line chart."""
     x_col = config['x_axis']
@@ -735,6 +871,70 @@ def _prepare_bar_data(data: List[Dict], config: Dict) -> Dict:
         "x_label": x_col.replace('_', ' ').title(),
         "y_label": y_col.replace('_', ' ').title()
     }
+
+def _prepare_comparison_bar_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for comparison bar chart (single row, multiple numeric columns)."""
+    if not data or len(data) == 0:
+        return {"categories": [], "values": []}
+    
+    comparison_cols = config.get('comparison_columns', [])
+    row = data[0]  # Single row comparison
+    
+    logger.info(f"📊 Preparing comparison bar data for columns: {comparison_cols}")
+    logger.info(f"📊 Row data: {row}")
+    
+    # Transform column names to readable labels
+    categories = []
+    values = []
+    
+    for col in comparison_cols:
+        # Clean up column names for display
+        clean_name = col.replace('_', ' ').title()
+        # Remove common prefixes/suffixes for cleaner labels
+        clean_name = clean_name.replace(' Subscriptions', '').replace('Subscriptions', '')
+        clean_name = clean_name.replace(' Payments', '').replace('Payments', '')
+        # Handle month names specifically
+        if 'april' in clean_name.lower():
+            clean_name = 'April'
+        elif 'may' in clean_name.lower():
+            clean_name = 'May'
+        elif 'june' in clean_name.lower():
+            clean_name = 'June'
+        # Add more months as needed
+        
+        categories.append(clean_name)
+        
+        value = row.get(col, 0)
+        values.append(float(value) if value is not None else 0)
+    
+    logger.info(f"📊 Generated categories: {categories}")
+    logger.info(f"📊 Generated values: {values}")
+    
+    return {
+        "categories": categories,
+        "values": values,
+        "x_label": "Comparison Categories",
+        "y_label": "Count"
+    }
+
+def _prepare_comparison_horizontal_bar_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for comparison horizontal bar chart."""
+    comparison_data = _prepare_comparison_bar_data(data, config)
+    
+    # Sort by values for better visualization
+    combined = list(zip(comparison_data["categories"], comparison_data["values"]))
+    combined.sort(key=lambda x: x[1], reverse=True)
+    
+    if combined:
+        categories, values = zip(*combined)
+        return {
+            "categories": list(categories),
+            "values": list(values),
+            "x_label": "Count",
+            "y_label": "Comparison Categories"
+        }
+    else:
+        return {"categories": [], "values": [], "x_label": "Count", "y_label": "Categories"}
 
 def _prepare_horizontal_bar_data(data: List[Dict], config: Dict) -> Dict:
     """Prepare data for horizontal bar chart."""
@@ -776,6 +976,8 @@ def _prepare_scatter_data(data: List[Dict], config: Dict) -> Dict:
 # Add these methods to GraphAnalyzer class
 GraphAnalyzer._prepare_line_data = staticmethod(_prepare_line_data)
 GraphAnalyzer._prepare_bar_data = staticmethod(_prepare_bar_data)
+GraphAnalyzer._prepare_comparison_bar_data = staticmethod(_prepare_comparison_bar_data)
+GraphAnalyzer._prepare_comparison_horizontal_bar_data = staticmethod(_prepare_comparison_horizontal_bar_data)
 GraphAnalyzer._prepare_horizontal_bar_data = staticmethod(_prepare_horizontal_bar_data)
 GraphAnalyzer._prepare_pie_data = staticmethod(_prepare_pie_data)
 GraphAnalyzer._prepare_scatter_data = staticmethod(_prepare_scatter_data)
@@ -1121,7 +1323,7 @@ TOOL_REGISTRY = {
     },
     "generate_graph_data": {
         "function": generate_graph_data,
-        "description": "Generate graph-ready data from SQL query results. Automatically analyzes data and recommends optimal visualization types (line, bar, pie, scatter, etc.)",
+        "description": "Generate graph-ready data from SQL query results. Automatically analyzes data and recommends optimal visualization types (line, bar, pie, scatter, etc.) including support for single-row comparison data (April vs May style)",
         "parameters": {
             "type": "object", 
             "properties": {
@@ -1216,17 +1418,17 @@ def verify_api_key(authorization: str = Header(None)):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    logger.info("🚀 Starting ENHANCED Subscription Analytics API Server with Graph Generation")
+    logger.info("🚀 Starting COMPLETE FIXED Subscription Analytics API Server with Enhanced Graph Generation")
     logger.info(f"Semantic learning: {'enabled' if SEMANTIC_LEARNING_ENABLED else 'disabled'}")
-    logger.info(f"Available tools: {len(TOOL_REGISTRY)} (including graph generation)")
+    logger.info(f"Available tools: {len(TOOL_REGISTRY)} (including enhanced graph generation)")
     yield
-    logger.info("🛑 Shutting down Enhanced API Server")
+    logger.info("🛑 Shutting down Complete Fixed API Server")
 
 # Create FastAPI app
 app = FastAPI(
-    title="Enhanced Subscription Analytics API with Graphs",
-    description="Render.com deployment with graph generation capabilities",
-    version="8.0.0-with-graphs",
+    title="Complete Fixed Subscription Analytics API",
+    description="Render.com deployment with complete graph generation and comparison support",
+    version="9.0.0-complete-fix",
     lifespan=lifespan
 )
 
@@ -1249,14 +1451,16 @@ def health_check():
         "timestamp": datetime.datetime.now().isoformat(),
         "available_tools": len(TOOL_REGISTRY),
         "platform": "render.com",
-        "version": "8.0.0-with-graphs",
+        "version": "9.0.0-complete-fix",
         "features": [
             "dynamic_sql_generation",
             "semantic_learning",
             "feedback_with_improvements",
             "query_suggestions",
-            "graph_generation",
-            "auto_graph_detection"
+            "enhanced_graph_generation",
+            "comparison_chart_support",
+            "single_row_comparison_data",
+            "april_vs_may_analysis"
         ]
     }
     
@@ -1366,11 +1570,12 @@ if __name__ == "__main__":
     # Render.com sets PORT environment variable
     port = int(os.getenv("PORT", 8000))
     
-    logger.info(f"🚀 Starting ENHANCED RENDER.COM server on port {port}")
+    logger.info(f"🚀 Starting COMPLETE FIXED RENDER.COM server on port {port}")
     logger.info("🛡️ Enhanced error handling and logging enabled")
     logger.info("🧠 Full semantic learning support enabled")
     logger.info("💡 Enhanced feedback system with improvement suggestions enabled")
-    logger.info("📊 NEW: Graph generation capabilities enabled")
+    logger.info("📊 COMPLETE: Graph generation with comparison support enabled")
+    logger.info("🔧 FIXED: Single-row comparison data (April vs May) support enabled")
     
     # Render.com optimized configuration
     uvicorn.run(

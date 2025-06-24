@@ -740,3 +740,494 @@
 2025-06-24 12:16:34,884 - api_server - INFO - ✅ Encoding successful with strategy 1
 2025-06-24 12:16:34,977 - api_server - INFO - 💾 Positive feedback stored successfully
 2025-06-24 12:16:34,977 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 12:28:45,086 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 12:28:45,086 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'how many number of merchants have more than 2 sbscriptions in last month'}
+2025-06-24 12:28:45,107 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 12:28:45,107 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 12:28:48,148 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 12:28:48,148 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY merchant_user_id HAVING COUNT(*) > 2'}
+2025-06-24 12:28:48,148 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >...
+2025-06-24 12:28:48,149 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 12:28:48,149 - api_server - INFO - 🔍 Executing: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY merchant_user_id HAVING COUNT(*) > 2
+2025-06-24 12:28:48,149 - api_server - INFO - 🔍 Executing query: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >...
+2025-06-24 12:28:51,223 - api_server - INFO - ✅ Query executed successfully, returned 13 rows
+2025-06-24 12:28:51,509 - api_server - INFO - ✅ Dynamic SQL completed successfully with 13 rows
+2025-06-24 12:28:51,510 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.36s
+2025-06-24 12:29:14,147 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 12:29:14,148 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'how many number of merchants have more than 2 sbscriptions in last month', 'sql_query': 'SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY merchant_user_id HAVING COUNT(*) > 2', 'was_helpful': False, 'improvement_suggestion': 'give me one number to answer the question asked'}
+2025-06-24 12:29:14,148 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 12:29:14,163 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 12:29:14,163 - api_server - INFO - 💡 Improvement suggestion recorded: give me one number to answer the question asked...
+2025-06-24 12:29:14,256 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 12:29:14,256 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 12:29:14,331 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 12:29:14,331 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'how many number of merchants have more than 2 sbscriptions in last month'}
+2025-06-24 12:29:14,338 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 12:29:14,338 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 12:29:22,904 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 12:29:22,905 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'how many number of merchants have more than 2 sbscriptions in last month'}
+2025-06-24 12:29:22,922 - api_server - INFO - 💡 Found 1 improvement suggestions for similar queries
+2025-06-24 12:29:22,922 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 12:29:23,515 - api_server - INFO - 🔧 Tool execution request: get_database_status
+2025-06-24 12:29:23,516 - api_server - INFO - ⚙️ Executing get_database_status with parameters: {}
+2025-06-24 12:29:23,516 - api_server - INFO - 🔍 Executing query: 
+        SELECT 
+            (SELECT COUNT(*) FROM subscription_contract_v2) as total_subscriptions,...
+2025-06-24 12:29:27,018 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 12:29:27,337 - api_server - INFO - ✅ Tool get_database_status completed successfully in 3.82s
+2025-06-24 12:32:23,164 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 12:32:23,165 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'how many number of merchants have more than 2 sbscriptions in last month'}
+2025-06-24 12:32:23,185 - api_server - INFO - 💡 Found 1 improvement suggestions for similar queries
+2025-06-24 12:32:23,185 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 12:32:26,299 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 12:32:26,300 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) GROUP BY merchant_user_id HAVING COUNT(*) > 2'}
+2025-06-24 12:32:26,300 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >...
+2025-06-24 12:32:26,300 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 12:32:26,300 - api_server - INFO - 🔍 Executing: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) GROUP BY merchant_user_id HAVING COUNT(*) > 2
+2025-06-24 12:32:26,300 - api_server - INFO - 🔍 Executing query: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >...
+2025-06-24 12:32:29,535 - api_server - INFO - ✅ Query executed successfully, returned 13 rows
+2025-06-24 12:32:29,832 - api_server - INFO - ✅ Dynamic SQL completed successfully with 13 rows
+2025-06-24 12:32:29,833 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.53s
+2025-06-24 12:32:50,363 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 12:32:50,364 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'how many number of merchants have more than 2 sbscriptions in last month', 'sql_query': 'SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) GROUP BY merchant_user_id HAVING COUNT(*) > 2', 'was_helpful': False, 'improvement_suggestion': 'for this instead of showing table, give one answer'}
+2025-06-24 12:32:50,364 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 12:32:50,379 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 12:32:50,379 - api_server - INFO - 💡 Improvement suggestion recorded: for this instead of showing table, give one answer...
+2025-06-24 12:32:50,472 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 12:32:50,472 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 12:32:50,548 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 12:32:50,548 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'how many number of merchants have more than 2 sbscriptions in last month'}
+2025-06-24 12:32:50,555 - api_server - INFO - 🔍 Found 2 similar queries for analysis
+2025-06-24 12:32:50,556 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 12:32:52,726 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 12:32:52,726 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'how many number of merchants have more than 2 sbscriptions in last month'}
+2025-06-24 12:32:52,741 - api_server - INFO - 💡 Found 2 improvement suggestions for similar queries
+2025-06-24 12:32:52,741 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 12:32:54,256 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 12:32:54,257 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) GROUP BY merchant_user_id HAVING COUNT(*) > 2'}
+2025-06-24 12:32:54,257 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >...
+2025-06-24 12:32:54,257 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 12:32:54,257 - api_server - INFO - 🔍 Executing: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) GROUP BY merchant_user_id HAVING COUNT(*) > 2
+2025-06-24 12:32:54,257 - api_server - INFO - 🔍 Executing query: SELECT COUNT(DISTINCT merchant_user_id) FROM subscription_contract_v2 WHERE subcription_start_date >...
+2025-06-24 12:32:57,832 - api_server - INFO - ✅ Query executed successfully, returned 13 rows
+2025-06-24 12:32:58,241 - api_server - INFO - ✅ Dynamic SQL completed successfully with 13 rows
+2025-06-24 12:32:58,242 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.99s
+2025-06-24 12:58:39,045 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 12:58:39,046 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'compare the subscriptions vs payments in the mont of may and visualise them'}
+2025-06-24 12:58:39,070 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 12:58:39,070 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.03s
+2025-06-24 12:58:42,216 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 12:58:42,216 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(*) FROM subscription_contract_v2 WHERE MONTH(subcription_start_date) = 5 AND YEAR(subcription_start_date) = YEAR(CURDATE())) AS may_subscriptions, (SELECT COUNT(*) FROM subscription_payment_details WHERE MONTH(created_date) = 5 AND YEAR(created_date) = YEAR(CURDATE())) AS may_payments'}
+2025-06-24 12:58:42,217 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(*) FROM subscription_contract_v2 WHERE MONTH(subcription_start_date) = 5 AND YE...
+2025-06-24 12:58:42,217 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 12:58:42,217 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(*) FROM subscription_contract_v2 WHERE MONTH(subcription_start_date) = 5 AND YEAR(subcription_start_date) = YEAR(CURDATE())) AS may_subscriptions, (SELECT COUNT(*) FROM subscription_payment_details WHERE MONTH(created_date) = 5 AND YEAR(created_date) = YEAR(CURDATE())) AS may_payments
+2025-06-24 12:58:42,217 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(*) FROM subscription_contract_v2 WHERE MONTH(subcription_start_date) = 5 AND YE...
+2025-06-24 12:58:45,313 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 12:58:45,606 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 12:58:45,606 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.39s
+2025-06-24 12:59:01,668 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 12:59:01,669 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'compare the subscriptions vs payments in the mont of may and visualise them', 'sql_query': 'SELECT (SELECT COUNT(*) FROM subscription_contract_v2 WHERE MONTH(subcription_start_date) = 5 AND YEAR(subcription_start_date) = YEAR(CURDATE())) AS may_subscriptions, (SELECT COUNT(*) FROM subscription_payment_details WHERE MONTH(created_date) = 5 AND YEAR(created_date) = YEAR(CURDATE())) AS may_payments', 'was_helpful': False, 'improvement_suggestion': 'if data not suitable give only the numeric comparison'}
+2025-06-24 12:59:01,669 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 12:59:01,686 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 12:59:01,686 - api_server - INFO - 💡 Improvement suggestion recorded: if data not suitable give only the numeric comparison...
+2025-06-24 12:59:01,778 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 12:59:01,778 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 12:59:01,854 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 12:59:01,854 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'compare the subscriptions vs payments in the mont of may and visualise them'}
+2025-06-24 12:59:01,861 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 12:59:01,861 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 12:59:12,833 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 12:59:12,834 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'compare subscription vs payments in the month of may'}
+2025-06-24 12:59:12,849 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 12:59:12,849 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 12:59:16,716 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 12:59:16,717 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = YEAR(CURDATE()) ) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = YEAR(CURDATE())) AS may_subscriptions, (SELECT COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 4 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS april_payments, (SELECT COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS may_payments'}
+2025-06-24 12:59:16,717 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 12:59:16,717 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 12:59:16,717 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = YEAR(CURDATE()) ) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = YEAR(CURDATE())) AS may_subscriptions, (SELECT COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 4 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS april_payments, (SELECT COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS may_payments
+2025-06-24 12:59:16,718 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 12:59:20,138 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 12:59:20,429 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 12:59:20,430 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.71s
+2025-06-24 13:01:17,119 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 13:01:17,120 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'compare subscription vs payments in the month of may', 'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = YEAR(CURDATE()) ) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = YEAR(CURDATE())) AS may_subscriptions, (SELECT COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 4 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS april_payments, (SELECT COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS may_payments', 'was_helpful': False}
+2025-06-24 13:01:17,120 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 13:01:17,135 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 13:01:17,227 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 13:01:17,227 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 13:01:17,305 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 13:01:17,305 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'compare subscription vs payments in the month of may'}
+2025-06-24 13:01:17,312 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 13:01:17,312 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 14:31:33,108 - faiss.loader - INFO - Loading faiss.
+2025-06-24 14:31:33,130 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-24 14:31:33,133 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-24 14:31:37,153 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-24 14:31:37,153 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-24 14:31:37,907 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-24 14:31:37,910 - __main__ - INFO - 🧠 Loaded 11 queries from memory
+2025-06-24 14:31:37,910 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-24 14:31:37,912 - __main__ - INFO - 🚀 Starting ENHANCED RENDER.COM server on port 8000
+2025-06-24 14:31:37,912 - __main__ - INFO - 🛡️ Enhanced error handling and logging enabled
+2025-06-24 14:31:37,912 - __main__ - INFO - 🧠 Full semantic learning support enabled
+2025-06-24 14:31:37,912 - __main__ - INFO - 💡 Enhanced feedback system with improvement suggestions enabled
+2025-06-24 14:31:37,912 - __main__ - INFO - 📊 NEW: Graph generation capabilities enabled
+2025-06-24 14:31:37,954 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-24 14:31:37,955 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-24 14:31:38,010 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-24 14:31:38,013 - api_server - INFO - 🧠 Loaded 11 queries from memory
+2025-06-24 14:31:38,013 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-24 14:31:38,015 - api_server - INFO - 🚀 Starting ENHANCED Subscription Analytics API Server with Graph Generation
+2025-06-24 14:31:38,015 - api_server - INFO - Semantic learning: enabled
+2025-06-24 14:31:38,015 - api_server - INFO - Available tools: 9 (including graph generation)
+2025-06-24 14:31:54,332 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:31:54,332 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'Compare April vs May subscriptions and visualize them'}
+2025-06-24 14:31:54,381 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 14:31:54,381 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.05s
+2025-06-24 14:31:57,895 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:31:57,896 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions'}
+2025-06-24 14:31:57,896 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:31:57,897 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:31:57,898 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions
+2025-06-24 14:31:57,898 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:31:59,405 - mysql.connector - INFO - package: mysql.connector.plugins
+2025-06-24 14:31:59,406 - mysql.connector - INFO - plugin_name: caching_sha2_password
+2025-06-24 14:31:59,406 - mysql.connector - INFO - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-06-24 14:32:01,294 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 14:32:01,661 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 14:32:01,662 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.77s
+2025-06-24 14:32:22,527 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 14:32:22,528 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'Compare April vs May subscriptions and visualize them', 'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions', 'was_helpful': False, 'improvement_suggestion': 'when i ask for something and also to visualise, show me both the data and the graoh'}
+2025-06-24 14:32:22,529 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 14:32:22,545 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 14:32:22,545 - api_server - INFO - 💡 Improvement suggestion recorded: when i ask for something and also to visualise, show me both the data and the graoh...
+2025-06-24 14:32:22,637 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 14:32:22,637 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 14:32:22,714 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 14:32:22,714 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'Compare April vs May subscriptions and visualize them'}
+2025-06-24 14:32:22,721 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 14:32:22,721 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 14:32:27,895 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:32:27,895 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'Compare April vs May subscriptions and visualize'}
+2025-06-24 14:32:27,911 - api_server - INFO - 💡 Found 1 improvement suggestions for similar queries
+2025-06-24 14:32:27,911 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 14:32:29,930 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:32:29,930 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS April_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS May_subscriptions'}
+2025-06-24 14:32:29,931 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:32:29,931 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:32:29,931 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS April_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS May_subscriptions
+2025-06-24 14:32:29,931 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:32:33,069 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 14:32:33,352 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 14:32:33,353 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.42s
+2025-06-24 14:32:38,166 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:32:38,166 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'Compare April vs May subscriptions'}
+2025-06-24 14:32:38,181 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 14:32:38,181 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 14:32:40,270 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:32:40,272 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions'}
+2025-06-24 14:32:40,272 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:32:40,272 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:32:40,272 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions
+2025-06-24 14:32:40,272 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:32:43,541 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 14:32:43,828 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 14:32:43,828 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.56s
+2025-06-24 14:48:32,970 - api_server - INFO - 🛑 Shutting down Enhanced API Server
+2025-06-24 14:48:35,180 - faiss.loader - INFO - Loading faiss.
+2025-06-24 14:48:35,192 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-24 14:48:35,195 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-24 14:48:39,202 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-24 14:48:39,202 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-24 14:48:39,895 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-24 14:48:39,897 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-24 14:48:39,899 - __main__ - INFO - 🚀 Starting COMPLETE FIXED RENDER.COM server on port 8000
+2025-06-24 14:48:39,899 - __main__ - INFO - 🛡️ Enhanced error handling and logging enabled
+2025-06-24 14:48:39,899 - __main__ - INFO - 🧠 Full semantic learning support enabled
+2025-06-24 14:48:39,899 - __main__ - INFO - 💡 Enhanced feedback system with improvement suggestions enabled
+2025-06-24 14:48:39,899 - __main__ - INFO - 📊 COMPLETE: Graph generation with comparison support enabled
+2025-06-24 14:48:39,899 - __main__ - INFO - 🔧 FIXED: Single-row comparison data (April vs May) support enabled
+2025-06-24 14:48:39,942 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-24 14:48:39,942 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-24 14:48:39,993 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-24 14:48:39,994 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-24 14:48:39,997 - api_server - INFO - 🚀 Starting COMPLETE FIXED Subscription Analytics API Server with Enhanced Graph Generation
+2025-06-24 14:48:39,997 - api_server - INFO - Semantic learning: enabled
+2025-06-24 14:48:39,997 - api_server - INFO - Available tools: 9 (including enhanced graph generation)
+2025-06-24 14:50:29,972 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:50:29,974 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'Visualize top 10 users by success rate'}
+2025-06-24 14:50:29,974 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.00s
+2025-06-24 14:52:26,471 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:52:26,472 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'Visualize top 10 users by success rate'}
+2025-06-24 14:52:26,473 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.00s
+2025-06-24 14:52:29,967 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:52:29,968 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_contract_v2 AS sc LEFT JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id GROUP BY sc.merchant_user_id HAVING COUNT(*) >= 3 ORDER BY success_rate DESC LIMIT 10'}
+2025-06-24 14:52:29,968 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN...
+2025-06-24 14:52:29,969 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:52:29,969 - api_server - INFO - 🔍 Executing: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_contract_v2 AS sc LEFT JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id GROUP BY sc.merchant_user_id HAVING COUNT(*) >= 3 ORDER BY success_rate DESC LIMIT 10
+2025-06-24 14:52:29,969 - api_server - INFO - 🔍 Executing query: SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN...
+2025-06-24 14:52:31,425 - mysql.connector - INFO - package: mysql.connector.plugins
+2025-06-24 14:52:31,426 - mysql.connector - INFO - plugin_name: caching_sha2_password
+2025-06-24 14:52:31,426 - mysql.connector - INFO - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-06-24 14:52:33,215 - api_server - INFO - ✅ Query executed successfully, returned 10 rows
+2025-06-24 14:52:33,506 - api_server - INFO - ✅ Dynamic SQL completed successfully with 10 rows
+2025-06-24 14:52:33,507 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.54s
+2025-06-24 14:52:33,611 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 14:52:33,611 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'merchant_user_id': '1705538300', 'total_subscriptions': 40, 'successful_payments': 37.0, 'success_rate': 92.5}, {'merchant_user_id': '1705537655', 'total_subscriptions': 11, 'successful_payments': 10.0, 'success_rate': 90.91}, {'merchant_user_id': '1705490261', 'total_subscriptions': 16, 'successful_payments': 13.0, 'success_rate': 81.25}, {'merchant_user_id': '1705544966', 'total_subscriptions': 16, 'successful_payments': 13.0, 'success_rate': 81.25}, {'merchant_user_id': '1001561217', 'total_subscriptions': 15, 'successful_payments': 12.0, 'success_rate': 80.0}, {'merchant_user_id': '1705465232', 'total_subscriptions': 5, 'successful_payments': 4.0, 'success_rate': 80.0}, {'merchant_user_id': '1001656012', 'total_subscriptions': 17, 'successful_payments': 13.0, 'success_rate': 76.47}, {'merchant_user_id': '1002576833', 'total_subscriptions': 6, 'successful_payments': 4.0, 'success_rate': 66.67}, {'merchant_user_id': '1700428205', 'total_subscriptions': 16, 'successful_payments': 10.0, 'success_rate': 62.5}, {'merchant_user_id': '1700701136', 'total_subscriptions': 83, 'successful_payments': 49.0, 'success_rate': 59.04}], 'graph_type': 'bar'}
+2025-06-24 14:52:33,611 - api_server - INFO - 📊 Analyzing 10 rows with columns: ['merchant_user_id', 'total_subscriptions', 'successful_payments', 'success_rate']
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Column analysis: {'merchant_user_id': {'type': 'categorical', 'unique_count': 10, 'categories': ['1705537655', '1705544966', '1705465232', '1001656012', '1700428205', '1705490261', '1700701136', '1705538300', '1002576833', '1001561217']}, 'total_subscriptions': {'type': 'numeric', 'min': 5, 'max': 83, 'unique_count': 8}, 'successful_payments': {'type': 'numeric', 'min': 4.0, 'max': 49.0, 'unique_count': 6}, 'success_rate': {'type': 'numeric', 'min': 59.04, 'max': 92.5, 'unique_count': 8}}
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Column classification: numeric=['total_subscriptions', 'successful_payments', 'success_rate'], datetime=[], categorical=['merchant_user_id']
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Added bar chart recommendation: merchant_user_id vs total_subscriptions
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Added scatter plot recommendation
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Added horizontal bar chart recommendation
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Final recommendations (3 total): ['bar', 'horizontal_bar', 'scatter']
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Graph analysis for 10 rows:
+2025-06-24 14:52:33,612 - api_server - INFO -    Column analysis: {'merchant_user_id': {'type': 'categorical', 'unique_count': 10, 'categories': ['1705537655', '1705544966', '1705465232', '1001656012', '1700428205', '1705490261', '1700701136', '1705538300', '1002576833', '1001561217']}, 'total_subscriptions': {'type': 'numeric', 'min': 5, 'max': 83, 'unique_count': 8}, 'successful_payments': {'type': 'numeric', 'min': 4.0, 'max': 49.0, 'unique_count': 6}, 'success_rate': {'type': 'numeric', 'min': 59.04, 'max': 92.5, 'unique_count': 8}}
+2025-06-24 14:52:33,612 - api_server - INFO -    Recommended graphs: ['bar', 'horizontal_bar', 'scatter']
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Selected graph type: bar - Categorical Comparison
+2025-06-24 14:52:33,612 - api_server - INFO - 📊 Generated bar graph with 10 data points
+2025-06-24 14:52:33,612 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 14:52:43,391 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 14:52:43,391 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'Visualize top 10 users by success rate', 'sql_query': 'SELECT sc.merchant_user_id, COUNT(*) AS total_subscriptions, SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = "ACTIVE" THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_contract_v2 AS sc LEFT JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id GROUP BY sc.merchant_user_id HAVING COUNT(*) >= 3 ORDER BY success_rate DESC LIMIT 10', 'was_helpful': True}
+2025-06-24 14:52:43,391 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-24 14:52:43,430 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 14:52:43,536 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-24 14:52:43,536 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.15s
+2025-06-24 14:53:03,646 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:53:03,647 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'compare the subscriptions in may and april and visualise them'}
+2025-06-24 14:53:03,666 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 14:53:03,666 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 14:53:05,736 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:53:05,736 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions'}
+2025-06-24 14:53:05,737 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:53:05,737 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:53:05,737 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions
+2025-06-24 14:53:05,737 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:53:09,581 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 14:53:09,887 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 14:53:09,888 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 4.15s
+2025-06-24 14:53:09,985 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 14:53:09,985 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'april_subscriptions': 0, 'may_subscriptions': 0}], 'graph_type': 'bar'}
+2025-06-24 14:53:09,985 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:53:09,985 - api_server - INFO - 📊 Column analysis: {'april_subscriptions': {'type': 'numeric', 'min': 0, 'max': 0, 'unique_count': 1}, 'may_subscriptions': {'type': 'numeric', 'min': 0, 'max': 0, 'unique_count': 1}}
+2025-06-24 14:53:09,985 - api_server - INFO - 📊 Column classification: numeric=['april_subscriptions', 'may_subscriptions'], datetime=[], categorical=[]
+2025-06-24 14:53:09,985 - api_server - INFO - 📊 Detected single-row comparison data with 2 numeric columns
+2025-06-24 14:53:09,985 - api_server - INFO - 📊 Added comparison chart recommendations for columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:53:09,985 - api_server - INFO - 📊 Final recommendations (2 total): ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 14:53:09,985 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 14:53:09,985 - api_server - INFO -    Column analysis: {'april_subscriptions': {'type': 'numeric', 'min': 0, 'max': 0, 'unique_count': 1}, 'may_subscriptions': {'type': 'numeric', 'min': 0, 'max': 0, 'unique_count': 1}}
+2025-06-24 14:53:09,985 - api_server - INFO -    Recommended graphs: ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 14:53:09,985 - api_server - WARNING - ⚠️ Requested graph type 'bar' not in recommendations, attempting anyway...
+2025-06-24 14:53:09,986 - api_server - INFO - 📊 Selected graph type: comparison_bar - Comparison Analysis
+2025-06-24 14:53:09,986 - api_server - INFO - 📊 Preparing comparison bar data for columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:53:09,986 - api_server - INFO - 📊 Row data: {'april_subscriptions': 0, 'may_subscriptions': 0}
+2025-06-24 14:53:09,986 - api_server - INFO - 📊 Generated categories: ['April', 'May']
+2025-06-24 14:53:09,986 - api_server - INFO - 📊 Generated values: [0.0, 0.0]
+2025-06-24 14:53:09,986 - api_server - INFO - 📊 Generated comparison_bar graph with 1 data points
+2025-06-24 14:53:09,986 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 14:53:39,676 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 14:53:39,677 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'compare the subscriptions in may and april and visualise them', 'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions', 'was_helpful': False, 'improvement_suggestion': 'no values in the graph'}
+2025-06-24 14:53:39,677 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 14:53:39,692 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 14:53:39,692 - api_server - INFO - 💡 Improvement suggestion recorded: no values in the graph...
+2025-06-24 14:53:39,784 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 14:53:39,784 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 14:53:39,861 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 14:53:39,862 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'compare the subscriptions in may and april and visualise them'}
+2025-06-24 14:53:39,868 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 14:53:39,868 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 14:54:00,437 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:54:00,438 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'compare the subscriptions in may and april'}
+2025-06-24 14:54:00,452 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 14:54:00,453 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 14:54:02,531 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:54:02,531 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions'}
+2025-06-24 14:54:02,531 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:54:02,532 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:54:02,532 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions
+2025-06-24 14:54:02,532 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:54:05,527 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 14:54:05,813 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 14:54:05,813 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.28s
+2025-06-24 14:54:05,917 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 14:54:05,917 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'april_subscriptions': 0, 'may_subscriptions': 0}], 'graph_type': 'bar'}
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Column analysis: {'april_subscriptions': {'type': 'numeric', 'min': 0, 'max': 0, 'unique_count': 1}, 'may_subscriptions': {'type': 'numeric', 'min': 0, 'max': 0, 'unique_count': 1}}
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Column classification: numeric=['april_subscriptions', 'may_subscriptions'], datetime=[], categorical=[]
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Detected single-row comparison data with 2 numeric columns
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Added comparison chart recommendations for columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Final recommendations (2 total): ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 14:54:05,917 - api_server - INFO -    Column analysis: {'april_subscriptions': {'type': 'numeric', 'min': 0, 'max': 0, 'unique_count': 1}, 'may_subscriptions': {'type': 'numeric', 'min': 0, 'max': 0, 'unique_count': 1}}
+2025-06-24 14:54:05,917 - api_server - INFO -    Recommended graphs: ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 14:54:05,917 - api_server - WARNING - ⚠️ Requested graph type 'bar' not in recommendations, attempting anyway...
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Selected graph type: comparison_bar - Comparison Analysis
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Preparing comparison bar data for columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Row data: {'april_subscriptions': 0, 'may_subscriptions': 0}
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Generated categories: ['April', 'May']
+2025-06-24 14:54:05,917 - api_server - INFO - 📊 Generated values: [0.0, 0.0]
+2025-06-24 14:54:05,918 - api_server - INFO - 📊 Generated comparison_bar graph with 1 data points
+2025-06-24 14:54:05,918 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 14:58:18,092 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:58:18,094 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'compare subscriptions in april and may'}
+2025-06-24 14:58:18,109 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 14:58:18,110 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 14:58:21,707 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:58:21,708 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions'}
+2025-06-24 14:58:21,708 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:58:21,708 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:58:21,708 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions
+2025-06-24 14:58:21,708 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:58:24,706 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 14:58:24,993 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 14:58:24,994 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.29s
+2025-06-24 14:58:50,329 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 14:58:50,330 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'compare subscriptions in april and may', 'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2024) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2024) AS may_subscriptions', 'was_helpful': False, 'improvement_suggestion': 'all dates are supposed to be for 2025'}
+2025-06-24 14:58:50,330 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 14:58:50,344 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 14:58:50,344 - api_server - INFO - 💡 Improvement suggestion recorded: all dates are supposed to be for 2025...
+2025-06-24 14:58:50,437 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 14:58:50,437 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 14:58:50,514 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 14:58:50,514 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'compare subscriptions in april and may'}
+2025-06-24 14:58:50,520 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 14:58:50,521 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 14:59:02,051 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:59:02,051 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'compare subscriptions in may and april'}
+2025-06-24 14:59:02,065 - api_server - INFO - 💡 Found 1 improvement suggestions for similar queries
+2025-06-24 14:59:02,066 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.01s
+2025-06-24 14:59:03,913 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:59:03,913 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions'}
+2025-06-24 14:59:03,914 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:59:03,914 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:59:03,914 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions
+2025-06-24 14:59:03,914 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:59:06,961 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 14:59:07,247 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 14:59:07,248 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.33s
+2025-06-24 14:59:10,338 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 14:59:10,338 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'compare subscriptions in may and april', 'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions', 'was_helpful': True}
+2025-06-24 14:59:10,338 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-24 14:59:10,353 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 14:59:10,446 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-24 14:59:10,446 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 14:59:12,953 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 14:59:12,954 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'visualise this'}
+2025-06-24 14:59:12,968 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 14:59:12,968 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.01s
+2025-06-24 14:59:14,868 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 14:59:14,868 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions'}
+2025-06-24 14:59:14,868 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:59:14,869 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 14:59:14,869 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions
+2025-06-24 14:59:14,869 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 14:59:17,914 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 14:59:18,202 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 14:59:18,203 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.33s
+2025-06-24 14:59:18,306 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 14:59:18,306 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'april_subscriptions': 1113, 'may_subscriptions': 1306}], 'graph_type': 'bar'}
+2025-06-24 14:59:18,306 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:59:18,306 - api_server - INFO - 📊 Column analysis: {'april_subscriptions': {'type': 'numeric', 'min': 1113, 'max': 1113, 'unique_count': 1}, 'may_subscriptions': {'type': 'numeric', 'min': 1306, 'max': 1306, 'unique_count': 1}}
+2025-06-24 14:59:18,306 - api_server - INFO - 📊 Column classification: numeric=['april_subscriptions', 'may_subscriptions'], datetime=[], categorical=[]
+2025-06-24 14:59:18,306 - api_server - INFO - 📊 Detected single-row comparison data with 2 numeric columns
+2025-06-24 14:59:18,306 - api_server - INFO - 📊 Added comparison chart recommendations for columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:59:18,307 - api_server - INFO - 📊 Final recommendations (2 total): ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 14:59:18,307 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 14:59:18,307 - api_server - INFO -    Column analysis: {'april_subscriptions': {'type': 'numeric', 'min': 1113, 'max': 1113, 'unique_count': 1}, 'may_subscriptions': {'type': 'numeric', 'min': 1306, 'max': 1306, 'unique_count': 1}}
+2025-06-24 14:59:18,307 - api_server - INFO -    Recommended graphs: ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 14:59:18,307 - api_server - WARNING - ⚠️ Requested graph type 'bar' not in recommendations, attempting anyway...
+2025-06-24 14:59:18,307 - api_server - INFO - 📊 Selected graph type: comparison_bar - Comparison Analysis
+2025-06-24 14:59:18,307 - api_server - INFO - 📊 Preparing comparison bar data for columns: ['april_subscriptions', 'may_subscriptions']
+2025-06-24 14:59:18,307 - api_server - INFO - 📊 Row data: {'april_subscriptions': 1113, 'may_subscriptions': 1306}
+2025-06-24 14:59:18,307 - api_server - INFO - 📊 Generated categories: ['April', 'May']
+2025-06-24 14:59:18,307 - api_server - INFO - 📊 Generated values: [1113.0, 1306.0]
+2025-06-24 14:59:18,307 - api_server - INFO - 📊 Generated comparison_bar graph with 1 data points
+2025-06-24 14:59:18,307 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 14:59:32,659 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 14:59:32,660 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'visualise this', 'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions', 'was_helpful': True}
+2025-06-24 14:59:32,660 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-24 14:59:32,673 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 14:59:32,766 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-24 14:59:32,766 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 15:00:15,590 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:00:15,591 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'visualise the success and falure rates in may'}
+2025-06-24 15:00:15,606 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:00:15,606 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:00:17,625 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:00:17,626 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS success_rate, (SELECT COUNT(CASE WHEN pd.status <> "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS failure_rate'}
+2025-06-24 15:00:17,626 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription...
+2025-06-24 15:00:17,626 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:00:17,626 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS success_rate, (SELECT COUNT(CASE WHEN pd.status <> "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS failure_rate
+2025-06-24 15:00:17,627 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription...
+2025-06-24 15:00:20,666 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 15:00:20,954 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 15:00:20,954 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.33s
+2025-06-24 15:00:21,058 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:00:21,058 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'success_rate': 16.68985, 'failure_rate': 83.31015}], 'graph_type': 'bar'}
+2025-06-24 15:00:21,058 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['success_rate', 'failure_rate']
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Column analysis: {'success_rate': {'type': 'numeric', 'min': 16.68985, 'max': 16.68985, 'unique_count': 1}, 'failure_rate': {'type': 'numeric', 'min': 83.31015, 'max': 83.31015, 'unique_count': 1}}
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Column classification: numeric=['success_rate', 'failure_rate'], datetime=[], categorical=[]
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Detected single-row comparison data with 2 numeric columns
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Added comparison chart recommendations for columns: ['success_rate', 'failure_rate']
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Final recommendations (2 total): ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 15:00:21,059 - api_server - INFO -    Column analysis: {'success_rate': {'type': 'numeric', 'min': 16.68985, 'max': 16.68985, 'unique_count': 1}, 'failure_rate': {'type': 'numeric', 'min': 83.31015, 'max': 83.31015, 'unique_count': 1}}
+2025-06-24 15:00:21,059 - api_server - INFO -    Recommended graphs: ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 15:00:21,059 - api_server - WARNING - ⚠️ Requested graph type 'bar' not in recommendations, attempting anyway...
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Selected graph type: comparison_bar - Comparison Analysis
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Preparing comparison bar data for columns: ['success_rate', 'failure_rate']
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Row data: {'success_rate': 16.68985, 'failure_rate': 83.31015}
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Generated categories: ['Success Rate', 'Failure Rate']
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Generated values: [16.68985, 83.31015]
+2025-06-24 15:00:21,059 - api_server - INFO - 📊 Generated comparison_bar graph with 1 data points
+2025-06-24 15:00:21,059 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 15:00:27,064 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 15:00:27,066 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'visualise the success and falure rates in may', 'sql_query': 'SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS success_rate, (SELECT COUNT(CASE WHEN pd.status <> "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS failure_rate', 'was_helpful': False, 'improvement_suggestion': 'give pie chart'}
+2025-06-24 15:00:27,066 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 15:00:27,082 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 15:00:27,082 - api_server - INFO - 💡 Improvement suggestion recorded: give pie chart...
+2025-06-24 15:00:27,173 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 15:00:27,173 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 15:00:27,249 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 15:00:27,250 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'visualise the success and falure rates in may'}
+2025-06-24 15:00:27,256 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 15:00:27,256 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 15:00:31,259 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:00:31,259 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'try agaij'}
+2025-06-24 15:00:31,274 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:00:31,275 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:00:33,259 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:00:33,259 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions'}
+2025-06-24 15:00:33,259 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 15:00:33,260 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:00:33,260 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 4 AND YEAR(sc.subcription_start_date) = 2025) AS april_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions
+2025-06-24 15:00:33,260 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 15:00:36,412 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 15:00:36,711 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 15:00:36,712 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.45s
+2025-06-24 15:00:55,356 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:00:55,357 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'give me the success rate vs failure rate pie chart'}
+2025-06-24 15:00:55,372 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:00:55,372 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:00:57,475 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:00:57,476 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS success_rate, (SELECT COUNT(CASE WHEN pd.status <> "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS failure_rate'}
+2025-06-24 15:00:57,476 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription...
+2025-06-24 15:00:57,476 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:00:57,476 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS success_rate, (SELECT COUNT(CASE WHEN pd.status <> "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription_payment_details AS pd WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = YEAR(CURDATE())) AS failure_rate
+2025-06-24 15:00:57,476 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(CASE WHEN pd.status = "ACTIVE" THEN 1 END) * 100.0 / COUNT(*) FROM subscription...
+2025-06-24 15:01:00,518 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 15:01:00,818 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 15:01:00,819 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.34s
+2025-06-24 15:01:00,924 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:01:00,924 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'success_rate': 16.68985, 'failure_rate': 83.31015}], 'graph_type': 'pie'}
+2025-06-24 15:01:00,924 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['success_rate', 'failure_rate']
+2025-06-24 15:01:00,924 - api_server - INFO - 📊 Column analysis: {'success_rate': {'type': 'numeric', 'min': 16.68985, 'max': 16.68985, 'unique_count': 1}, 'failure_rate': {'type': 'numeric', 'min': 83.31015, 'max': 83.31015, 'unique_count': 1}}
+2025-06-24 15:01:00,924 - api_server - INFO - 📊 Column classification: numeric=['success_rate', 'failure_rate'], datetime=[], categorical=[]
+2025-06-24 15:01:00,924 - api_server - INFO - 📊 Detected single-row comparison data with 2 numeric columns
+2025-06-24 15:01:00,924 - api_server - INFO - 📊 Added comparison chart recommendations for columns: ['success_rate', 'failure_rate']
+2025-06-24 15:01:00,924 - api_server - INFO - 📊 Final recommendations (2 total): ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 15:01:00,924 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 15:01:00,924 - api_server - INFO -    Column analysis: {'success_rate': {'type': 'numeric', 'min': 16.68985, 'max': 16.68985, 'unique_count': 1}, 'failure_rate': {'type': 'numeric', 'min': 83.31015, 'max': 83.31015, 'unique_count': 1}}
+2025-06-24 15:01:00,924 - api_server - INFO -    Recommended graphs: ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 15:01:00,924 - api_server - WARNING - ⚠️ Requested graph type 'pie' not in recommendations, attempting anyway...
+2025-06-24 15:01:00,924 - api_server - WARNING - Tool generate_graph_data returned error: Graph type 'pie' not suitable for this data structure. Available columns: ['success_rate', 'failure_rate']. Data has 1 rows with 2 numeric columns.
