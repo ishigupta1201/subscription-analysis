@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-COMPLETE RENDER.COM API Server for Subscription Analytics
-- Enhanced feedback system with improvement suggestions
-- Full semantic learning functionality
-- All 8 tools included (added get_improvement_suggestions)
-- Comprehensive error handling
-- Complete feature set restored
+ENHANCED API Server with Graph Generation Capabilities
+- All original functionality preserved
+- New graph generation tool added
+- Intelligent graph type detection
+- Graph data optimization for visualization
 """
 
 import datetime
@@ -521,7 +520,267 @@ def validate_sql_query(sql_query: str) -> tuple[bool, str]:
     
     return True, "Query validation passed"
 
-# Enhanced Tool Functions
+# NEW: Graph Generation Functions
+class GraphAnalyzer:
+    """Analyzes data and determines optimal graph types and configurations."""
+    
+    @staticmethod
+    def analyze_data_for_graphing(data: List[Dict]) -> Dict:
+        """Analyze data structure and recommend graph types."""
+        if not data or not isinstance(data, list) or len(data) == 0:
+            return {"error": "No data available for graphing"}
+        
+        # Get column information
+        columns = list(data[0].keys())
+        num_rows = len(data)
+        
+        # Analyze column types
+        column_analysis = {}
+        for col in columns:
+            values = [row.get(col) for row in data if row.get(col) is not None]
+            if not values:
+                continue
+                
+            # Determine column type
+            sample_value = values[0]
+            if isinstance(sample_value, (int, float, decimal.Decimal)):
+                column_analysis[col] = {
+                    'type': 'numeric',
+                    'min': min(values),
+                    'max': max(values),
+                    'unique_count': len(set(values))
+                }
+            elif isinstance(sample_value, (datetime.date, datetime.datetime)) or 'date' in col.lower():
+                column_analysis[col] = {
+                    'type': 'datetime',
+                    'unique_count': len(set(values))
+                }
+            else:
+                column_analysis[col] = {
+                    'type': 'categorical',
+                    'unique_count': len(set(values)),
+                    'categories': list(set(str(v) for v in values))[:10]  # First 10 categories
+                }
+        
+        # Determine best graph types
+        recommended_graphs = GraphAnalyzer._recommend_graph_types(column_analysis, num_rows)
+        
+        return {
+            "columns": columns,
+            "num_rows": num_rows,
+            "column_analysis": column_analysis,
+            "recommended_graphs": recommended_graphs
+        }
+    
+    @staticmethod
+    def _recommend_graph_types(column_analysis: Dict, num_rows: int) -> List[Dict]:
+        """Recommend graph types based on data structure."""
+        recommendations = []
+        
+        numeric_cols = [col for col, info in column_analysis.items() if info['type'] == 'numeric']
+        datetime_cols = [col for col, info in column_analysis.items() if info['type'] == 'datetime']
+        categorical_cols = [col for col, info in column_analysis.items() if info['type'] == 'categorical']
+        
+        # Time series (if we have datetime + numeric)
+        if datetime_cols and numeric_cols:
+            recommendations.append({
+                'type': 'line',
+                'title': 'Time Series Analysis',
+                'x_axis': datetime_cols[0],
+                'y_axis': numeric_cols[0],
+                'description': f'Shows trends over time for {numeric_cols[0]}',
+                'priority': 1
+            })
+        
+        # Bar chart for categorical data with numeric values
+        if categorical_cols and numeric_cols and num_rows <= 50:
+            recommendations.append({
+                'type': 'bar',
+                'title': 'Categorical Comparison',
+                'x_axis': categorical_cols[0],
+                'y_axis': numeric_cols[0],
+                'description': f'Compare {numeric_cols[0]} across {categorical_cols[0]}',
+                'priority': 2
+            })
+        
+        # Pie chart for categories with counts
+        if categorical_cols and len(categorical_cols) == 1 and len(numeric_cols) == 1 and num_rows <= 10:
+            recommendations.append({
+                'type': 'pie',
+                'title': 'Distribution Analysis',
+                'category': categorical_cols[0],
+                'value': numeric_cols[0],
+                'description': f'Distribution of {numeric_cols[0]} by {categorical_cols[0]}',
+                'priority': 3
+            })
+        
+        # Scatter plot for two numeric columns
+        if len(numeric_cols) >= 2:
+            recommendations.append({
+                'type': 'scatter',
+                'title': 'Correlation Analysis',
+                'x_axis': numeric_cols[0],
+                'y_axis': numeric_cols[1],
+                'description': f'Relationship between {numeric_cols[0]} and {numeric_cols[1]}',
+                'priority': 3
+            })
+        
+        # Horizontal bar for rankings
+        if categorical_cols and numeric_cols and any('rate' in col.lower() or 'percent' in col.lower() for col in numeric_cols):
+            recommendations.append({
+                'type': 'horizontal_bar',
+                'title': 'Rankings',
+                'x_axis': numeric_cols[0],
+                'y_axis': categorical_cols[0],
+                'description': f'Ranking by {numeric_cols[0]}',
+                'priority': 2
+            })
+        
+        # Sort by priority
+        recommendations.sort(key=lambda x: x['priority'])
+        return recommendations
+
+def generate_graph_data(data: List[Dict], graph_type: str = None, custom_config: Dict = None) -> Dict:
+    """Generate graph-ready data from SQL results."""
+    try:
+        if not data or not isinstance(data, list) or len(data) == 0:
+            return {"error": "No data provided for graph generation"}
+        
+        # Analyze the data
+        analysis = GraphAnalyzer.analyze_data_for_graphing(data)
+        if "error" in analysis:
+            return analysis
+        
+        # Use provided graph type or auto-select the best one
+        if graph_type:
+            selected_graph = None
+            for rec in analysis['recommended_graphs']:
+                if rec['type'] == graph_type:
+                    selected_graph = rec
+                    break
+            if not selected_graph:
+                return {"error": f"Graph type '{graph_type}' not suitable for this data"}
+        else:
+            if not analysis['recommended_graphs']:
+                return {"error": "No suitable graph types found for this data"}
+            selected_graph = analysis['recommended_graphs'][0]  # Use the highest priority
+        
+        # Generate graph-specific data
+        graph_data = {
+            "graph_type": selected_graph['type'],
+            "title": selected_graph['title'],
+            "description": selected_graph['description'],
+            "data_summary": {
+                "total_rows": len(data),
+                "columns": analysis['columns']
+            }
+        }
+        
+        # Apply custom configuration if provided
+        if custom_config:
+            selected_graph.update(custom_config)
+        
+        # Generate data based on graph type
+        if selected_graph['type'] == 'line':
+            graph_data.update(GraphAnalyzer._prepare_line_data(data, selected_graph))
+        elif selected_graph['type'] == 'bar':
+            graph_data.update(GraphAnalyzer._prepare_bar_data(data, selected_graph))
+        elif selected_graph['type'] == 'horizontal_bar':
+            graph_data.update(GraphAnalyzer._prepare_horizontal_bar_data(data, selected_graph))
+        elif selected_graph['type'] == 'pie':
+            graph_data.update(GraphAnalyzer._prepare_pie_data(data, selected_graph))
+        elif selected_graph['type'] == 'scatter':
+            graph_data.update(GraphAnalyzer._prepare_scatter_data(data, selected_graph))
+        else:
+            return {"error": f"Graph type '{selected_graph['type']}' not implemented"}
+        
+        # Add metadata for client rendering
+        graph_data['metadata'] = {
+            'all_recommendations': analysis['recommended_graphs'],
+            'column_analysis': analysis['column_analysis'],
+            'generated_at': datetime.datetime.now().isoformat()
+        }
+        
+        logger.info(f"📊 Generated {selected_graph['type']} graph with {len(data)} data points")
+        return {"data": graph_data}
+        
+    except Exception as e:
+        logger.error(f"❌ Graph generation failed: {e}")
+        return {"error": f"Graph generation failed: {str(e)}"}
+
+# Graph data preparation methods for GraphAnalyzer
+def _prepare_line_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for line chart."""
+    x_col = config['x_axis']
+    y_col = config['y_axis']
+    
+    # Sort by x-axis for proper line progression
+    sorted_data = sorted(data, key=lambda x: x.get(x_col, ''))
+    
+    return {
+        "x_values": [row.get(x_col) for row in sorted_data],
+        "y_values": [float(row.get(y_col, 0)) if row.get(y_col) is not None else 0 for row in sorted_data],
+        "x_label": x_col.replace('_', ' ').title(),
+        "y_label": y_col.replace('_', ' ').title()
+    }
+
+def _prepare_bar_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for bar chart."""
+    x_col = config['x_axis']
+    y_col = config['y_axis']
+    
+    return {
+        "categories": [str(row.get(x_col, '')) for row in data],
+        "values": [float(row.get(y_col, 0)) if row.get(y_col) is not None else 0 for row in data],
+        "x_label": x_col.replace('_', ' ').title(),
+        "y_label": y_col.replace('_', ' ').title()
+    }
+
+def _prepare_horizontal_bar_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for horizontal bar chart."""
+    x_col = config['x_axis']  # numeric values
+    y_col = config['y_axis']  # categories
+    
+    # Sort by values for better visualization
+    sorted_data = sorted(data, key=lambda x: float(x.get(x_col, 0)) if x.get(x_col) is not None else 0, reverse=True)
+    
+    return {
+        "categories": [str(row.get(y_col, '')) for row in sorted_data],
+        "values": [float(row.get(x_col, 0)) if row.get(x_col) is not None else 0 for row in sorted_data],
+        "x_label": x_col.replace('_', ' ').title(),
+        "y_label": y_col.replace('_', ' ').title()
+    }
+
+def _prepare_pie_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for pie chart."""
+    category_col = config['category']
+    value_col = config['value']
+    
+    return {
+        "labels": [str(row.get(category_col, '')) for row in data],
+        "values": [float(row.get(value_col, 0)) if row.get(value_col) is not None else 0 for row in data]
+    }
+
+def _prepare_scatter_data(data: List[Dict], config: Dict) -> Dict:
+    """Prepare data for scatter plot."""
+    x_col = config['x_axis']
+    y_col = config['y_axis']
+    
+    return {
+        "x_values": [float(row.get(x_col, 0)) if row.get(x_col) is not None else 0 for row in data],
+        "y_values": [float(row.get(y_col, 0)) if row.get(y_col) is not None else 0 for row in data],
+        "x_label": x_col.replace('_', ' ').title(),
+        "y_label": y_col.replace('_', ' ').title()
+    }
+
+# Add these methods to GraphAnalyzer class
+GraphAnalyzer._prepare_line_data = staticmethod(_prepare_line_data)
+GraphAnalyzer._prepare_bar_data = staticmethod(_prepare_bar_data)
+GraphAnalyzer._prepare_horizontal_bar_data = staticmethod(_prepare_horizontal_bar_data)
+GraphAnalyzer._prepare_pie_data = staticmethod(_prepare_pie_data)
+GraphAnalyzer._prepare_scatter_data = staticmethod(_prepare_scatter_data)
+
+# Enhanced Tool Functions (all original functions preserved)
 def get_subscriptions_in_last_days(days: int) -> Dict:
     """Get subscription statistics for the last N days."""
     try:
@@ -551,7 +810,7 @@ def get_subscriptions_in_last_days(days: int) -> Dict:
     return {"data": sanitize_for_json(results[0]) if results else {}}
 
 def get_payment_success_rate_in_last_days(days: int) -> Dict:
-    """Get payment success rate and revenue for the last N days."""
+    """Get payment success rate and revenue statistics for the last N days."""
     try:
         days = int(days)
         if days <= 0 or days > 365:
@@ -808,7 +1067,7 @@ def get_improvement_suggestions(original_question: str) -> Dict:
         logger.warning(f"⚠️ Improvement suggestions retrieval failed: {e}")
         return {"error": f"Failed to get improvement suggestions: {str(e)}"}
 
-# Tool Registry - FIXED: All closing braces properly matched
+# Tool Registry - Enhanced with new graph generation tool
 TOOL_REGISTRY = {
     "get_subscriptions_in_last_days": {
         "function": get_subscriptions_in_last_days,
@@ -860,6 +1119,29 @@ TOOL_REGISTRY = {
             "required": ["sql_query"]
         }
     },
+    "generate_graph_data": {
+        "function": generate_graph_data,
+        "description": "Generate graph-ready data from SQL query results. Automatically analyzes data and recommends optimal visualization types (line, bar, pie, scatter, etc.)",
+        "parameters": {
+            "type": "object", 
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "description": "Array of dictionaries containing the data to visualize (from SQL results)"
+                },
+                "graph_type": {
+                    "type": "string",
+                    "description": "Optional: Force specific graph type (line, bar, horizontal_bar, pie, scatter). If not provided, system will auto-select the best type.",
+                    "enum": ["line", "bar", "horizontal_bar", "pie", "scatter"]
+                },
+                "custom_config": {
+                    "type": "object",
+                    "description": "Optional: Custom configuration to override automatic settings (x_axis, y_axis, title, etc.)"
+                }
+            },
+            "required": ["data"]
+        }
+    },
     "record_query_feedback": {
         "function": record_query_feedback,
         "description": "Record user feedback on a dynamic query - both positive and negative with optional improvement suggestions",
@@ -904,7 +1186,7 @@ TOOL_REGISTRY = {
     }
 }
 
-# API Configuration
+# API Configuration (rest of the file remains the same)
 API_KEY = os.getenv("API_KEY_1")
 if not API_KEY:
     logger.error("❌ FATAL: API_KEY_1 environment variable is not set")
@@ -934,17 +1216,17 @@ def verify_api_key(authorization: str = Header(None)):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    logger.info("🚀 Starting RENDER.COM Subscription Analytics API Server")
+    logger.info("🚀 Starting ENHANCED Subscription Analytics API Server with Graph Generation")
     logger.info(f"Semantic learning: {'enabled' if SEMANTIC_LEARNING_ENABLED else 'disabled'}")
-    logger.info(f"Available tools: {len(TOOL_REGISTRY)}")
+    logger.info(f"Available tools: {len(TOOL_REGISTRY)} (including graph generation)")
     yield
-    logger.info("🛑 Shutting down API Server")
+    logger.info("🛑 Shutting down Enhanced API Server")
 
-# Create FastAPI app - NO GLOBAL AUTHENTICATION (FIXED)
+# Create FastAPI app
 app = FastAPI(
-    title="Subscription Analytics API",
-    description="Render.com deployment with enhanced feedback system",
-    version="7.0.0-enhanced-feedback",
+    title="Enhanced Subscription Analytics API with Graphs",
+    description="Render.com deployment with graph generation capabilities",
+    version="8.0.0-with-graphs",
     lifespan=lifespan
 )
 
@@ -967,12 +1249,14 @@ def health_check():
         "timestamp": datetime.datetime.now().isoformat(),
         "available_tools": len(TOOL_REGISTRY),
         "platform": "render.com",
-        "version": "7.0.0-enhanced-feedback",
+        "version": "8.0.0-with-graphs",
         "features": [
             "dynamic_sql_generation",
             "semantic_learning",
             "feedback_with_improvements",
-            "query_suggestions"
+            "query_suggestions",
+            "graph_generation",
+            "auto_graph_detection"
         ]
     }
     
@@ -1082,10 +1366,11 @@ if __name__ == "__main__":
     # Render.com sets PORT environment variable
     port = int(os.getenv("PORT", 8000))
     
-    logger.info(f"🚀 Starting RENDER.COM server on port {port}")
+    logger.info(f"🚀 Starting ENHANCED RENDER.COM server on port {port}")
     logger.info("🛡️ Enhanced error handling and logging enabled")
     logger.info("🧠 Full semantic learning support enabled")
     logger.info("💡 Enhanced feedback system with improvement suggestions enabled")
+    logger.info("📊 NEW: Graph generation capabilities enabled")
     
     # Render.com optimized configuration
     uvicorn.run(
