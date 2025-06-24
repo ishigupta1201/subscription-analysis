@@ -1,4 +1,4 @@
-# client/universal_client.py - ENHANCED WITH GRAPH GENERATION CAPABILITIES
+# client/universal_client.py - ENHANCED WITH FIXED GRAPH GENERATION CAPABILITIES
 
 import asyncio
 import aiohttp
@@ -534,7 +534,7 @@ class ResultFormatter:
             output.append(self.format_single_result(res))
         return "\n".join(output)
 
-# Enhanced AI Logic with Graph Detection
+# FIXED: Enhanced AI Logic with Improved Graph Detection for Pie Charts
 class GeminiNLPProcessor:
     def __init__(self):
         self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
@@ -561,7 +561,7 @@ Important Notes:
 - Always use WHERE clauses for date filtering when analyzing recent data
 """
         
-        # Define available tools for the AI (enhanced with graph generation)
+        # Define available tools for the AI (enhanced with FIXED graph generation)
         self.tools = [
             genai.protos.Tool(
                 function_declarations=[
@@ -635,7 +635,7 @@ Important Notes:
                     ),
                     genai.protos.FunctionDeclaration(
                         name="execute_dynamic_sql_with_graph",
-                        description="Execute a custom SQL query AND generate a graph visualization. Use this when the user asks for charts, graphs, plots, trends, comparisons, or visual analysis.",
+                        description="Execute a custom SQL query AND generate a graph visualization. FIXED to handle pie charts for rate/percentage data. Use this when the user asks for charts, graphs, plots, trends, comparisons, or visual analysis.",
                         parameters=genai.protos.Schema(
                             type=genai.protos.Type.OBJECT,
                             properties={
@@ -645,7 +645,7 @@ Important Notes:
                                 ),
                                 "graph_type": genai.protos.Schema(
                                     type=genai.protos.Type.STRING,
-                                    description="Optional: Preferred graph type. Valid options: 'line', 'bar', 'horizontal_bar', 'pie', 'scatter'. Leave blank or omit for auto-detection."
+                                    description="Optional: Preferred graph type. Valid options: 'line', 'bar', 'horizontal_bar', 'pie', 'scatter'. Use 'pie' for success/failure rates, percentage breakdowns, or distribution data. Leave blank for auto-detection."
                                 )
                             },
                             required=["sql_query"]
@@ -656,7 +656,7 @@ Important Notes:
         ]
 
     async def parse_query(self, user_query: str, history: List[str], client=None) -> List[Dict]:
-        """Parse user query and determine which tool(s) to use with REAL improvement suggestions and graph detection"""
+        """FIXED: Parse user query with enhanced pie chart detection for rate data."""
         
         # Build context from conversation history
         history_context = "\n".join(history[-6:]) if history else "No previous context."
@@ -673,7 +673,7 @@ Important Notes:
             "same time", "same period", "same timeframe", "try again"
         ]
         
-        # Check for graph/visualization keywords
+        # FIXED: Enhanced graph/visualization keywords with pie chart detection
         graph_keywords = [
             "chart", "graph", "plot", "visualize", "show trend", "compare", "visual",
             "distribution", "over time", "by month", "by year", "trend", "trends",
@@ -681,11 +681,21 @@ Important Notes:
             "pie chart", "bar chart", "line chart", "scatter plot", "plot data"
         ]
         
+        # FIXED: Specific pie chart indicators
+        pie_chart_keywords = [
+            "pie chart", "pie", "distribution", "breakdown", "share", "proportion",
+            "percentage", "percent", "success rate", "failure rate", "pass rate",
+            "success vs fail", "success vs failure", "pass vs fail", "success and failure"
+        ]
+        
         # Check if this is a contextual follow-up
         is_contextual = any(indicator in user_query.lower() for indicator in follow_up_indicators)
         
         # Check if user wants visualization
         wants_graph = any(keyword in user_query.lower() for keyword in graph_keywords)
+        
+        # FIXED: Check if user specifically wants pie chart
+        wants_pie_chart = any(keyword in user_query.lower() for keyword in pie_chart_keywords)
         
         # Enhanced context extraction from history
         context_data = self._extract_context_from_history(history)
@@ -755,7 +765,7 @@ Important Notes:
             improvement_context = self._get_pattern_based_improvements(user_query)
         
         prompt = f"""
-You are a subscription analytics assistant with graph generation capabilities. Analyze the user's query and choose the most appropriate tool.
+You are a subscription analytics assistant with FIXED graph generation capabilities. Analyze the user's query and choose the most appropriate tool.
 
 CONVERSATION HISTORY:
 {history_context}
@@ -769,11 +779,18 @@ CURRENT USER QUERY: "{user_query}"
 
 🚨 CRITICAL TOOL SELECTION RULES - FOLLOW THESE EXACTLY:
 
-1. **GRAPH/VISUALIZATION REQUESTS** - Use execute_dynamic_sql_with_graph ONLY when user explicitly requests visualization:
+1. **GRAPH/VISUALIZATION REQUESTS** - Use execute_dynamic_sql_with_graph when user explicitly requests visualization:
    - User asks for "chart", "graph", "plot", "visualize", "show trend", "create chart"
    - User says "compare X vs Y and visualize" or "compare X vs Y with a chart" 
    - User explicitly mentions wanting to see graphics/visual/charts
    - User says "show me a graph of" or "plot this data"
+   
+   🥧 **PIE CHART DETECTION - FIXED**: Use graph_type="pie" when:
+   - User asks for "pie chart", "pie", "distribution", "breakdown"
+   - User requests "success rate vs failure rate" 
+   - User wants "percentage breakdown", "share", "proportion"
+   - Query involves rates/percentages that should be shown as slices
+   - Examples: "pie chart of success vs failure", "show distribution of rates", "breakdown of success and failure rates"
 
 2. **REGULAR COMPARISON QUERIES** - Use execute_dynamic_sql (NO graph):
    - "compare April vs May subscriptions" (no visualization words)
@@ -811,7 +828,16 @@ CURRENT USER QUERY: "{user_query}"
 
 1. **ALWAYS START WITH SELECT**: Every SQL query must begin with "SELECT"
 
-2. **FOR MONTH COMPARISONS** - Use this pattern:
+2. **FOR RATE/PERCENTAGE QUERIES**: When user asks for success vs failure rates, ESPECIALLY for pie charts:
+   ```sql
+   SELECT 
+       ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate,
+       ROUND((SUM(CASE WHEN pd.status != 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS failure_rate
+   FROM subscription_payment_details AS pd 
+   WHERE MONTH(pd.created_date) = 5 AND YEAR(pd.created_date) = 2025
+   ```
+
+3. **FOR MONTH COMPARISONS** - Use this pattern:
    ```sql
    SELECT 
        (SELECT COUNT(DISTINCT sc.subscription_id) 
@@ -822,21 +848,21 @@ CURRENT USER QUERY: "{user_query}"
         WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions
    ```
 
-3. **NEVER USE UNION FOR COMPARISONS** - Use separate columns or subqueries
+4. **NEVER USE UNION FOR COMPARISONS** - Use separate columns or subqueries
 
-4. **FOR GRAPH-WORTHY QUERIES** - Structure data to be graph-friendly:
+5. **FOR GRAPH-WORTHY QUERIES** - Structure data to be graph-friendly:
    - For time series: Include date/time column and numeric values
    - For comparisons: Include category column and numeric values  
    - For rankings: ORDER BY the metric being ranked
    - Limit to reasonable number of rows (2-100) for good visualization
 
-5. **🚨 INCORPORATE IMPROVEMENT SUGGESTIONS**: If improvement suggestions are provided above:
+6. **🚨 INCORPORATE IMPROVEMENT SUGGESTIONS**: If improvement suggestions are provided above:
    - If user complained about missing May data - CREATE SEPARATE MAY COLUMNS
    - If user said "no column for may" - ENSURE MAY DATA HAS SEPARATE COLUMNS
    - If user wants comparison - SEPARATE COLUMNS FOR EACH TIME PERIOD
    - If user said "show payment rates" - ADD payment success rate calculations
 
-6. **FOR COMPREHENSIVE ANALYTICS**: When user asks for "subscription analytics", include:
+7. **FOR COMPREHENSIVE ANALYTICS**: When user asks for "subscription analytics", include:
    ```sql
    SELECT 
        COUNT(DISTINCT sc.subscription_id) as total_subscriptions,
@@ -848,6 +874,7 @@ CURRENT USER QUERY: "{user_query}"
    FROM subscription_contract_v2 AS sc 
    LEFT JOIN subscription_payment_details AS pd ON sc.subscription_id = pd.subscription_id 
    WHERE sc.subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL X DAY)
+   
    ```
 
 {self.db_schema}
@@ -858,22 +885,34 @@ CURRENT USER QUERY: "{user_query}"
 ✅ "Payment success rate last month" → get_payment_success_rate_in_last_days (days: 30)  
 ✅ "Show payment history for user abc123" → get_user_payment_history (merchant_user_id: "abc123")
 ✅ "Database status" → get_database_status
-🎯 "Chart comparing April vs May subscriptions" → execute_dynamic_sql_with_graph
-🎯 "Show me a trend of payments over time" → execute_dynamic_sql_with_graph  
-🎯 "Visualize top 10 users by success rate" → execute_dynamic_sql_with_graph
-❌ "Compare April vs May subscriptions" (no chart mentioned) → execute_dynamic_sql
-❌ "Top 10 users by success rate" (no chart mentioned) → execute_dynamic_sql
+
+🥧 **PIE CHART EXAMPLES - FIXED**:
+✅ "pie chart of success vs failure rates" → execute_dynamic_sql_with_graph(graph_type="pie")
+✅ "show me distribution of payment rates" → execute_dynamic_sql_with_graph(graph_type="pie") 
+✅ "breakdown of success and failure rates" → execute_dynamic_sql_with_graph(graph_type="pie")
+✅ "success rate vs failure rate pie chart" → execute_dynamic_sql_with_graph(graph_type="pie")
+✅ "give me the success rate vs failure rate pie chart" → execute_dynamic_sql_with_graph(graph_type="pie")
+
+📊 **OTHER GRAPH EXAMPLES**:
+✅ "chart comparing April vs May subscriptions" → execute_dynamic_sql_with_graph(graph_type="bar")
+✅ "line chart of payments over time" → execute_dynamic_sql_with_graph(graph_type="line")
+✅ "visualize top 10 users by success rate" → execute_dynamic_sql_with_graph(graph_type="bar")
+
+❌ **NO GRAPH EXAMPLES**:
+❌ "compare April vs May subscriptions" (no chart mentioned) → execute_dynamic_sql
+❌ "top 10 users by success rate" (no chart mentioned) → execute_dynamic_sql
 
 🔥 GRAPH TYPE GUIDANCE:
-- Time series data (dates + values) → suggest "line" 
-- Category comparisons → suggest "bar" or "horizontal_bar"
-- Parts of a whole → suggest "pie"
-- Two numeric relationships → suggest "scatter"
+- Rate/percentage data (success vs failure) → "pie"
+- Time series data (dates + values) → "line" 
+- Category comparisons → "bar" or "horizontal_bar"
+- Parts of a whole → "pie"
+- Two numeric relationships → "scatter"
 - Leave graph_type empty for auto-detection
 
-🔥 IF IMPROVEMENT SUGGESTIONS ARE PROVIDED ABOVE, YOU MUST INCORPORATE THEM INTO YOUR SQL!
+🚨 CRITICAL: When user asks for pie chart or rate distributions, the system is now FIXED to handle single-row data like {{'success_rate': 16.68985, 'failure_rate': 83.31015}} properly as pie chart slices.
 
-Choose the most appropriate tool and provide necessary parameters. For visualization requests, use execute_dynamic_sql_with_graph. For simple queries, use pre-built tools. For complex queries without visualization, use execute_dynamic_sql.
+Choose the most appropriate tool and provide necessary parameters. For pie chart requests with rate data, use execute_dynamic_sql_with_graph with graph_type="pie".
 """
 
         try:
@@ -937,6 +976,8 @@ Choose the most appropriate tool and provide necessary parameters. For visualiza
             logger.info(f"AI selected tool(s): {[tc['tool'] for tc in tool_calls]}")
             if any(tc.get('wants_graph', False) for tc in tool_calls):
                 logger.info("🎯 Graph generation requested")
+                if wants_pie_chart:
+                    logger.info("🥧 PIE CHART specifically requested - system is now FIXED to handle this!")
             if improvement_found:
                 logger.info(f"🎯 Applied improvement suggestions to tool selection and SQL generation")
             return tool_calls
@@ -1031,7 +1072,7 @@ Choose the most appropriate tool and provide necessary parameters. For visualiza
         if 'last' in query_lower and ('day' in query_lower or 'week' in query_lower or 'month' in query_lower):
             improvement_hints.append("For date filtering: Use proper MySQL date functions like DATE_SUB(CURDATE(), INTERVAL X DAY)")
         
-        # Graph-specific improvements
+        # FIXED: Graph-specific improvements with pie chart focus
         if any(keyword in query_lower for keyword in ['chart', 'graph', 'plot', 'visualize', 'trend']):
             improvement_hints.append("🎯 For graph queries: Structure data with clear x-axis (categories/dates) and y-axis (numeric values)")
             improvement_hints.append("🎯 For time series: Include date columns and order by date")
@@ -1039,10 +1080,17 @@ Choose the most appropriate tool and provide necessary parameters. For visualiza
             improvement_hints.append("🚨 CRITICAL: When user asks for visualization, ALWAYS show data table even if graph generation fails")
             improvement_hints.append("🚨 Single-row comparison data (April vs May) IS suitable for bar charts - don't reject it")
         
+        # FIXED: Specific pie chart improvements
+        if any(keyword in query_lower for keyword in ['pie', 'pie chart', 'distribution', 'breakdown']):
+            improvement_hints.append("🥧 PIE CHART FIXED: Single-row rate data like {success_rate: 16.68, failure_rate: 83.32} IS perfect for pie charts")
+            improvement_hints.append("🥧 For rate data: Generate SQL that returns success_rate and failure_rate columns")
+            improvement_hints.append("🥧 System now handles column-to-pie transformation automatically")
+        
         if 'visualize' in query_lower and 'data' in query_lower:
             improvement_hints.append("🚨 USER FEEDBACK: 'when i ask for something and also to visualise, show me both the data and the graph'")
             improvement_hints.append("🚨 ALWAYS show data table AND attempt graph generation for visualization requests")
             improvement_hints.append("🚨 Single-row comparison data (April vs May) IS suitable for bar charts - don't reject it")
+            improvement_hints.append("🥧 Rate data (success vs failure) IS suitable for pie charts - system is now FIXED")
         
         if improvement_hints:
             return "PATTERN-BASED IMPROVEMENT SUGGESTIONS:\n" + "\n".join(f"- {hint}" for hint in improvement_hints)
@@ -1492,8 +1540,8 @@ class UniversalClient:
 
 # Standalone Interactive Mode (enhanced with graph support)
 async def interactive_mode():
-    """Run the interactive CLI mode with graph generation support"""
-    print("✨ Subscription Analytics AI Agent with Graph Generation ✨")
+    """Run the interactive CLI mode with FIXED graph generation support"""
+    print("✨ Subscription Analytics AI Agent with FIXED Graph Generation ✨")
     print("=" * 70)
     
     # Get configuration
@@ -1508,6 +1556,7 @@ async def interactive_mode():
         print(f"🔗 Connected to server: {user_config['SUBSCRIPTION_API_URL']}")
         print("🧠 Enhanced with real-time improvement suggestion learning!")
         print("🔧 Fixed tool selection + SQL generation learning!")
+        print("🥧 FIXED: Pie chart generation for success vs failure rate data!")
         
         # Check graph generation capability
         if MATPLOTLIB_AVAILABLE:
@@ -1532,6 +1581,9 @@ async def interactive_mode():
             print("  • Give me subscription analytics for 10 days (will use dynamic SQL)")
             print("  • Chart showing payment trends over time (will generate graph)")
             print("  • Visualize top 10 users by success rate (will generate graph)")
+            print("  🥧 • Pie chart of success vs failure rates (FIXED - now works!)")
+            print("  🥧 • Show me distribution of payment rates (FIXED - pie chart)")
+            print("  🥧 • Breakdown of success and failure rates (FIXED - pie chart)")
             
             # Check if auto-open is desired
             auto_open_graphs = True  # Default to True
@@ -1680,6 +1732,7 @@ async def interactive_mode():
                                 if result.graph_generated:
                                     print("  • 'Wrong graph type - should be line/bar/pie chart'")
                                     print("  • 'Graph axes are confusing or incorrectly labeled'")
+                                    print("  • 'Pie chart should show success vs failure rates'")
                                 
                                 while True:
                                     improvement = input("\nHow can this be improved? (or 'skip' to not provide): ").strip()
@@ -1716,6 +1769,7 @@ async def interactive_mode():
         print("2. Verify your API keys in client/config.json")
         print("3. Ensure the server is running and accessible")
         print("4. For graph features, install matplotlib: pip install matplotlib")
+        print("5. 🥧 Pie charts for rate data are now FIXED and working!")
     
     print("\n👋 Goodbye!")
 
@@ -1729,3 +1783,4 @@ if __name__ == "__main__":
         print("\n💡 The client only needs Google API key and server API key, not database credentials!")
         if not MATPLOTLIB_AVAILABLE:
             print("📊 For graph features, install matplotlib: pip install matplotlib")
+        print("🥧 PIE CHARTS FOR SUCCESS/FAILURE RATES ARE NOW FIXED!")

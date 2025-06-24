@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 COMPLETE FIXED API Server for Subscription Analytics
-- Fixed graph generation for single-row comparison data
+- FIXED graph generation for single-row comparison data and pie charts
 - Enhanced SSL handling
 - Proper error handling that always returns data
-- All graph types supported including April vs May comparisons
+- All graph types supported including success vs failure rate pie charts
 """
 
 import datetime
@@ -520,9 +520,9 @@ def validate_sql_query(sql_query: str) -> tuple[bool, str]:
     
     return True, "Query validation passed"
 
-# ENHANCED Graph Generation Functions
+# FIXED: Enhanced Graph Generation Functions
 class GraphAnalyzer:
-    """Analyzes data and determines optimal graph types with support for comparison data."""
+    """FIXED: Analyzes data and determines optimal graph types with proper support for pie charts."""
     
     @staticmethod
     def analyze_data_for_graphing(data: List[Dict]) -> Dict:
@@ -602,7 +602,7 @@ class GraphAnalyzer:
         logger.info(f"📊 Column analysis: {column_analysis}")
         
         # Determine best graph types
-        recommended_graphs = GraphAnalyzer._recommend_graph_types(column_analysis, num_rows)
+        recommended_graphs = GraphAnalyzer._recommend_graph_types(column_analysis, num_rows, data)
         
         return {
             "columns": columns,
@@ -612,8 +612,8 @@ class GraphAnalyzer:
         }
     
     @staticmethod
-    def _recommend_graph_types(column_analysis: Dict, num_rows: int) -> List[Dict]:
-        """Recommend graph types based on data structure with enhanced comparison support."""
+    def _recommend_graph_types(column_analysis: Dict, num_rows: int, data: List[Dict]) -> List[Dict]:
+        """FIXED: Recommend graph types with proper pie chart support for rate data."""
         recommendations = []
         
         numeric_cols = [col for col, info in column_analysis.items() if info['type'] == 'numeric']
@@ -622,24 +622,62 @@ class GraphAnalyzer:
         
         logger.info(f"📊 Column classification: numeric={numeric_cols}, datetime={datetime_cols}, categorical={categorical_cols}")
         
-        # SPECIAL CASE: Single row with multiple numeric columns (comparisons like April vs May)
+        # FIXED: Single row with multiple numeric columns - ENHANCED for pie charts
         if num_rows == 1 and len(numeric_cols) >= 2:
             logger.info(f"📊 Detected single-row comparison data with {len(numeric_cols)} numeric columns")
+            
+            # Check if this looks like rate/percentage data suitable for pie charts
+            row_data = data[0]
+            is_rate_data = False
+            
+            # Check for rate/percentage indicators in column names
+            rate_keywords = ['rate', 'percent', 'percentage', '%', 'success', 'failure', 'pass', 'fail', 'error']
+            has_rate_keywords = any(any(keyword in col.lower() for keyword in rate_keywords) for col in numeric_cols)
+            
+            # Check if values look like percentages (0-100 range)
+            all_values = [float(row_data.get(col, 0)) for col in numeric_cols]
+            max_value = max(all_values) if all_values else 0
+            sum_values = sum(all_values)
+            
+            # Consider it rate data if:
+            # 1. Has rate keywords in column names, OR
+            # 2. Values are in 0-100 range and sum close to 100, OR  
+            # 3. Values represent complementary data (success vs failure)
+            if (has_rate_keywords or 
+                (max_value <= 100 and 80 <= sum_values <= 120) or
+                any('success' in col.lower() and any('fail' in other_col.lower() for other_col in numeric_cols) for col in numeric_cols)):
+                is_rate_data = True
+                logger.info(f"📊 Detected rate/percentage data suitable for pie chart")
+            
+            # PIE CHART - HIGH PRIORITY for rate data
+            if is_rate_data:
+                recommendations.append({
+                    'type': 'column_to_pie',  # Special type for column-based pie charts
+                    'title': 'Distribution Analysis',
+                    'rate_columns': numeric_cols,
+                    'description': f'Distribution breakdown of {", ".join(numeric_cols)}',
+                    'priority': 1
+                })
+                logger.info(f"📊 Added PIE CHART recommendation for rate data: {numeric_cols}")
+            
+            # BAR CHART - Always good for comparisons
             recommendations.append({
                 'type': 'comparison_bar',
                 'title': 'Comparison Analysis',
                 'comparison_columns': numeric_cols,
                 'description': f'Compare values across {", ".join(numeric_cols)}',
-                'priority': 1
+                'priority': 2 if is_rate_data else 1
             })
-            # Also add horizontal bar as alternative
+            
+            # HORIZONTAL BAR - Good for rankings
             recommendations.append({
                 'type': 'comparison_horizontal_bar', 
                 'title': 'Comparison Rankings',
                 'comparison_columns': numeric_cols,
                 'description': f'Ranking comparison of {", ".join(numeric_cols)}',
-                'priority': 2
+                'priority': 3
             })
+            
             logger.info(f"📊 Added comparison chart recommendations for columns: {numeric_cols}")
         
         # Time series (if we have datetime + numeric) - HIGH PRIORITY
@@ -678,7 +716,7 @@ class GraphAnalyzer:
             })
             logger.info(f"📊 Added time period bar chart recommendation")
         
-        # Pie chart for categories with counts
+        # Pie chart for traditional categorical data
         if categorical_cols and len(categorical_cols) == 1 and len(numeric_cols) == 1 and num_rows <= 10:
             recommendations.append({
                 'type': 'pie',
@@ -688,7 +726,7 @@ class GraphAnalyzer:
                 'description': f'Distribution of {numeric_cols[0]} by {categorical_cols[0]}',
                 'priority': 3
             })
-            logger.info(f"📊 Added pie chart recommendation")
+            logger.info(f"📊 Added traditional pie chart recommendation")
         
         # Scatter plot for two numeric columns (need multiple rows)
         if len(numeric_cols) >= 2 and num_rows > 2:
@@ -720,131 +758,51 @@ class GraphAnalyzer:
         logger.info(f"📊 Final recommendations ({len(recommendations)} total): {[r['type'] for r in recommendations]}")
         return recommendations
 
-def generate_graph_data(data: List[Dict], graph_type: str = None, custom_config: Dict = None) -> Dict:
-    """Generate graph-ready data from SQL results with enhanced comparison support."""
-    try:
-        if not data or not isinstance(data, list) or len(data) == 0:
-            return {"error": "No data provided for graph generation"}
+# FIXED: Enhanced Graph data preparation methods
+def _prepare_column_to_pie_data(data: List[Dict], config: Dict) -> Dict:
+    """FIXED: Prepare data for pie chart from single-row column data (success_rate, failure_rate, etc.)."""
+    if not data or len(data) == 0:
+        return {"labels": [], "values": []}
+    
+    rate_columns = config.get('rate_columns', [])
+    row = data[0]  # Single row data
+    
+    logger.info(f"📊 Preparing column-to-pie data for columns: {rate_columns}")
+    logger.info(f"📊 Row data: {row}")
+    
+    # Transform columns into pie chart labels and values
+    labels = []
+    values = []
+    
+    for col in rate_columns:
+        # Clean up column names for display
+        clean_name = col.replace('_', ' ').title()
+        # Remove common prefixes/suffixes for cleaner labels
+        clean_name = clean_name.replace(' Rate', '').replace('Rate', '')
+        clean_name = clean_name.replace(' Percent', '').replace('Percent', '')
+        # Specific transformations
+        if 'success' in clean_name.lower():
+            clean_name = 'Success'
+        elif 'fail' in clean_name.lower():
+            clean_name = 'Failure'
+        elif 'pass' in clean_name.lower():
+            clean_name = 'Passed'
+        elif 'error' in clean_name.lower():
+            clean_name = 'Error'
         
-        # Analyze the data
-        analysis = GraphAnalyzer.analyze_data_for_graphing(data)
-        if "error" in analysis:
-            return analysis
+        labels.append(clean_name)
         
-        logger.info(f"📊 Graph analysis for {len(data)} rows:")
-        logger.info(f"   Column analysis: {analysis['column_analysis']}")
-        logger.info(f"   Recommended graphs: {[r['type'] for r in analysis['recommended_graphs']]}")
-        
-        # Use provided graph type or auto-select the best one
-        if graph_type:
-            # Find if the requested graph type is among recommendations
-            selected_graph = None
-            for rec in analysis['recommended_graphs']:
-                if rec['type'] == graph_type:
-                    selected_graph = rec
-                    break
-            
-            if not selected_graph:
-                # Graph type not in recommendations - let's try to accommodate it anyway
-                logger.warning(f"⚠️ Requested graph type '{graph_type}' not in recommendations, attempting anyway...")
-                
-                # Create a basic recommendation for the requested type
-                column_analysis = analysis['column_analysis']
-                numeric_cols = [col for col, info in column_analysis.items() if info['type'] == 'numeric']
-                datetime_cols = [col for col, info in column_analysis.items() if info['type'] == 'datetime']
-                categorical_cols = [col for col, info in column_analysis.items() if info['type'] == 'categorical']
-                
-                if graph_type == 'line' and datetime_cols and numeric_cols:
-                    selected_graph = {
-                        'type': 'line',
-                        'title': 'Time Series Analysis',
-                        'x_axis': datetime_cols[0],
-                        'y_axis': numeric_cols[0],
-                        'description': f'Shows trends over time for {numeric_cols[0]}',
-                        'priority': 1
-                    }
-                elif graph_type == 'bar' and (categorical_cols or datetime_cols) and numeric_cols:
-                    x_col = categorical_cols[0] if categorical_cols else datetime_cols[0]
-                    selected_graph = {
-                        'type': 'bar',
-                        'title': 'Categorical Comparison',
-                        'x_axis': x_col,
-                        'y_axis': numeric_cols[0],
-                        'description': f'Compare {numeric_cols[0]} across {x_col}',
-                        'priority': 1
-                    }
-                elif graph_type == 'bar' and len(data) == 1 and len(numeric_cols) >= 2:
-                    # Special case for single-row comparison data
-                    selected_graph = {
-                        'type': 'comparison_bar',
-                        'title': 'Comparison Analysis',
-                        'comparison_columns': numeric_cols,
-                        'description': f'Compare values across {", ".join(numeric_cols)}',
-                        'priority': 1
-                    }
-                else:
-                    return {"error": f"Graph type '{graph_type}' not suitable for this data structure. Available columns: {list(column_analysis.keys())}. Data has {len(data)} rows with {len(numeric_cols)} numeric columns."}
-        else:
-            if not analysis['recommended_graphs']:
-                return {"error": "No suitable graph types found for this data"}
-            selected_graph = analysis['recommended_graphs'][0]  # Use the highest priority
-        
-        logger.info(f"📊 Selected graph type: {selected_graph['type']} - {selected_graph['title']}")
-        
-        # Generate graph-specific data
-        graph_data = {
-            "graph_type": selected_graph['type'],
-            "title": selected_graph['title'],
-            "description": selected_graph['description'],
-            "data_summary": {
-                "total_rows": len(data),
-                "columns": analysis['columns']
-            }
-        }
-        
-        # Apply custom configuration if provided
-        if custom_config:
-            selected_graph.update(custom_config)
-        
-        # Generate data based on graph type
-        if selected_graph['type'] == 'line':
-            graph_data.update(GraphAnalyzer._prepare_line_data(data, selected_graph))
-        elif selected_graph['type'] == 'bar':
-            graph_data.update(GraphAnalyzer._prepare_bar_data(data, selected_graph))
-        elif selected_graph['type'] == 'comparison_bar':
-            graph_data.update(GraphAnalyzer._prepare_comparison_bar_data(data, selected_graph))
-            # Update graph type to regular bar for rendering
-            graph_data['graph_type'] = 'bar'
-        elif selected_graph['type'] == 'comparison_horizontal_bar':
-            graph_data.update(GraphAnalyzer._prepare_comparison_horizontal_bar_data(data, selected_graph))
-            # Update graph type to horizontal_bar for rendering
-            graph_data['graph_type'] = 'horizontal_bar'
-        elif selected_graph['type'] == 'horizontal_bar':
-            graph_data.update(GraphAnalyzer._prepare_horizontal_bar_data(data, selected_graph))
-        elif selected_graph['type'] == 'pie':
-            graph_data.update(GraphAnalyzer._prepare_pie_data(data, selected_graph))
-        elif selected_graph['type'] == 'scatter':
-            graph_data.update(GraphAnalyzer._prepare_scatter_data(data, selected_graph))
-        else:
-            return {"error": f"Graph type '{selected_graph['type']}' not implemented"}
-        
-        # Add metadata for client rendering
-        graph_data['metadata'] = {
-            'all_recommendations': analysis['recommended_graphs'],
-            'column_analysis': analysis['column_analysis'],
-            'generated_at': datetime.datetime.now().isoformat()
-        }
-        
-        logger.info(f"📊 Generated {selected_graph['type']} graph with {len(data)} data points")
-        return {"data": graph_data}
-        
-    except Exception as e:
-        logger.error(f"❌ Graph generation failed: {e}")
-        import traceback
-        logger.error(f"❌ Traceback: {traceback.format_exc()}")
-        return {"error": f"Graph generation failed: {str(e)}"}
+        value = row.get(col, 0)
+        values.append(float(value) if value is not None else 0)
+    
+    logger.info(f"📊 Generated pie labels: {labels}")
+    logger.info(f"📊 Generated pie values: {values}")
+    
+    return {
+        "labels": labels,
+        "values": values
+    }
 
-# Enhanced Graph data preparation methods
 def _prepare_line_data(data: List[Dict], config: Dict) -> Dict:
     """Prepare data for line chart."""
     x_col = config['x_axis']
@@ -952,7 +910,7 @@ def _prepare_horizontal_bar_data(data: List[Dict], config: Dict) -> Dict:
     }
 
 def _prepare_pie_data(data: List[Dict], config: Dict) -> Dict:
-    """Prepare data for pie chart."""
+    """Prepare data for traditional pie chart (categorical data in rows)."""
     category_col = config['category']
     value_col = config['value']
     
@@ -974,6 +932,7 @@ def _prepare_scatter_data(data: List[Dict], config: Dict) -> Dict:
     }
 
 # Add these methods to GraphAnalyzer class
+GraphAnalyzer._prepare_column_to_pie_data = staticmethod(_prepare_column_to_pie_data)
 GraphAnalyzer._prepare_line_data = staticmethod(_prepare_line_data)
 GraphAnalyzer._prepare_bar_data = staticmethod(_prepare_bar_data)
 GraphAnalyzer._prepare_comparison_bar_data = staticmethod(_prepare_comparison_bar_data)
@@ -981,6 +940,150 @@ GraphAnalyzer._prepare_comparison_horizontal_bar_data = staticmethod(_prepare_co
 GraphAnalyzer._prepare_horizontal_bar_data = staticmethod(_prepare_horizontal_bar_data)
 GraphAnalyzer._prepare_pie_data = staticmethod(_prepare_pie_data)
 GraphAnalyzer._prepare_scatter_data = staticmethod(_prepare_scatter_data)
+
+def generate_graph_data(data: List[Dict], graph_type: str = None, custom_config: Dict = None) -> Dict:
+    """FIXED: Generate graph-ready data from SQL results with enhanced pie chart support."""
+    try:
+        if not data or not isinstance(data, list) or len(data) == 0:
+            return {"error": "No data provided for graph generation"}
+        
+        # Analyze the data
+        analysis = GraphAnalyzer.analyze_data_for_graphing(data)
+        if "error" in analysis:
+            return analysis
+        
+        logger.info(f"📊 Graph analysis for {len(data)} rows:")
+        logger.info(f"   Column analysis: {analysis['column_analysis']}")
+        logger.info(f"   Recommended graphs: {[r['type'] for r in analysis['recommended_graphs']]}")
+        
+        # Use provided graph type or auto-select the best one
+        if graph_type:
+            # Find if the requested graph type is among recommendations
+            selected_graph = None
+            for rec in analysis['recommended_graphs']:
+                if rec['type'] == graph_type:
+                    selected_graph = rec
+                    break
+                # FIXED: Also check if user wants pie chart and we have column_to_pie recommendation
+                elif graph_type == 'pie' and rec['type'] == 'column_to_pie':
+                    selected_graph = rec
+                    break
+            
+            if not selected_graph:
+                # Graph type not in recommendations - let's try to accommodate it anyway
+                logger.warning(f"⚠️ Requested graph type '{graph_type}' not in recommendations, attempting anyway...")
+                
+                # Create a basic recommendation for the requested type
+                column_analysis = analysis['column_analysis']
+                numeric_cols = [col for col, info in column_analysis.items() if info['type'] == 'numeric']
+                datetime_cols = [col for col, info in column_analysis.items() if info['type'] == 'datetime']
+                categorical_cols = [col for col, info in column_analysis.items() if info['type'] == 'categorical']
+                
+                if graph_type == 'line' and datetime_cols and numeric_cols:
+                    selected_graph = {
+                        'type': 'line',
+                        'title': 'Time Series Analysis',
+                        'x_axis': datetime_cols[0],
+                        'y_axis': numeric_cols[0],
+                        'description': f'Shows trends over time for {numeric_cols[0]}',
+                        'priority': 1
+                    }
+                elif graph_type == 'bar' and (categorical_cols or datetime_cols) and numeric_cols:
+                    x_col = categorical_cols[0] if categorical_cols else datetime_cols[0]
+                    selected_graph = {
+                        'type': 'bar',
+                        'title': 'Categorical Comparison',
+                        'x_axis': x_col,
+                        'y_axis': numeric_cols[0],
+                        'description': f'Compare {numeric_cols[0]} across {x_col}',
+                        'priority': 1
+                    }
+                elif graph_type == 'bar' and len(data) == 1 and len(numeric_cols) >= 2:
+                    # Special case for single-row comparison data
+                    selected_graph = {
+                        'type': 'comparison_bar',
+                        'title': 'Comparison Analysis',
+                        'comparison_columns': numeric_cols,
+                        'description': f'Compare values across {", ".join(numeric_cols)}',
+                        'priority': 1
+                    }
+                elif graph_type == 'pie' and len(data) == 1 and len(numeric_cols) >= 2:
+                    # FIXED: Special case for pie chart with single-row rate data
+                    selected_graph = {
+                        'type': 'column_to_pie',
+                        'title': 'Distribution Analysis',
+                        'rate_columns': numeric_cols,
+                        'description': f'Distribution breakdown of {", ".join(numeric_cols)}',
+                        'priority': 1
+                    }
+                    logger.info(f"📊 FIXED: Created column_to_pie recommendation for user's pie request")
+                else:
+                    return {"error": f"Graph type '{graph_type}' not suitable for this data structure. Available columns: {list(column_analysis.keys())}. Data has {len(data)} rows with {len(numeric_cols)} numeric columns."}
+        else:
+            if not analysis['recommended_graphs']:
+                return {"error": "No suitable graph types found for this data"}
+            selected_graph = analysis['recommended_graphs'][0]  # Use the highest priority
+        
+        logger.info(f"📊 Selected graph type: {selected_graph['type']} - {selected_graph['title']}")
+        
+        # Generate graph-specific data
+        graph_data = {
+            "graph_type": selected_graph['type'],
+            "title": selected_graph['title'],
+            "description": selected_graph['description'],
+            "data_summary": {
+                "total_rows": len(data),
+                "columns": analysis['columns']
+            }
+        }
+        
+        # Apply custom configuration if provided
+        if custom_config:
+            selected_graph.update(custom_config)
+        
+        # FIXED: Generate data based on graph type
+        if selected_graph['type'] == 'line':
+            graph_data.update(GraphAnalyzer._prepare_line_data(data, selected_graph))
+        elif selected_graph['type'] == 'bar':
+            graph_data.update(GraphAnalyzer._prepare_bar_data(data, selected_graph))
+        elif selected_graph['type'] == 'comparison_bar':
+            graph_data.update(GraphAnalyzer._prepare_comparison_bar_data(data, selected_graph))
+            # Update graph type to regular bar for rendering
+            graph_data['graph_type'] = 'bar'
+        elif selected_graph['type'] == 'column_to_pie':
+            # FIXED: Handle column-to-pie transformation
+            graph_data.update(GraphAnalyzer._prepare_column_to_pie_data(data, selected_graph))
+            # Update graph type to regular pie for rendering
+            graph_data['graph_type'] = 'pie'
+            logger.info(f"📊 FIXED: Generated pie chart data from columns: {selected_graph.get('rate_columns', [])}")
+        elif selected_graph['type'] == 'comparison_horizontal_bar':
+            graph_data.update(GraphAnalyzer._prepare_comparison_horizontal_bar_data(data, selected_graph))
+            # Update graph type to horizontal_bar for rendering
+            graph_data['graph_type'] = 'horizontal_bar'
+        elif selected_graph['type'] == 'horizontal_bar':
+            graph_data.update(GraphAnalyzer._prepare_horizontal_bar_data(data, selected_graph))
+        elif selected_graph['type'] == 'pie':
+            graph_data.update(GraphAnalyzer._prepare_pie_data(data, selected_graph))
+        elif selected_graph['type'] == 'scatter':
+            graph_data.update(GraphAnalyzer._prepare_scatter_data(data, selected_graph))
+        else:
+            return {"error": f"Graph type '{selected_graph['type']}' not implemented"}
+        
+        # Add metadata for client rendering
+        graph_data['metadata'] = {
+            'all_recommendations': analysis['recommended_graphs'],
+            'column_analysis': analysis['column_analysis'],
+            'generated_at': datetime.datetime.now().isoformat()
+        }
+        
+        logger.info(f"📊 Generated {selected_graph['type']} graph with {len(data)} data points")
+        return {"data": graph_data}
+        
+    except Exception as e:
+        logger.error(f"❌ Graph generation failed: {e}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        return {"error": f"Graph generation failed: {str(e)}"}
 
 # Enhanced Tool Functions (all original functions preserved)
 def get_subscriptions_in_last_days(days: int) -> Dict:
@@ -1269,7 +1372,7 @@ def get_improvement_suggestions(original_question: str) -> Dict:
         logger.warning(f"⚠️ Improvement suggestions retrieval failed: {e}")
         return {"error": f"Failed to get improvement suggestions: {str(e)}"}
 
-# Tool Registry - Enhanced with new graph generation tool
+# Tool Registry - Enhanced with FIXED graph generation tool
 TOOL_REGISTRY = {
     "get_subscriptions_in_last_days": {
         "function": get_subscriptions_in_last_days,
@@ -1323,7 +1426,7 @@ TOOL_REGISTRY = {
     },
     "generate_graph_data": {
         "function": generate_graph_data,
-        "description": "Generate graph-ready data from SQL query results. Automatically analyzes data and recommends optimal visualization types (line, bar, pie, scatter, etc.) including support for single-row comparison data (April vs May style)",
+        "description": "FIXED: Generate graph-ready data from SQL query results. Automatically analyzes data and recommends optimal visualization types including FIXED pie chart support for single-row rate data like success_rate vs failure_rate",
         "parameters": {
             "type": "object", 
             "properties": {
@@ -1333,7 +1436,7 @@ TOOL_REGISTRY = {
                 },
                 "graph_type": {
                     "type": "string",
-                    "description": "Optional: Force specific graph type (line, bar, horizontal_bar, pie, scatter). If not provided, system will auto-select the best type.",
+                    "description": "Optional: Force specific graph type (line, bar, horizontal_bar, pie, scatter). FIXED: pie charts now work with single-row rate data.",
                     "enum": ["line", "bar", "horizontal_bar", "pie", "scatter"]
                 },
                 "custom_config": {
@@ -1418,17 +1521,17 @@ def verify_api_key(authorization: str = Header(None)):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    logger.info("🚀 Starting COMPLETE FIXED Subscription Analytics API Server with Enhanced Graph Generation")
+    logger.info("🚀 Starting FIXED Subscription Analytics API Server with PIE CHART SUPPORT")
     logger.info(f"Semantic learning: {'enabled' if SEMANTIC_LEARNING_ENABLED else 'disabled'}")
-    logger.info(f"Available tools: {len(TOOL_REGISTRY)} (including enhanced graph generation)")
+    logger.info(f"Available tools: {len(TOOL_REGISTRY)} (including FIXED pie chart generation)")
     yield
-    logger.info("🛑 Shutting down Complete Fixed API Server")
+    logger.info("🛑 Shutting down Fixed API Server")
 
 # Create FastAPI app
 app = FastAPI(
-    title="Complete Fixed Subscription Analytics API",
-    description="Render.com deployment with complete graph generation and comparison support",
-    version="9.0.0-complete-fix",
+    title="FIXED Subscription Analytics API",
+    description="FIXED pie chart generation for single-row rate data",
+    version="10.0.0-pie-chart-fix",
     lifespan=lifespan
 )
 
@@ -1451,16 +1554,15 @@ def health_check():
         "timestamp": datetime.datetime.now().isoformat(),
         "available_tools": len(TOOL_REGISTRY),
         "platform": "render.com",
-        "version": "9.0.0-complete-fix",
+        "version": "10.0.0-pie-chart-fix",
         "features": [
             "dynamic_sql_generation",
             "semantic_learning",
             "feedback_with_improvements",
             "query_suggestions",
-            "enhanced_graph_generation",
-            "comparison_chart_support",
-            "single_row_comparison_data",
-            "april_vs_may_analysis"
+            "FIXED_pie_chart_generation",
+            "single_row_rate_data_support",
+            "success_vs_failure_pie_charts"
         ]
     }
     
@@ -1570,12 +1672,9 @@ if __name__ == "__main__":
     # Render.com sets PORT environment variable
     port = int(os.getenv("PORT", 8000))
     
-    logger.info(f"🚀 Starting COMPLETE FIXED RENDER.COM server on port {port}")
-    logger.info("🛡️ Enhanced error handling and logging enabled")
-    logger.info("🧠 Full semantic learning support enabled")
-    logger.info("💡 Enhanced feedback system with improvement suggestions enabled")
-    logger.info("📊 COMPLETE: Graph generation with comparison support enabled")
-    logger.info("🔧 FIXED: Single-row comparison data (April vs May) support enabled")
+    logger.info(f"🚀 Starting FIXED RENDER.COM server on port {port}")
+    logger.info("🥧 FIXED: Pie chart generation for single-row rate data")
+    logger.info("📊 SUCCESS VS FAILURE RATE PIE CHARTS NOW WORKING")
     
     # Render.com optimized configuration
     uvicorn.run(

@@ -1231,3 +1231,299 @@
 2025-06-24 15:01:00,924 - api_server - INFO -    Recommended graphs: ['comparison_bar', 'comparison_horizontal_bar']
 2025-06-24 15:01:00,924 - api_server - WARNING - ⚠️ Requested graph type 'pie' not in recommendations, attempting anyway...
 2025-06-24 15:01:00,924 - api_server - WARNING - Tool generate_graph_data returned error: Graph type 'pie' not suitable for this data structure. Available columns: ['success_rate', 'failure_rate']. Data has 1 rows with 2 numeric columns.
+2025-06-24 15:26:56,038 - faiss.loader - INFO - Loading faiss.
+2025-06-24 15:26:56,049 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-24 15:26:56,052 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-24 15:26:59,920 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-24 15:26:59,920 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-24 15:27:00,656 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-24 15:27:00,659 - __main__ - INFO - 🧠 Loaded 6 queries from memory
+2025-06-24 15:27:00,659 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-24 15:27:00,661 - __main__ - INFO - 🚀 Starting FIXED RENDER.COM server on port 8000
+2025-06-24 15:27:00,661 - __main__ - INFO - 🥧 FIXED: Pie chart generation for single-row rate data
+2025-06-24 15:27:00,661 - __main__ - INFO - 📊 SUCCESS VS FAILURE RATE PIE CHARTS NOW WORKING
+2025-06-24 15:27:00,704 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-24 15:27:00,705 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-24 15:27:00,757 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-24 15:27:00,759 - api_server - INFO - 🧠 Loaded 6 queries from memory
+2025-06-24 15:27:00,759 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-24 15:27:00,761 - api_server - INFO - 🚀 Starting FIXED Subscription Analytics API Server with PIE CHART SUPPORT
+2025-06-24 15:27:00,761 - api_server - INFO - Semantic learning: enabled
+2025-06-24 15:27:00,761 - api_server - INFO - Available tools: 9 (including FIXED pie chart generation)
+2025-06-24 15:27:00,761 - api_server - INFO - 🛑 Shutting down Fixed API Server
+2025-06-24 15:27:17,660 - api_server - INFO - 🛑 Shutting down Complete Fixed API Server
+2025-06-24 15:27:22,111 - faiss.loader - INFO - Loading faiss.
+2025-06-24 15:27:22,122 - faiss.loader - INFO - Successfully loaded faiss.
+2025-06-24 15:27:22,125 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-06-24 15:27:25,368 - __main__ - INFO - ✅ Semantic learning libraries available
+2025-06-24 15:27:25,368 - __main__ - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-24 15:27:26,074 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-24 15:27:26,076 - __main__ - INFO - 🧠 Loaded 6 queries from memory
+2025-06-24 15:27:26,076 - __main__ - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-24 15:27:26,078 - __main__ - INFO - 🚀 Starting FIXED RENDER.COM server on port 8000
+2025-06-24 15:27:26,078 - __main__ - INFO - 🥧 FIXED: Pie chart generation for single-row rate data
+2025-06-24 15:27:26,078 - __main__ - INFO - 📊 SUCCESS VS FAILURE RATE PIE CHARTS NOW WORKING
+2025-06-24 15:27:26,108 - api_server - INFO - ✅ Semantic learning libraries available
+2025-06-24 15:27:26,109 - api_server - INFO - 🧠 Loading LOCAL semantic model from ./model - NO DOWNLOADS
+2025-06-24 15:27:26,159 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-06-24 15:27:26,162 - api_server - INFO - 🧠 Loaded 6 queries from memory
+2025-06-24 15:27:26,162 - api_server - INFO - ✅ Semantic Query Learner: LOCAL MODEL LOADED - NO INTERNET USED
+2025-06-24 15:27:26,164 - api_server - INFO - 🚀 Starting FIXED Subscription Analytics API Server with PIE CHART SUPPORT
+2025-06-24 15:27:26,164 - api_server - INFO - Semantic learning: enabled
+2025-06-24 15:27:26,164 - api_server - INFO - Available tools: 9 (including FIXED pie chart generation)
+2025-06-24 15:27:34,949 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:27:34,949 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'Show me distribution of payment rates'}
+2025-06-24 15:27:34,995 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:27:34,995 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.05s
+2025-06-24 15:27:38,579 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:27:38,579 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': "SELECT ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate, ROUND((SUM(CASE WHEN pd.status != 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS failure_rate FROM subscription_payment_details AS pd"}
+2025-06-24 15:27:38,580 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS succe...
+2025-06-24 15:27:38,581 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:27:38,581 - api_server - INFO - 🔍 Executing: SELECT ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate, ROUND((SUM(CASE WHEN pd.status != 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS failure_rate FROM subscription_payment_details AS pd
+2025-06-24 15:27:38,581 - api_server - INFO - 🔍 Executing query: SELECT ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS succe...
+2025-06-24 15:27:40,044 - mysql.connector - INFO - package: mysql.connector.plugins
+2025-06-24 15:27:40,045 - mysql.connector - INFO - plugin_name: caching_sha2_password
+2025-06-24 15:27:40,045 - mysql.connector - INFO - AUTHENTICATION_PLUGIN_CLASS: MySQLCachingSHA2PasswordAuthPlugin
+2025-06-24 15:27:42,039 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 15:27:42,367 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 15:27:42,368 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.79s
+2025-06-24 15:27:42,471 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:27:42,471 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'success_rate': 10.81, 'failure_rate': 89.19}], 'graph_type': 'pie'}
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['success_rate', 'failure_rate']
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Column analysis: {'success_rate': {'type': 'numeric', 'min': 10.81, 'max': 10.81, 'unique_count': 1}, 'failure_rate': {'type': 'numeric', 'min': 89.19, 'max': 89.19, 'unique_count': 1}}
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Column classification: numeric=['success_rate', 'failure_rate'], datetime=[], categorical=[]
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Detected single-row comparison data with 2 numeric columns
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Detected rate/percentage data suitable for pie chart
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Added PIE CHART recommendation for rate data: ['success_rate', 'failure_rate']
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Added comparison chart recommendations for columns: ['success_rate', 'failure_rate']
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Final recommendations (3 total): ['column_to_pie', 'comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 15:27:42,471 - api_server - INFO -    Column analysis: {'success_rate': {'type': 'numeric', 'min': 10.81, 'max': 10.81, 'unique_count': 1}, 'failure_rate': {'type': 'numeric', 'min': 89.19, 'max': 89.19, 'unique_count': 1}}
+2025-06-24 15:27:42,471 - api_server - INFO -    Recommended graphs: ['column_to_pie', 'comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Selected graph type: column_to_pie - Distribution Analysis
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Preparing column-to-pie data for columns: ['success_rate', 'failure_rate']
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Row data: {'success_rate': 10.81, 'failure_rate': 89.19}
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Generated pie labels: ['Success', 'Failure']
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 Generated pie values: [10.81, 89.19]
+2025-06-24 15:27:42,471 - api_server - INFO - 📊 FIXED: Generated pie chart data from columns: ['success_rate', 'failure_rate']
+2025-06-24 15:27:42,472 - api_server - INFO - 📊 Generated column_to_pie graph with 1 data points
+2025-06-24 15:27:42,472 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 15:27:55,621 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 15:27:55,621 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'Show me distribution of payment rates', 'sql_query': "SELECT ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate, ROUND((SUM(CASE WHEN pd.status != 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS failure_rate FROM subscription_payment_details AS pd", 'was_helpful': True}
+2025-06-24 15:27:55,621 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-24 15:27:55,637 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 15:27:55,732 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-24 15:27:55,732 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 15:28:10,892 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:28:10,892 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'growth of subscriptions in the past 2 months'}
+2025-06-24 15:28:10,908 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:28:10,909 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:28:12,245 - api_server - INFO - 🔧 Tool execution request: get_subscriptions_in_last_days
+2025-06-24 15:28:12,245 - api_server - INFO - ⚙️ Executing get_subscriptions_in_last_days with parameters: {'days': 60.0}
+2025-06-24 15:28:12,245 - api_server - INFO - 🔍 Executing query: 
+        SELECT 
+            COUNT(*) as new_subscriptions,
+            COALESCE(SUM(CASE WHEN statu...
+2025-06-24 15:28:16,463 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 15:28:16,796 - api_server - INFO - ✅ Tool get_subscriptions_in_last_days completed successfully in 4.55s
+2025-06-24 15:28:31,536 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:28:31,536 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'visualise this growth'}
+2025-06-24 15:28:31,551 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:28:31,552 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:28:33,052 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:28:33,052 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)'}
+2025-06-24 15:28:33,052 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >=...
+2025-06-24 15:28:33,052 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:28:33,052 - api_server - INFO - 🔍 Executing: SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+2025-06-24 15:28:33,053 - api_server - INFO - 🔍 Executing query: SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >=...
+2025-06-24 15:28:36,430 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 15:28:36,764 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 15:28:36,765 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.71s
+2025-06-24 15:28:36,870 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:28:36,870 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'total_subscriptions': 1861}], 'graph_type': 'line'}
+2025-06-24 15:28:36,870 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['total_subscriptions']
+2025-06-24 15:28:36,870 - api_server - INFO - 📊 Column analysis: {'total_subscriptions': {'type': 'numeric', 'min': 1861, 'max': 1861, 'unique_count': 1}}
+2025-06-24 15:28:36,870 - api_server - INFO - 📊 Column classification: numeric=['total_subscriptions'], datetime=[], categorical=[]
+2025-06-24 15:28:36,870 - api_server - INFO - 📊 Final recommendations (0 total): []
+2025-06-24 15:28:36,870 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 15:28:36,870 - api_server - INFO -    Column analysis: {'total_subscriptions': {'type': 'numeric', 'min': 1861, 'max': 1861, 'unique_count': 1}}
+2025-06-24 15:28:36,870 - api_server - INFO -    Recommended graphs: []
+2025-06-24 15:28:36,870 - api_server - WARNING - ⚠️ Requested graph type 'line' not in recommendations, attempting anyway...
+2025-06-24 15:28:36,870 - api_server - WARNING - Tool generate_graph_data returned error: Graph type 'line' not suitable for this data structure. Available columns: ['total_subscriptions']. Data has 1 rows with 1 numeric columns.
+2025-06-24 15:28:55,942 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 15:28:55,943 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'visualise this growth', 'sql_query': 'SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)', 'was_helpful': False, 'improvement_suggestion': 'better query processing'}
+2025-06-24 15:28:55,943 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 15:28:55,959 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 15:28:55,959 - api_server - INFO - 💡 Improvement suggestion recorded: better query processing...
+2025-06-24 15:28:56,052 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 15:28:56,052 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 15:28:56,129 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 15:28:56,129 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'visualise this growth'}
+2025-06-24 15:28:56,135 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 15:28:56,135 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 15:29:12,274 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:29:12,274 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'Visualise the growth trend of subscription between may to june'}
+2025-06-24 15:29:12,290 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:29:12,291 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:29:14,456 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:29:14,456 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 6 AND YEAR(sc.subcription_start_date) = 2025) AS june_subscriptions'}
+2025-06-24 15:29:14,457 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 15:29:14,457 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:29:14,457 - api_server - INFO - 🔍 Executing: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 6 AND YEAR(sc.subcription_start_date) = 2025) AS june_subscriptions
+2025-06-24 15:29:14,457 - api_server - INFO - 🔍 Executing query: SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc...
+2025-06-24 15:29:17,890 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 15:29:18,194 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 15:29:18,195 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.74s
+2025-06-24 15:29:18,298 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:29:18,298 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'may_subscriptions': 1306, 'june_subscriptions': 311}], 'graph_type': 'bar'}
+2025-06-24 15:29:18,298 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['may_subscriptions', 'june_subscriptions']
+2025-06-24 15:29:18,298 - api_server - INFO - 📊 Column analysis: {'may_subscriptions': {'type': 'numeric', 'min': 1306, 'max': 1306, 'unique_count': 1}, 'june_subscriptions': {'type': 'numeric', 'min': 311, 'max': 311, 'unique_count': 1}}
+2025-06-24 15:29:18,298 - api_server - INFO - 📊 Column classification: numeric=['may_subscriptions', 'june_subscriptions'], datetime=[], categorical=[]
+2025-06-24 15:29:18,298 - api_server - INFO - 📊 Detected single-row comparison data with 2 numeric columns
+2025-06-24 15:29:18,298 - api_server - INFO - 📊 Added comparison chart recommendations for columns: ['may_subscriptions', 'june_subscriptions']
+2025-06-24 15:29:18,298 - api_server - INFO - 📊 Final recommendations (2 total): ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 15:29:18,298 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 15:29:18,299 - api_server - INFO -    Column analysis: {'may_subscriptions': {'type': 'numeric', 'min': 1306, 'max': 1306, 'unique_count': 1}, 'june_subscriptions': {'type': 'numeric', 'min': 311, 'max': 311, 'unique_count': 1}}
+2025-06-24 15:29:18,299 - api_server - INFO -    Recommended graphs: ['comparison_bar', 'comparison_horizontal_bar']
+2025-06-24 15:29:18,299 - api_server - WARNING - ⚠️ Requested graph type 'bar' not in recommendations, attempting anyway...
+2025-06-24 15:29:18,299 - api_server - INFO - 📊 Selected graph type: comparison_bar - Comparison Analysis
+2025-06-24 15:29:18,299 - api_server - INFO - 📊 Preparing comparison bar data for columns: ['may_subscriptions', 'june_subscriptions']
+2025-06-24 15:29:18,299 - api_server - INFO - 📊 Row data: {'may_subscriptions': 1306, 'june_subscriptions': 311}
+2025-06-24 15:29:18,299 - api_server - INFO - 📊 Generated categories: ['May', 'June']
+2025-06-24 15:29:18,299 - api_server - INFO - 📊 Generated values: [1306.0, 311.0]
+2025-06-24 15:29:18,299 - api_server - INFO - 📊 Generated comparison_bar graph with 1 data points
+2025-06-24 15:29:18,299 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 15:29:24,183 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 15:29:24,184 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'Visualise the growth trend of subscription between may to june', 'sql_query': 'SELECT (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 5 AND YEAR(sc.subcription_start_date) = 2025) AS may_subscriptions, (SELECT COUNT(DISTINCT sc.subscription_id) FROM subscription_contract_v2 AS sc WHERE MONTH(sc.subcription_start_date) = 6 AND YEAR(sc.subcription_start_date) = 2025) AS june_subscriptions', 'was_helpful': True}
+2025-06-24 15:29:24,184 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-24 15:29:24,199 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 15:29:24,293 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-24 15:29:24,293 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 15:29:26,896 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:29:26,896 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'try a line graoh'}
+2025-06-24 15:29:26,912 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:29:26,912 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:29:28,623 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:29:28,623 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': 'SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)'}
+2025-06-24 15:29:28,623 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >=...
+2025-06-24 15:29:28,624 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:29:28,624 - api_server - INFO - 🔍 Executing: SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+2025-06-24 15:29:28,624 - api_server - INFO - 🔍 Executing query: SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >=...
+2025-06-24 15:29:31,756 - api_server - INFO - ✅ Query executed successfully, returned 1 rows
+2025-06-24 15:29:32,052 - api_server - INFO - ✅ Dynamic SQL completed successfully with 1 rows
+2025-06-24 15:29:32,053 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.43s
+2025-06-24 15:29:32,157 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:29:32,157 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'total_subscriptions': 1861}], 'graph_type': 'line'}
+2025-06-24 15:29:32,157 - api_server - INFO - 📊 Analyzing 1 rows with columns: ['total_subscriptions']
+2025-06-24 15:29:32,157 - api_server - INFO - 📊 Column analysis: {'total_subscriptions': {'type': 'numeric', 'min': 1861, 'max': 1861, 'unique_count': 1}}
+2025-06-24 15:29:32,157 - api_server - INFO - 📊 Column classification: numeric=['total_subscriptions'], datetime=[], categorical=[]
+2025-06-24 15:29:32,158 - api_server - INFO - 📊 Final recommendations (0 total): []
+2025-06-24 15:29:32,158 - api_server - INFO - 📊 Graph analysis for 1 rows:
+2025-06-24 15:29:32,158 - api_server - INFO -    Column analysis: {'total_subscriptions': {'type': 'numeric', 'min': 1861, 'max': 1861, 'unique_count': 1}}
+2025-06-24 15:29:32,158 - api_server - INFO -    Recommended graphs: []
+2025-06-24 15:29:32,158 - api_server - WARNING - ⚠️ Requested graph type 'line' not in recommendations, attempting anyway...
+2025-06-24 15:29:32,158 - api_server - WARNING - Tool generate_graph_data returned error: Graph type 'line' not suitable for this data structure. Available columns: ['total_subscriptions']. Data has 1 rows with 1 numeric columns.
+2025-06-24 15:29:42,833 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 15:29:42,834 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'try a line graoh', 'sql_query': 'SELECT COUNT(*) as total_subscriptions FROM subscription_contract_v2 WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)', 'was_helpful': True}
+2025-06-24 15:29:42,834 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-24 15:29:42,849 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 15:29:42,942 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-24 15:29:42,942 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 15:29:51,890 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:29:51,890 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'Chart showing payment trends over time'}
+2025-06-24 15:29:51,906 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:29:51,906 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:29:54,063 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:29:54,063 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': "SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_payment_details AS pd GROUP BY payment_date ORDER BY payment_date"}
+2025-06-24 15:29:54,063 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CAS...
+2025-06-24 15:29:54,064 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:29:54,064 - api_server - INFO - 🔍 Executing: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_payment_details AS pd GROUP BY payment_date ORDER BY payment_date
+2025-06-24 15:29:54,064 - api_server - INFO - 🔍 Executing query: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CAS...
+2025-06-24 15:29:57,285 - api_server - INFO - ✅ Query executed successfully, returned 52 rows
+2025-06-24 15:29:57,575 - api_server - INFO - ✅ Dynamic SQL completed successfully with 52 rows
+2025-06-24 15:29:57,575 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.51s
+2025-06-24 15:29:57,679 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:29:57,680 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'payment_date': '2025-04-01', 'total_payments': 30, 'successful_payments': 3.0, 'success_rate': 10.0}, {'payment_date': '2025-04-02', 'total_payments': 60, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-03', 'total_payments': 26, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-04', 'total_payments': 35, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-07', 'total_payments': 27, 'successful_payments': 4.0, 'success_rate': 14.81}, {'payment_date': '2025-04-08', 'total_payments': 54, 'successful_payments': 5.0, 'success_rate': 9.26}, {'payment_date': '2025-04-09', 'total_payments': 60, 'successful_payments': 7.0, 'success_rate': 11.67}, {'payment_date': '2025-04-10', 'total_payments': 51, 'successful_payments': 1.0, 'success_rate': 1.96}, {'payment_date': '2025-04-11', 'total_payments': 56, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-14', 'total_payments': 27, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-15', 'total_payments': 26, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-16', 'total_payments': 78, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-17', 'total_payments': 58, 'successful_payments': 2.0, 'success_rate': 3.45}, {'payment_date': '2025-04-18', 'total_payments': 41, 'successful_payments': 1.0, 'success_rate': 2.44}, {'payment_date': '2025-04-21', 'total_payments': 46, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-22', 'total_payments': 45, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-23', 'total_payments': 70, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-24', 'total_payments': 39, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-25', 'total_payments': 73, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-28', 'total_payments': 58, 'successful_payments': 2.0, 'success_rate': 3.45}, {'payment_date': '2025-04-29', 'total_payments': 65, 'successful_payments': 1.0, 'success_rate': 1.54}, {'payment_date': '2025-04-30', 'total_payments': 48, 'successful_payments': 1.0, 'success_rate': 2.08}, {'payment_date': '2025-05-01', 'total_payments': 27, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-05-02', 'total_payments': 24, 'successful_payments': 8.0, 'success_rate': 33.33}, {'payment_date': '2025-05-03', 'total_payments': 6, 'successful_payments': 4.0, 'success_rate': 66.67}, {'payment_date': '2025-05-05', 'total_payments': 58, 'successful_payments': 6.0, 'success_rate': 10.34}, {'payment_date': '2025-05-06', 'total_payments': 78, 'successful_payments': 6.0, 'success_rate': 7.69}, {'payment_date': '2025-05-07', 'total_payments': 82, 'successful_payments': 8.0, 'success_rate': 9.76}, {'payment_date': '2025-05-08', 'total_payments': 36, 'successful_payments': 14.0, 'success_rate': 38.89}, {'payment_date': '2025-05-09', 'total_payments': 74, 'successful_payments': 18.0, 'success_rate': 24.32}, {'payment_date': '2025-05-12', 'total_payments': 23, 'successful_payments': 1.0, 'success_rate': 4.35}, {'payment_date': '2025-05-13', 'total_payments': 66, 'successful_payments': 27.0, 'success_rate': 40.91}, {'payment_date': '2025-05-14', 'total_payments': 78, 'successful_payments': 16.0, 'success_rate': 20.51}, {'payment_date': '2025-05-15', 'total_payments': 79, 'successful_payments': 20.0, 'success_rate': 25.32}, {'payment_date': '2025-05-16', 'total_payments': 61, 'successful_payments': 8.0, 'success_rate': 13.11}, {'payment_date': '2025-05-19', 'total_payments': 78, 'successful_payments': 5.0, 'success_rate': 6.41}, {'payment_date': '2025-05-20', 'total_payments': 82, 'successful_payments': 3.0, 'success_rate': 3.66}, {'payment_date': '2025-05-21', 'total_payments': 66, 'successful_payments': 7.0, 'success_rate': 10.61}, {'payment_date': '2025-05-22', 'total_payments': 103, 'successful_payments': 16.0, 'success_rate': 15.53}, {'payment_date': '2025-05-23', 'total_payments': 72, 'successful_payments': 19.0, 'success_rate': 26.39}, {'payment_date': '2025-05-24', 'total_payments': 4, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-05-26', 'total_payments': 67, 'successful_payments': 19.0, 'success_rate': 28.36}, {'payment_date': '2025-05-27', 'total_payments': 62, 'successful_payments': 13.0, 'success_rate': 20.97}, {'payment_date': '2025-05-28', 'total_payments': 52, 'successful_payments': 14.0, 'success_rate': 26.92}, {'payment_date': '2025-05-29', 'total_payments': 97, 'successful_payments': 5.0, 'success_rate': 5.15}, {'payment_date': '2025-05-30', 'total_payments': 63, 'successful_payments': 3.0, 'success_rate': 4.76}, {'payment_date': '2025-06-02', 'total_payments': 78, 'successful_payments': 12.0, 'success_rate': 15.38}, {'payment_date': '2025-06-03', 'total_payments': 66, 'successful_payments': 17.0, 'success_rate': 25.76}, {'payment_date': '2025-06-04', 'total_payments': 63, 'successful_payments': 1.0, 'success_rate': 1.59}, {'payment_date': '2025-06-05', 'total_payments': 62, 'successful_payments': 7.0, 'success_rate': 11.29}, {'payment_date': '2025-06-06', 'total_payments': 51, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-06-09', 'total_payments': 9, 'successful_payments': 3.0, 'success_rate': 33.33}], 'graph_type': 'line'}
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Analyzing 52 rows with columns: ['payment_date', 'total_payments', 'successful_payments', 'success_rate']
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Column analysis: {'payment_date': {'type': 'datetime', 'unique_count': 52, 'sample_values': ['2025-04-01', '2025-04-02', '2025-04-03'], 'detected_pattern': 'time_series'}, 'total_payments': {'type': 'numeric', 'min': 4, 'max': 103, 'unique_count': 36}, 'successful_payments': {'type': 'numeric', 'min': 0.0, 'max': 27.0, 'unique_count': 18}, 'success_rate': {'type': 'numeric', 'min': 0.0, 'max': 66.67, 'unique_count': 36}}
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Column classification: numeric=['total_payments', 'successful_payments', 'success_rate'], datetime=['payment_date'], categorical=[]
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Added line chart recommendation: payment_date vs total_payments
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Added scatter plot recommendation
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Final recommendations (2 total): ['line', 'scatter']
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Graph analysis for 52 rows:
+2025-06-24 15:29:57,680 - api_server - INFO -    Column analysis: {'payment_date': {'type': 'datetime', 'unique_count': 52, 'sample_values': ['2025-04-01', '2025-04-02', '2025-04-03'], 'detected_pattern': 'time_series'}, 'total_payments': {'type': 'numeric', 'min': 4, 'max': 103, 'unique_count': 36}, 'successful_payments': {'type': 'numeric', 'min': 0.0, 'max': 27.0, 'unique_count': 18}, 'success_rate': {'type': 'numeric', 'min': 0.0, 'max': 66.67, 'unique_count': 36}}
+2025-06-24 15:29:57,680 - api_server - INFO -    Recommended graphs: ['line', 'scatter']
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Selected graph type: line - Time Series Analysis
+2025-06-24 15:29:57,680 - api_server - INFO - 📊 Generated line graph with 52 data points
+2025-06-24 15:29:57,680 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 15:30:02,544 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 15:30:02,544 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'Chart showing payment trends over time', 'sql_query': "SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_payment_details AS pd GROUP BY payment_date ORDER BY payment_date", 'was_helpful': True}
+2025-06-24 15:30:02,545 - api_server - INFO - 🧠 Adding positive feedback to memory...
+2025-06-24 15:30:02,560 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 15:30:02,654 - api_server - INFO - 💾 Positive feedback stored successfully
+2025-06-24 15:30:02,654 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 15:30:13,740 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:30:13,740 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'chart subscription trends over time'}
+2025-06-24 15:30:13,755 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:30:13,756 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:30:16,049 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:30:16,049 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': "SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_payment_details AS pd GROUP BY payment_date ORDER BY payment_date"}
+2025-06-24 15:30:16,049 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CAS...
+2025-06-24 15:30:16,050 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:30:16,050 - api_server - INFO - 🔍 Executing: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_payment_details AS pd GROUP BY payment_date ORDER BY payment_date
+2025-06-24 15:30:16,050 - api_server - INFO - 🔍 Executing query: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CAS...
+2025-06-24 15:30:19,640 - api_server - INFO - ✅ Query executed successfully, returned 52 rows
+2025-06-24 15:30:19,939 - api_server - INFO - ✅ Dynamic SQL completed successfully with 52 rows
+2025-06-24 15:30:19,940 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.89s
+2025-06-24 15:30:20,042 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:30:20,042 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'payment_date': '2025-04-01', 'total_payments': 30, 'successful_payments': 3.0, 'success_rate': 10.0}, {'payment_date': '2025-04-02', 'total_payments': 60, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-03', 'total_payments': 26, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-04', 'total_payments': 35, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-07', 'total_payments': 27, 'successful_payments': 4.0, 'success_rate': 14.81}, {'payment_date': '2025-04-08', 'total_payments': 54, 'successful_payments': 5.0, 'success_rate': 9.26}, {'payment_date': '2025-04-09', 'total_payments': 60, 'successful_payments': 7.0, 'success_rate': 11.67}, {'payment_date': '2025-04-10', 'total_payments': 51, 'successful_payments': 1.0, 'success_rate': 1.96}, {'payment_date': '2025-04-11', 'total_payments': 56, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-14', 'total_payments': 27, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-15', 'total_payments': 26, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-16', 'total_payments': 78, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-17', 'total_payments': 58, 'successful_payments': 2.0, 'success_rate': 3.45}, {'payment_date': '2025-04-18', 'total_payments': 41, 'successful_payments': 1.0, 'success_rate': 2.44}, {'payment_date': '2025-04-21', 'total_payments': 46, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-22', 'total_payments': 45, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-23', 'total_payments': 70, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-24', 'total_payments': 39, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-25', 'total_payments': 73, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-28', 'total_payments': 58, 'successful_payments': 2.0, 'success_rate': 3.45}, {'payment_date': '2025-04-29', 'total_payments': 65, 'successful_payments': 1.0, 'success_rate': 1.54}, {'payment_date': '2025-04-30', 'total_payments': 48, 'successful_payments': 1.0, 'success_rate': 2.08}, {'payment_date': '2025-05-01', 'total_payments': 27, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-05-02', 'total_payments': 24, 'successful_payments': 8.0, 'success_rate': 33.33}, {'payment_date': '2025-05-03', 'total_payments': 6, 'successful_payments': 4.0, 'success_rate': 66.67}, {'payment_date': '2025-05-05', 'total_payments': 58, 'successful_payments': 6.0, 'success_rate': 10.34}, {'payment_date': '2025-05-06', 'total_payments': 78, 'successful_payments': 6.0, 'success_rate': 7.69}, {'payment_date': '2025-05-07', 'total_payments': 82, 'successful_payments': 8.0, 'success_rate': 9.76}, {'payment_date': '2025-05-08', 'total_payments': 36, 'successful_payments': 14.0, 'success_rate': 38.89}, {'payment_date': '2025-05-09', 'total_payments': 74, 'successful_payments': 18.0, 'success_rate': 24.32}, {'payment_date': '2025-05-12', 'total_payments': 23, 'successful_payments': 1.0, 'success_rate': 4.35}, {'payment_date': '2025-05-13', 'total_payments': 66, 'successful_payments': 27.0, 'success_rate': 40.91}, {'payment_date': '2025-05-14', 'total_payments': 78, 'successful_payments': 16.0, 'success_rate': 20.51}, {'payment_date': '2025-05-15', 'total_payments': 79, 'successful_payments': 20.0, 'success_rate': 25.32}, {'payment_date': '2025-05-16', 'total_payments': 61, 'successful_payments': 8.0, 'success_rate': 13.11}, {'payment_date': '2025-05-19', 'total_payments': 78, 'successful_payments': 5.0, 'success_rate': 6.41}, {'payment_date': '2025-05-20', 'total_payments': 82, 'successful_payments': 3.0, 'success_rate': 3.66}, {'payment_date': '2025-05-21', 'total_payments': 66, 'successful_payments': 7.0, 'success_rate': 10.61}, {'payment_date': '2025-05-22', 'total_payments': 103, 'successful_payments': 16.0, 'success_rate': 15.53}, {'payment_date': '2025-05-23', 'total_payments': 72, 'successful_payments': 19.0, 'success_rate': 26.39}, {'payment_date': '2025-05-24', 'total_payments': 4, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-05-26', 'total_payments': 67, 'successful_payments': 19.0, 'success_rate': 28.36}, {'payment_date': '2025-05-27', 'total_payments': 62, 'successful_payments': 13.0, 'success_rate': 20.97}, {'payment_date': '2025-05-28', 'total_payments': 52, 'successful_payments': 14.0, 'success_rate': 26.92}, {'payment_date': '2025-05-29', 'total_payments': 97, 'successful_payments': 5.0, 'success_rate': 5.15}, {'payment_date': '2025-05-30', 'total_payments': 63, 'successful_payments': 3.0, 'success_rate': 4.76}, {'payment_date': '2025-06-02', 'total_payments': 78, 'successful_payments': 12.0, 'success_rate': 15.38}, {'payment_date': '2025-06-03', 'total_payments': 66, 'successful_payments': 17.0, 'success_rate': 25.76}, {'payment_date': '2025-06-04', 'total_payments': 63, 'successful_payments': 1.0, 'success_rate': 1.59}, {'payment_date': '2025-06-05', 'total_payments': 62, 'successful_payments': 7.0, 'success_rate': 11.29}, {'payment_date': '2025-06-06', 'total_payments': 51, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-06-09', 'total_payments': 9, 'successful_payments': 3.0, 'success_rate': 33.33}], 'graph_type': 'line'}
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Analyzing 52 rows with columns: ['payment_date', 'total_payments', 'successful_payments', 'success_rate']
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Column analysis: {'payment_date': {'type': 'datetime', 'unique_count': 52, 'sample_values': ['2025-04-01', '2025-04-02', '2025-04-03'], 'detected_pattern': 'time_series'}, 'total_payments': {'type': 'numeric', 'min': 4, 'max': 103, 'unique_count': 36}, 'successful_payments': {'type': 'numeric', 'min': 0.0, 'max': 27.0, 'unique_count': 18}, 'success_rate': {'type': 'numeric', 'min': 0.0, 'max': 66.67, 'unique_count': 36}}
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Column classification: numeric=['total_payments', 'successful_payments', 'success_rate'], datetime=['payment_date'], categorical=[]
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Added line chart recommendation: payment_date vs total_payments
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Added scatter plot recommendation
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Final recommendations (2 total): ['line', 'scatter']
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Graph analysis for 52 rows:
+2025-06-24 15:30:20,043 - api_server - INFO -    Column analysis: {'payment_date': {'type': 'datetime', 'unique_count': 52, 'sample_values': ['2025-04-01', '2025-04-02', '2025-04-03'], 'detected_pattern': 'time_series'}, 'total_payments': {'type': 'numeric', 'min': 4, 'max': 103, 'unique_count': 36}, 'successful_payments': {'type': 'numeric', 'min': 0.0, 'max': 27.0, 'unique_count': 18}, 'success_rate': {'type': 'numeric', 'min': 0.0, 'max': 66.67, 'unique_count': 36}}
+2025-06-24 15:30:20,043 - api_server - INFO -    Recommended graphs: ['line', 'scatter']
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Selected graph type: line - Time Series Analysis
+2025-06-24 15:30:20,043 - api_server - INFO - 📊 Generated line graph with 52 data points
+2025-06-24 15:30:20,043 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
+2025-06-24 15:30:34,861 - api_server - INFO - 🔧 Tool execution request: record_query_feedback
+2025-06-24 15:30:34,862 - api_server - INFO - ⚙️ Executing record_query_feedback with parameters: {'original_question': 'chart subscription trends over time', 'sql_query': "SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_payment_details AS pd GROUP BY payment_date ORDER BY payment_date", 'was_helpful': False, 'improvement_suggestion': 'subscription trends not payment trends'}
+2025-06-24 15:30:34,862 - api_server - INFO - 🧠 Adding negative feedback to memory...
+2025-06-24 15:30:34,877 - api_server - INFO - ✅ Encoding successful with strategy 1
+2025-06-24 15:30:34,877 - api_server - INFO - 💡 Improvement suggestion recorded: subscription trends not payment trends...
+2025-06-24 15:30:34,973 - api_server - INFO - 💾 Negative feedback stored successfully
+2025-06-24 15:30:34,973 - api_server - INFO - ✅ Tool record_query_feedback completed successfully in 0.11s
+2025-06-24 15:30:35,051 - api_server - INFO - 🔧 Tool execution request: get_query_suggestions
+2025-06-24 15:30:35,051 - api_server - INFO - ⚙️ Executing get_query_suggestions with parameters: {'original_question': 'chart subscription trends over time'}
+2025-06-24 15:30:35,057 - api_server - INFO - 🔍 Found 1 similar queries for analysis
+2025-06-24 15:30:35,057 - api_server - INFO - ✅ Tool get_query_suggestions completed successfully in 0.01s
+2025-06-24 15:30:38,088 - api_server - INFO - 🔧 Tool execution request: get_improvement_suggestions
+2025-06-24 15:30:38,088 - api_server - INFO - ⚙️ Executing get_improvement_suggestions with parameters: {'original_question': 'try again'}
+2025-06-24 15:30:38,102 - api_server - INFO - 💡 Found 0 improvement suggestions for similar queries
+2025-06-24 15:30:38,103 - api_server - INFO - ✅ Tool get_improvement_suggestions completed successfully in 0.02s
+2025-06-24 15:30:40,344 - api_server - INFO - 🔧 Tool execution request: execute_dynamic_sql
+2025-06-24 15:30:40,344 - api_server - INFO - ⚙️ Executing execute_dynamic_sql with parameters: {'sql_query': "SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_payment_details AS pd GROUP BY payment_date ORDER BY payment_date"}
+2025-06-24 15:30:40,344 - api_server - INFO - 🔍 Dynamic SQL request received: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CAS...
+2025-06-24 15:30:40,344 - api_server - INFO - ✅ SQL validation passed
+2025-06-24 15:30:40,344 - api_server - INFO - 🔍 Executing: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) AS successful_payments, ROUND((SUM(CASE WHEN pd.status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS success_rate FROM subscription_payment_details AS pd GROUP BY payment_date ORDER BY payment_date
+2025-06-24 15:30:40,345 - api_server - INFO - 🔍 Executing query: SELECT DATE_FORMAT(pd.created_date, '%Y-%m-%d') AS payment_date, COUNT(*) AS total_payments, SUM(CAS...
+2025-06-24 15:30:43,476 - api_server - INFO - ✅ Query executed successfully, returned 52 rows
+2025-06-24 15:30:43,765 - api_server - INFO - ✅ Dynamic SQL completed successfully with 52 rows
+2025-06-24 15:30:43,766 - api_server - INFO - ✅ Tool execute_dynamic_sql completed successfully in 3.42s
+2025-06-24 15:30:43,870 - api_server - INFO - 🔧 Tool execution request: generate_graph_data
+2025-06-24 15:30:43,870 - api_server - INFO - ⚙️ Executing generate_graph_data with parameters: {'data': [{'payment_date': '2025-04-01', 'total_payments': 30, 'successful_payments': 3.0, 'success_rate': 10.0}, {'payment_date': '2025-04-02', 'total_payments': 60, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-03', 'total_payments': 26, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-04', 'total_payments': 35, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-07', 'total_payments': 27, 'successful_payments': 4.0, 'success_rate': 14.81}, {'payment_date': '2025-04-08', 'total_payments': 54, 'successful_payments': 5.0, 'success_rate': 9.26}, {'payment_date': '2025-04-09', 'total_payments': 60, 'successful_payments': 7.0, 'success_rate': 11.67}, {'payment_date': '2025-04-10', 'total_payments': 51, 'successful_payments': 1.0, 'success_rate': 1.96}, {'payment_date': '2025-04-11', 'total_payments': 56, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-14', 'total_payments': 27, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-15', 'total_payments': 26, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-16', 'total_payments': 78, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-17', 'total_payments': 58, 'successful_payments': 2.0, 'success_rate': 3.45}, {'payment_date': '2025-04-18', 'total_payments': 41, 'successful_payments': 1.0, 'success_rate': 2.44}, {'payment_date': '2025-04-21', 'total_payments': 46, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-22', 'total_payments': 45, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-23', 'total_payments': 70, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-24', 'total_payments': 39, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-25', 'total_payments': 73, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-04-28', 'total_payments': 58, 'successful_payments': 2.0, 'success_rate': 3.45}, {'payment_date': '2025-04-29', 'total_payments': 65, 'successful_payments': 1.0, 'success_rate': 1.54}, {'payment_date': '2025-04-30', 'total_payments': 48, 'successful_payments': 1.0, 'success_rate': 2.08}, {'payment_date': '2025-05-01', 'total_payments': 27, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-05-02', 'total_payments': 24, 'successful_payments': 8.0, 'success_rate': 33.33}, {'payment_date': '2025-05-03', 'total_payments': 6, 'successful_payments': 4.0, 'success_rate': 66.67}, {'payment_date': '2025-05-05', 'total_payments': 58, 'successful_payments': 6.0, 'success_rate': 10.34}, {'payment_date': '2025-05-06', 'total_payments': 78, 'successful_payments': 6.0, 'success_rate': 7.69}, {'payment_date': '2025-05-07', 'total_payments': 82, 'successful_payments': 8.0, 'success_rate': 9.76}, {'payment_date': '2025-05-08', 'total_payments': 36, 'successful_payments': 14.0, 'success_rate': 38.89}, {'payment_date': '2025-05-09', 'total_payments': 74, 'successful_payments': 18.0, 'success_rate': 24.32}, {'payment_date': '2025-05-12', 'total_payments': 23, 'successful_payments': 1.0, 'success_rate': 4.35}, {'payment_date': '2025-05-13', 'total_payments': 66, 'successful_payments': 27.0, 'success_rate': 40.91}, {'payment_date': '2025-05-14', 'total_payments': 78, 'successful_payments': 16.0, 'success_rate': 20.51}, {'payment_date': '2025-05-15', 'total_payments': 79, 'successful_payments': 20.0, 'success_rate': 25.32}, {'payment_date': '2025-05-16', 'total_payments': 61, 'successful_payments': 8.0, 'success_rate': 13.11}, {'payment_date': '2025-05-19', 'total_payments': 78, 'successful_payments': 5.0, 'success_rate': 6.41}, {'payment_date': '2025-05-20', 'total_payments': 82, 'successful_payments': 3.0, 'success_rate': 3.66}, {'payment_date': '2025-05-21', 'total_payments': 66, 'successful_payments': 7.0, 'success_rate': 10.61}, {'payment_date': '2025-05-22', 'total_payments': 103, 'successful_payments': 16.0, 'success_rate': 15.53}, {'payment_date': '2025-05-23', 'total_payments': 72, 'successful_payments': 19.0, 'success_rate': 26.39}, {'payment_date': '2025-05-24', 'total_payments': 4, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-05-26', 'total_payments': 67, 'successful_payments': 19.0, 'success_rate': 28.36}, {'payment_date': '2025-05-27', 'total_payments': 62, 'successful_payments': 13.0, 'success_rate': 20.97}, {'payment_date': '2025-05-28', 'total_payments': 52, 'successful_payments': 14.0, 'success_rate': 26.92}, {'payment_date': '2025-05-29', 'total_payments': 97, 'successful_payments': 5.0, 'success_rate': 5.15}, {'payment_date': '2025-05-30', 'total_payments': 63, 'successful_payments': 3.0, 'success_rate': 4.76}, {'payment_date': '2025-06-02', 'total_payments': 78, 'successful_payments': 12.0, 'success_rate': 15.38}, {'payment_date': '2025-06-03', 'total_payments': 66, 'successful_payments': 17.0, 'success_rate': 25.76}, {'payment_date': '2025-06-04', 'total_payments': 63, 'successful_payments': 1.0, 'success_rate': 1.59}, {'payment_date': '2025-06-05', 'total_payments': 62, 'successful_payments': 7.0, 'success_rate': 11.29}, {'payment_date': '2025-06-06', 'total_payments': 51, 'successful_payments': 0.0, 'success_rate': 0.0}, {'payment_date': '2025-06-09', 'total_payments': 9, 'successful_payments': 3.0, 'success_rate': 33.33}], 'graph_type': 'line'}
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Analyzing 52 rows with columns: ['payment_date', 'total_payments', 'successful_payments', 'success_rate']
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Column analysis: {'payment_date': {'type': 'datetime', 'unique_count': 52, 'sample_values': ['2025-04-01', '2025-04-02', '2025-04-03'], 'detected_pattern': 'time_series'}, 'total_payments': {'type': 'numeric', 'min': 4, 'max': 103, 'unique_count': 36}, 'successful_payments': {'type': 'numeric', 'min': 0.0, 'max': 27.0, 'unique_count': 18}, 'success_rate': {'type': 'numeric', 'min': 0.0, 'max': 66.67, 'unique_count': 36}}
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Column classification: numeric=['total_payments', 'successful_payments', 'success_rate'], datetime=['payment_date'], categorical=[]
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Added line chart recommendation: payment_date vs total_payments
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Added scatter plot recommendation
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Final recommendations (2 total): ['line', 'scatter']
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Graph analysis for 52 rows:
+2025-06-24 15:30:43,870 - api_server - INFO -    Column analysis: {'payment_date': {'type': 'datetime', 'unique_count': 52, 'sample_values': ['2025-04-01', '2025-04-02', '2025-04-03'], 'detected_pattern': 'time_series'}, 'total_payments': {'type': 'numeric', 'min': 4, 'max': 103, 'unique_count': 36}, 'successful_payments': {'type': 'numeric', 'min': 0.0, 'max': 27.0, 'unique_count': 18}, 'success_rate': {'type': 'numeric', 'min': 0.0, 'max': 66.67, 'unique_count': 36}}
+2025-06-24 15:30:43,870 - api_server - INFO -    Recommended graphs: ['line', 'scatter']
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Selected graph type: line - Time Series Analysis
+2025-06-24 15:30:43,870 - api_server - INFO - 📊 Generated line graph with 52 data points
+2025-06-24 15:30:43,870 - api_server - INFO - ✅ Tool generate_graph_data completed successfully in 0.00s
