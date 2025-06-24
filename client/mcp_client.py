@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# full_tools_mcp_client.py - MCP client exposing all backend tools individually
+# full_tools_mcp_client.py - MCP client exposing all backend tools individually with enhanced feedback
 
 import asyncio
 import aiohttp
@@ -26,12 +26,12 @@ logger = logging.getLogger("full-tools-mcp")
 
 class FullToolsMCPClient:
     def __init__(self):
-        print("🔧 Initializing Full Tools MCP Client...", file=sys.stderr)
+        print("🔧 Initializing Enhanced Full Tools MCP Client...", file=sys.stderr)
         self.server = Server("subscription-analytics")
         self.config = None
         self.session = None
         
-        # Define ALL backend tools for Claude Desktop
+        # Define ALL backend tools for Claude Desktop with enhanced feedback system
         self.tools = [
             Tool(
                 name="get_subscriptions_in_last_days",
@@ -109,7 +109,21 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
             ),
             Tool(
                 name="record_query_feedback",
-                description="Record feedback on a dynamic query result (for system learning)",
+                description="""Record feedback on a dynamic query result (for system learning).
+                
+IMPORTANT: When a dynamic SQL query was executed and you want to record feedback:
+- For POSITIVE feedback: Call this tool with was_helpful=true
+- For NEGATIVE feedback: Call this tool with was_helpful=false AND ask the user for improvement suggestions
+  
+When recording negative feedback, always prompt the user: "How could this query be improved?" 
+Examples of good improvement suggestions:
+- "The SQL should have filtered by date range"
+- "Missing JOIN with payment details table"  
+- "Wrong aggregation function used"
+- "Results should be sorted by success rate descending"
+- "Query needs optimization for better performance"
+
+Then include their suggestion in the improvement_suggestion parameter.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -124,6 +138,10 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
                         "was_helpful": {
                             "type": "boolean",
                             "description": "Whether the result was helpful and accurate"
+                        },
+                        "improvement_suggestion": {
+                            "type": "string",
+                            "description": "Improvement suggestion from user (required for negative feedback)"
                         }
                     },
                     "required": ["original_question", "sql_query", "was_helpful"]
@@ -142,10 +160,24 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
                     },
                     "required": ["original_question"]
                 }
+            ),
+            Tool(
+                name="get_improvement_suggestions",
+                description="Get improvement suggestions based on similar failed queries to help generate better SQL",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "original_question": {
+                            "type": "string",
+                            "description": "The question to find improvement suggestions for"
+                        }
+                    },
+                    "required": ["original_question"]
+                }
             )
         ]
         
-        print(f"✅ Defined {len(self.tools)} tools", file=sys.stderr)
+        print(f"✅ Defined {len(self.tools)} tools with enhanced feedback system", file=sys.stderr)
         self._register_handlers()
         
     def _load_config(self):
@@ -198,7 +230,7 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
             )
 
     def _register_handlers(self):
-        print("🔧 Registering MCP handlers...", file=sys.stderr)
+        print("🔧 Registering enhanced MCP handlers...", file=sys.stderr)
         
         @self.server.list_tools()
         async def handle_list_tools() -> List[Tool]:
@@ -228,7 +260,7 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
                 traceback.print_exc(file=sys.stderr)
                 return [TextContent(text=f"❌ Error: {str(e)}")]
         
-        print("✅ MCP handlers registered", file=sys.stderr)
+        print("✅ Enhanced MCP handlers registered", file=sys.stderr)
 
     async def _call_api_tool(self, tool_name: str, parameters: Dict = None) -> Dict:
         """Call the subscription analytics API"""
@@ -257,7 +289,7 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
             }
 
     def _format_result(self, result_data: Dict, tool_name: str) -> str:
-        """Format API result for display"""
+        """Format API result for display with enhanced feedback guidance"""
         if not result_data.get('success', False):
             return f"❌ ERROR: {result_data.get('error', 'Unknown error')}"
         
@@ -270,6 +302,31 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
         
         output = []
         is_dynamic = tool_name == 'execute_dynamic_sql'
+        is_feedback = tool_name == 'record_query_feedback'
+        is_improvement_suggestions = tool_name == 'get_improvement_suggestions'
+        
+        # Special formatting for improvement suggestions
+        if is_improvement_suggestions and isinstance(data, dict):
+            output.append("💡 IMPROVEMENT SUGGESTIONS FROM PAST FAILURES")
+            output.append("=" * 50)
+            
+            if data.get('improvements'):
+                output.append(f"Found {data['suggestions_found']} relevant improvement suggestions:\n")
+                
+                for i, improvement in enumerate(data['improvements'], 1):
+                    output.append(f"{i}. Similar Question: {improvement['similar_question']}")
+                    output.append(f"   Failed SQL: {improvement['what_failed']}")
+                    output.append(f"   User Suggestion: {improvement['user_suggestion']}")
+                    output.append(f"   Similarity: {improvement['similarity_score']}")
+                    output.append("")
+                
+                output.append("💡 TIP: Consider these suggestions when generating new SQL queries!")
+            else:
+                output.append("No improvement suggestions found for this query type.")
+            
+            return "\n".join(output)
+        
+        # Regular dynamic query formatting
         header = f"📊 DYNAMIC QUERY RESULT" if is_dynamic else f"📊 RESULT FROM TOOL: {tool_name.upper()}"
         output.append(header)
         output.append("=" * len(header))
@@ -295,10 +352,36 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
             output.append("")
             output.append(f"📈 Total rows: {len(data)}")
             
-            # Add helpful note for dynamic queries
+            # Enhanced feedback guidance for dynamic queries
             if is_dynamic:
-                output.append("\n💡 This was a custom SQL query. You can use record_query_feedback to help improve the system.")
-            
+                output.append("\n" + "="*60)
+                output.append("📝 FEEDBACK GUIDANCE FOR CLAUDE")
+                output.append("="*60)
+                output.append("This result came from a dynamically generated SQL query.")
+                output.append("To help improve the system, please consider:")
+                output.append("")
+                output.append("✅ IF THE RESULT IS CORRECT AND HELPFUL:")
+                output.append("   Call record_query_feedback with was_helpful=true")
+                output.append("")
+                output.append("❌ IF THE RESULT IS WRONG OR UNHELPFUL:")
+                output.append("   1. Ask the user: 'How could this query be improved?'")
+                output.append("   2. Get their specific suggestion (e.g., 'should filter by date', 'missing JOIN')")
+                output.append("   3. Call record_query_feedback with was_helpful=false")
+                output.append("   4. Include their suggestion in improvement_suggestion parameter")
+                output.append("")
+                output.append("💡 Good improvement suggestions help the AI learn:")
+                output.append("   • 'Should have used INNER JOIN instead of LEFT JOIN'")
+                output.append("   • 'Missing WHERE clause for date filtering'")
+                output.append("   • 'Wrong ORDER BY - should sort by success_rate DESC'")
+                output.append("   • 'Query too slow - needs LIMIT or better indexing'")
+                output.append("   • 'Should group by merchant_user_id for individual stats'")
+                output.append("")
+                output.append("🎯 WORKFLOW FOR FEEDBACK:")
+                output.append("   1. Show this result to the user")
+                output.append("   2. Ask: 'Is this result helpful and accurate?'")
+                output.append("   3. If YES: Call record_query_feedback(was_helpful=true)")
+                output.append("   4. If NO: Ask 'How can this be improved?' then call with improvement_suggestion")
+                
         elif isinstance(data, dict):
             for key, value in data.items():
                 output.append(f"{key}: {value}")
@@ -308,29 +391,31 @@ Use MySQL syntax, always start with SELECT, use proper JOINs on subscription_id.
         return "\n".join(output)
 
     async def cleanup(self):
-        print("🧹 Cleaning up full tools MCP client...", file=sys.stderr)
+        print("🧹 Cleaning up enhanced full tools MCP client...", file=sys.stderr)
         if self.session:
             await self.session.close()
 
 async def main():
-    """Main entry point for full tools MCP server"""
-    print(f"🚀 Full Tools MCP Client starting from: {Path(__file__).parent.absolute()}", file=sys.stderr)
-    print(f"🔧 This version exposes all 7 backend tools individually", file=sys.stderr)
+    """Main entry point for enhanced full tools MCP server"""
+    print(f"🚀 Enhanced Full Tools MCP Client starting from: {Path(__file__).parent.absolute()}", file=sys.stderr)
+    print(f"🔧 This version exposes all 8 backend tools individually with enhanced feedback", file=sys.stderr)
+    print(f"💡 Features: Dynamic SQL, Learning System, Improvement Suggestions", file=sys.stderr)
     
     try:
         mcp_client = FullToolsMCPClient()
-        print("✅ Full tools MCP client instance created", file=sys.stderr)
+        print("✅ Enhanced full tools MCP client instance created", file=sys.stderr)
         
         async with mcp.server.stdio.stdio_server() as (reader, writer):
-            print("🚀 Full Tools MCP Server ready for Claude Desktop", file=sys.stderr)
+            print("🚀 Enhanced Full Tools MCP Server ready for Claude Desktop", file=sys.stderr)
+            print("📝 Remember to collect feedback on dynamic queries to improve the system!", file=sys.stderr)
             initialization_options = InitializationOptions(
                 server_name="subscription-analytics",
-                server_version="1.0.0",
+                server_version="2.0.0-enhanced-feedback",
                 capabilities={}
             )
             await mcp_client.server.run(reader, writer, initialization_options)
     except Exception as e:
-        print(f"❌ Full tools MCP server error: {e}", file=sys.stderr)
+        print(f"❌ Enhanced full tools MCP server error: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc(file=sys.stderr)
         raise
@@ -341,7 +426,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("🛑 Full tools MCP server stopped by user", file=sys.stderr)
+        print("🛑 Enhanced full tools MCP server stopped by user", file=sys.stderr)
     except Exception as e:
         print(f"💥 Fatal error: {e}", file=sys.stderr)
         sys.exit(1)

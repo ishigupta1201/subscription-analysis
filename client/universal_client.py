@@ -224,7 +224,7 @@ Important Notes:
         ]
 
     def parse_query(self, user_query: str, history: List[str]) -> List[Dict]:
-        """Parse user query and determine which tool(s) to use with enhanced context awareness"""
+        """Parse user query and determine which tool(s) to use with enhanced context awareness and improvement suggestions"""
         
         # Build context from conversation history
         history_context = "\n".join(history[-6:]) if history else "No previous context."
@@ -247,6 +247,9 @@ Important Notes:
         # Enhanced context extraction from history
         context_data = self._extract_context_from_history(history)
         
+        # NEW: Get improvement suggestions for this type of query
+        improvement_context = self._get_improvement_context(user_query)
+        
         prompt = f"""
 You are a subscription analytics assistant. Analyze the user's query and choose the most appropriate tool.
 
@@ -255,6 +258,9 @@ CONVERSATION HISTORY:
 
 EXTRACTED CONTEXT DATA:
 {context_data}
+
+IMPROVEMENT SUGGESTIONS FROM PAST FAILURES:
+{improvement_context}
 
 CURRENT USER QUERY: "{user_query}"
 
@@ -269,7 +275,13 @@ CRITICAL INSTRUCTIONS FOR SQL GENERATION:
    - For current date: CURDATE() not DATE('now')
    - For current datetime: NOW() not DATETIME('now')
 
-6. **HANDLE SUCCESS RATES PROPERLY**: For individual user success rates, use this pattern:
+6. **INCORPORATE IMPROVEMENT SUGGESTIONS**: If improvement suggestions are provided above, carefully consider them:
+   - Follow specific syntax recommendations
+   - Avoid patterns that were marked as failures
+   - Use suggested approaches for similar query types
+   - Apply recommended filtering, grouping, or ordering techniques
+
+7. **HANDLE SUCCESS RATES PROPERLY**: For individual user success rates, use this pattern:
    ```sql
    SELECT sc.merchant_user_id, 
           COUNT(*) as total_payments,
@@ -282,22 +294,18 @@ CRITICAL INSTRUCTIONS FOR SQL GENERATION:
    ORDER BY success_rate_percent DESC
    ```
 
-7. **SUBQUERY COLUMN REFERENCES**: When using subqueries, reference columns correctly:
+8. **SUBQUERY COLUMN REFERENCES**: When using subqueries, reference columns correctly:
    - WRONG: `SELECT sc.merchant_user_id FROM (SELECT sc.merchant_user_id ...) AS sub WHERE ...`
    - CORRECT: `SELECT merchant_user_id FROM (SELECT sc.merchant_user_id ...) AS sub WHERE ...`
    - In outer query, use column names as they appear in subquery SELECT, not with inner aliases
 
-8. **AVOID COMPLEX SUBQUERIES**: When possible, use single queries with HAVING clauses instead of subqueries:
+9. **AVOID COMPLEX SUBQUERIES**: When possible, use single queries with HAVING clauses instead of subqueries:
    - COMPLEX: `SELECT ... FROM (SELECT ... FROM ... GROUP BY ...) AS sub WHERE ...`
    - SIMPLE: `SELECT ... FROM ... GROUP BY ... HAVING ... AND ...`
 
-9. **SUBQUERY COLUMN SELECTION**: If you must use subqueries, ensure all needed columns are selected:
-   - If outer query needs `pd.status`, the subquery must SELECT it
-   - If outer query needs aggregate calculations, do them in the subquery, not outside
-
 10. **CONTEXT AWARENESS**: When user refers to "that", "those", etc., extract values from conversation history:
-   - If previous result showed success_rate_percent: 14.86, and user asks "how many users have higher than that"
-   - Generate SQL with WHERE success_rate_percent > 14.86
+    - If previous result showed success_rate_percent: 14.86, and user asks "how many users have higher than that"
+    - Generate SQL with WHERE success_rate_percent > 14.86
 
 {self.db_schema}
 
@@ -436,6 +444,43 @@ Choose the most appropriate tool and provide necessary parameters. Make sure all
             context_data.append("Previous query involved payment data")
         
         return "\n".join(context_data) if context_data else "No specific numerical context found."
+
+    def _get_improvement_context(self, user_query: str) -> str:
+        """Get improvement suggestions context for the current query type."""
+        try:
+            # This is a simplified version - in practice, you might want to make an API call
+            # to get_improvement_suggestions, but to avoid circular dependencies, 
+            # we'll implement this as a local context builder for now
+            
+            # Check for query patterns that commonly need improvement
+            improvement_hints = []
+            
+            query_lower = user_query.lower()
+            
+            # Pattern-based improvement suggestions
+            if 'success rate' in query_lower and ('user' in query_lower or 'merchant' in query_lower):
+                improvement_hints.append("For user success rates: Always use GROUP BY merchant_user_id and include minimum payment thresholds (HAVING COUNT(*) >= 3)")
+            
+            if 'top' in query_lower or 'best' in query_lower or 'worst' in query_lower:
+                improvement_hints.append("For ranking queries: Use ORDER BY with LIMIT, and consider tie-breaking with secondary sort criteria")
+            
+            if 'failed' in query_lower or 'failure' in query_lower:
+                improvement_hints.append("For failure analysis: Use pd.status != 'ACTIVE' or pd.status IN ('FAILED', 'FAIL') for failed payments")
+            
+            if 'revenue' in query_lower or 'amount' in query_lower:
+                improvement_hints.append("For revenue calculations: Only sum amounts where pd.status = 'ACTIVE' for accurate totals")
+            
+            if 'last' in query_lower and ('day' in query_lower or 'week' in query_lower or 'month' in query_lower):
+                improvement_hints.append("For date filtering: Use proper MySQL date functions like DATE_SUB(CURDATE(), INTERVAL X DAY)")
+            
+            if improvement_hints:
+                return "RELEVANT IMPROVEMENT PATTERNS:\n" + "\n".join(f"- {hint}" for hint in improvement_hints)
+            else:
+                return "No specific improvement patterns identified for this query type."
+                
+        except Exception as e:
+            logger.warning(f"Failed to get improvement context: {e}")
+            return "Improvement context unavailable."
 
 # Core Client Class
 class UniversalClient:
@@ -731,26 +776,34 @@ class UniversalClient:
         # Keep only last 6 entries (3 turns)
         self.history = self.history[-6:]
     
-    async def submit_feedback(self, result: QueryResult, helpful: bool):
+    async def submit_feedback(self, result: QueryResult, helpful: bool, improvement_suggestion: str = None):
         """Submit feedback for a dynamic query with enhanced negative feedback handling."""
         if result.is_dynamic and result.generated_sql and result.original_query:
             try:
-                feedback_result = await self.call_tool(
-                    'record_query_feedback',
-                    {
-                        'original_question': result.original_query,
-                        'sql_query': result.generated_sql,
-                        'was_helpful': helpful
-                    }
-                )
+                # Prepare feedback parameters
+                feedback_params = {
+                    'original_question': result.original_query,
+                    'sql_query': result.generated_sql,
+                    'was_helpful': helpful
+                }
+                
+                # Add improvement suggestion if provided
+                if not helpful and improvement_suggestion:
+                    feedback_params['improvement_suggestion'] = improvement_suggestion
+                
+                feedback_result = await self.call_tool('record_query_feedback', feedback_params)
                 
                 if feedback_result.success and feedback_result.message:
                     print(f"✅ {feedback_result.message}")
                     
+                    # If negative feedback with improvement, show additional confirmation
+                    if not helpful and improvement_suggestion and feedback_result.data and feedback_result.data.get('improvement_recorded'):
+                        print("🎯 Your improvement suggestion has been saved and will influence future similar queries.")
+                        print("💡 The AI will try to incorporate your suggestions in future SQL generation.")
+                    
                     # If negative feedback, offer to show similar queries to help understand the issue
                     if not helpful:
                         print("🔍 The system will now remember this as an example to avoid.")
-                        print("💡 This helps improve future query generation for similar questions.")
                         
                         try:
                             # Get suggestions to show what the system learned
@@ -831,14 +884,36 @@ async def interactive_mode():
                         
                         print("\n" + "="*50)
                         print("📝 This answer was generated using a custom SQL query.")
+                        
                         while True:
                             feedback_input = input("Was this answer helpful and accurate? (y/n/skip): ").lower().strip()
                             if feedback_input in ['y', 'yes']:
                                 await client.submit_feedback(result, True)
                                 break
                             elif feedback_input in ['n', 'no']:
-                                await client.submit_feedback(result, False)
-                                print("Thank you for the feedback. This helps improve the system.")
+                                print("\n💬 Help us improve! What was wrong with this answer?")
+                                print("Examples:")
+                                print("  • 'The SQL should have filtered by date range'")
+                                print("  • 'Missing JOIN with another table'") 
+                                print("  • 'Wrong aggregation function used'")
+                                print("  • 'Results should be sorted differently'")
+                                print("  • 'Query timeout - needs optimization'")
+                                
+                                while True:
+                                    improvement = input("\nHow can this be improved? (or 'skip' to not provide): ").strip()
+                                    if improvement.lower() in ['skip', 's', '']:
+                                        await client.submit_feedback(result, False)
+                                        break
+                                    elif len(improvement) < 10:
+                                        print("⚠️ Please provide a more detailed suggestion (at least 10 characters) or type 'skip'.")
+                                        continue
+                                    elif len(improvement) > 500:
+                                        print("⚠️ Please keep suggestions under 500 characters.")
+                                        continue
+                                    else:
+                                        await client.submit_feedback(result, False, improvement)
+                                        print("🙏 Thank you for the detailed feedback! This helps improve the system.")
+                                        break
                                 break
                             elif feedback_input in ['s', 'skip', '']:
                                 break

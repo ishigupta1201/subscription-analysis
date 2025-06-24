@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 COMPLETE RENDER.COM API Server for Subscription Analytics
-- Fixed syntax errors (missing closing braces)
+- Enhanced feedback system with improvement suggestions
 - Full semantic learning functionality
-- All 7 tools included
+- All 8 tools included (added get_improvement_suggestions)
 - Comprehensive error handling
 - Complete feature set restored
 """
@@ -161,8 +161,8 @@ class SemanticQueryLearner:
         except Exception as e:
             logger.warning(f"⚠️ Failed to save query memory: {e}")
 
-    def add_successful_query(self, original_question: str, sql_query: str, was_helpful: bool = True):
-        """Add query feedback to memory - both positive and negative."""
+    def add_successful_query(self, original_question: str, sql_query: str, was_helpful: bool = True, improvement_suggestion: str = None):
+        """Add query feedback to memory - both positive and negative with improvement suggestions."""
         if not self.model:
             logger.info("📝 Feedback noted (semantic learning not available)")
             return
@@ -213,14 +213,21 @@ class SemanticQueryLearner:
             elif hasattr(vector, 'numpy'):
                 vector = vector.numpy()
             
-            # Add to memory with feedback information
-            self.known_queries.append({
+            # Add to memory with feedback information and improvement suggestion
+            feedback_entry = {
                 'question': original_question,
                 'sql': sql_query,
                 'was_helpful': was_helpful,
                 'feedback_type': feedback_type,
                 'timestamp': datetime.datetime.now().isoformat()
-            })
+            }
+            
+            # Add improvement suggestion for negative feedback
+            if not was_helpful and improvement_suggestion:
+                feedback_entry['improvement_suggestion'] = improvement_suggestion.strip()
+                logger.info(f"💡 Improvement suggestion recorded: {improvement_suggestion[:100]}...")
+            
+            self.known_queries.append(feedback_entry)
             
             if self.known_vectors is None:
                 self.known_vectors = np.array([vector])
@@ -294,6 +301,69 @@ class SemanticQueryLearner:
             
         except Exception as e:
             logger.warning(f"⚠️ Similar query search failed: {e}")
+            return []
+
+    def get_improvement_suggestions_for_query(self, question: str, threshold: float = 0.85):
+        """Get improvement suggestions from similar failed queries."""
+        if not self.model or not self.index or len(self.known_queries) == 0:
+            return []
+        
+        try:
+            # Encode the question
+            import torch
+            with torch.no_grad():
+                self.model.eval()
+                question_vector = self.model.encode([question], 
+                                                  show_progress_bar=False, 
+                                                  convert_to_tensor=False,
+                                                  device='cpu')[0]
+            
+            # Ensure vector is numpy array
+            if hasattr(question_vector, 'cpu'):
+                question_vector = question_vector.cpu().numpy()
+            elif hasattr(question_vector, 'numpy'):
+                question_vector = question_vector.numpy()
+            
+            # Search for similar queries
+            k = min(10, len(self.known_queries))  # Search more entries
+            distances, indices = self.index.search(np.array([question_vector]).astype('float32'), k=k)
+            
+            improvement_suggestions = []
+            for distance, idx in zip(distances[0], indices[0]):
+                if distance < threshold and idx < len(self.known_queries):
+                    query_data = self.known_queries[idx]
+                    
+                    # Only include entries with improvement suggestions (negative feedback)
+                    if (not query_data.get('was_helpful', True) and 
+                        'improvement_suggestion' in query_data and 
+                        query_data['improvement_suggestion']):
+                        
+                        similarity = 1.0 - (distance / 2.0)
+                        improvement_suggestions.append({
+                            'similarity': similarity,
+                            'question': query_data['question'],
+                            'failed_sql': query_data['sql'],
+                            'improvement_suggestion': query_data['improvement_suggestion'],
+                            'timestamp': query_data['timestamp']
+                        })
+            
+            # Sort by similarity and return unique suggestions
+            improvement_suggestions.sort(key=lambda x: x['similarity'], reverse=True)
+            
+            # Remove duplicate suggestions
+            seen_suggestions = set()
+            unique_suggestions = []
+            for suggestion in improvement_suggestions:
+                suggestion_text = suggestion['improvement_suggestion'].lower()
+                if suggestion_text not in seen_suggestions:
+                    seen_suggestions.add(suggestion_text)
+                    unique_suggestions.append(suggestion)
+            
+            logger.info(f"💡 Found {len(unique_suggestions)} improvement suggestions for similar queries")
+            return unique_suggestions[:3]  # Return top 3 unique suggestions
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Improvement suggestions search failed: {e}")
             return []
 
 # Initialize with error handling
@@ -624,8 +694,8 @@ def execute_dynamic_sql(sql_query: str) -> Dict:
         logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return {"error": f"Unexpected error during SQL execution: {str(e)}"}
 
-def record_query_feedback(original_question: str, sql_query: str, was_helpful: bool) -> Dict:
-    """Record user feedback - both positive and negative for learning."""
+def record_query_feedback(original_question: str, sql_query: str, was_helpful: bool, improvement_suggestion: str = None) -> Dict:
+    """Record user feedback - both positive and negative with optional improvement suggestions."""
     try:
         if not original_question or not sql_query:
             return {"error": "Both original_question and sql_query are required"}
@@ -633,14 +703,33 @@ def record_query_feedback(original_question: str, sql_query: str, was_helpful: b
         if not isinstance(was_helpful, bool):
             return {"error": "was_helpful must be a boolean value"}
         
+        # Validate improvement suggestion for negative feedback
+        if not was_helpful and improvement_suggestion:
+            improvement_suggestion = improvement_suggestion.strip()
+            if len(improvement_suggestion) < 10:
+                return {"error": "Improvement suggestion must be at least 10 characters long"}
+            if len(improvement_suggestion) > 500:
+                return {"error": "Improvement suggestion must be less than 500 characters"}
+        
         if semantic_learner:
-            # Store both positive and negative feedback
-            semantic_learner.add_successful_query(original_question, sql_query, was_helpful)
+            # Store feedback with improvement suggestion
+            semantic_learner.add_successful_query(
+                original_question, 
+                sql_query, 
+                was_helpful, 
+                improvement_suggestion
+            )
             
             if was_helpful:
                 return {"message": "Thank you! Your positive feedback has been recorded and will help improve the system."}
             else:
-                return {"message": "Thank you! Your negative feedback has been recorded and will help the system avoid similar mistakes in the future."}
+                if improvement_suggestion:
+                    return {
+                        "message": "Thank you! Your negative feedback and improvement suggestion have been recorded. The system will try to avoid similar mistakes and incorporate your suggestions in future queries.",
+                        "data": {"improvement_recorded": True}
+                    }
+                else:
+                    return {"message": "Thank you! Your negative feedback has been recorded and will help the system avoid similar mistakes in the future."}
         else:
             return {"message": "Thank you for your feedback."}
             
@@ -686,6 +775,38 @@ def get_query_suggestions(original_question: str) -> Dict:
     except Exception as e:
         logger.warning(f"⚠️ Query suggestions failed: {e}")
         return {"error": f"Query suggestions failed: {str(e)}"}
+
+def get_improvement_suggestions(original_question: str) -> Dict:
+    """Get improvement suggestions for a query based on similar failed queries."""
+    try:
+        if not semantic_learner:
+            return {"message": "Improvement suggestions not available (semantic learning disabled)"}
+        
+        suggestions = semantic_learner.get_improvement_suggestions_for_query(original_question)
+        
+        if not suggestions:
+            return {"message": "No improvement suggestions found for similar queries"}
+        
+        result = {
+            "suggestions_found": len(suggestions),
+            "improvements": []
+        }
+        
+        for suggestion in suggestions:
+            improvement = {
+                "similarity_score": f"{suggestion['similarity']:.2f}",
+                "similar_question": suggestion['question'],
+                "what_failed": suggestion['failed_sql'][:100] + "..." if len(suggestion['failed_sql']) > 100 else suggestion['failed_sql'],
+                "user_suggestion": suggestion['improvement_suggestion'],
+                "timestamp": suggestion['timestamp']
+            }
+            result["improvements"].append(improvement)
+        
+        return {"data": result}
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Improvement suggestions retrieval failed: {e}")
+        return {"error": f"Failed to get improvement suggestions: {str(e)}"}
 
 # Tool Registry - FIXED: All closing braces properly matched
 TOOL_REGISTRY = {
@@ -741,13 +862,17 @@ TOOL_REGISTRY = {
     },
     "record_query_feedback": {
         "function": record_query_feedback,
-        "description": "Record user feedback on a dynamic query - both positive and negative",
+        "description": "Record user feedback on a dynamic query - both positive and negative with optional improvement suggestions",
         "parameters": {
             "type": "object",
             "properties": {
                 "original_question": {"type": "string"},
                 "sql_query": {"type": "string"},
-                "was_helpful": {"type": "boolean"}
+                "was_helpful": {"type": "boolean"},
+                "improvement_suggestion": {
+                    "type": "string", 
+                    "description": "Optional improvement suggestion for negative feedback"
+                }
             },
             "required": ["original_question", "sql_query", "was_helpful"]
         }
@@ -762,8 +887,22 @@ TOOL_REGISTRY = {
             },
             "required": ["original_question"]
         }
+    },
+    "get_improvement_suggestions": {
+        "function": get_improvement_suggestions,
+        "description": "Get improvement suggestions based on similar failed queries to help generate better SQL",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "original_question": {
+                    "type": "string", 
+                    "description": "The question to find improvement suggestions for"
+                }
+            },
+            "required": ["original_question"]
+        }
     }
-}  # FIXED: Proper closing brace
+}
 
 # API Configuration
 API_KEY = os.getenv("API_KEY_1")
@@ -804,10 +943,9 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app - NO GLOBAL AUTHENTICATION (FIXED)
 app = FastAPI(
     title="Subscription Analytics API",
-    description="Render.com deployment with full features and syntax fixes",
-    version="6.0.0-complete-syntax-fixed",
+    description="Render.com deployment with enhanced feedback system",
+    version="7.0.0-enhanced-feedback",
     lifespan=lifespan
-    # FIXED: NO dependencies=[Depends(verify_api_key)] here
 )
 
 # Add CORS middleware
@@ -829,7 +967,13 @@ def health_check():
         "timestamp": datetime.datetime.now().isoformat(),
         "available_tools": len(TOOL_REGISTRY),
         "platform": "render.com",
-        "version": "6.0.0-complete-syntax-fixed"
+        "version": "7.0.0-enhanced-feedback",
+        "features": [
+            "dynamic_sql_generation",
+            "semantic_learning",
+            "feedback_with_improvements",
+            "query_suggestions"
+        ]
     }
     
     # Add learning system stats if available
@@ -838,12 +982,15 @@ def health_check():
             total_queries = len(semantic_learner.known_queries)
             positive_count = sum(1 for q in semantic_learner.known_queries if q.get('was_helpful', True))
             negative_count = total_queries - positive_count
+            improvement_count = sum(1 for q in semantic_learner.known_queries 
+                                  if not q.get('was_helpful', True) and 'improvement_suggestion' in q)
             
             health_data.update({
                 "learning_stats": {
                     "total_learned_queries": total_queries,
                     "positive_examples": positive_count,
-                    "negative_examples": negative_count
+                    "negative_examples": negative_count,
+                    "improvement_suggestions": improvement_count
                 }
             })
         except:
@@ -938,6 +1085,7 @@ if __name__ == "__main__":
     logger.info(f"🚀 Starting RENDER.COM server on port {port}")
     logger.info("🛡️ Enhanced error handling and logging enabled")
     logger.info("🧠 Full semantic learning support enabled")
+    logger.info("💡 Enhanced feedback system with improvement suggestions enabled")
     
     # Render.com optimized configuration
     uvicorn.run(
