@@ -7,33 +7,35 @@ A comprehensive subscription analytics platform with API server, universal clien
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   API Server    │    │ Universal Client│    │   MCP Client    │
-│   (Railway)     │    │                 │    │                 │
+│   (Render)      │    │                 │    │                 │
 │ • FastAPI       │◄───┤ • HTTP Client   │◄───┤ • MCP Wrapper   │
-│ • MySQL         │    │ • Gemini NLP    │    │ • Claude Server │
-│ • Analytics     │    │ • Formatting    │    │ • Tool Bridge   │
+│ • PostgreSQL    │    │ • Gemini NLP    │    │ • Claude Server │
+│ • Analytics     │    │ • Graph Gen     │    │ • Tool Bridge   │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
 ## 🌐 Live Server
 
-**🚀 API Server:** `https://subscription-analysis-production.up.railway.app`
+**🚀 API Server:** `https://subscription-analytics.onrender.com`
 
 **✅ Status:** Live and operational  
 **🔐 Authentication:** API key required  
-**📊 Database:** Railway MySQL with full subscription data
+**📊 Database:** Railway PostgreSQL with full subscription data
 
 ## 🚀 Components
 
-### 1. API Server (Deployed on Railway)
-- **FastAPI** backend with Railway MySQL database
+### 1. API Server (Deployed on Render)
+- **FastAPI** backend with PostgreSQL database
 - **Authentication** with API keys
 - **Analytics tools** for subscription and payment data
 - **RESTful API** endpoints
 - **Auto-deployment** from GitHub
+- **Docker containerization** for consistent deployment
 
 ### 2. Universal Client (Remote Access)
 - **HTTP client** for remote API server
 - **Gemini AI integration** for natural language queries
+- **Graph generation** with automatic visualization
 - **SSL certificate handling** for secure connections
 - **Beautiful formatting** of results
 - **Interactive and CLI modes**
@@ -58,7 +60,9 @@ cd subscription-analytics-client
 
 # Download client files
 curl -O https://raw.githubusercontent.com/Abhyuday-Gupta912/subscription-analytics/main/client/universal_client.py
+curl -O https://raw.githubusercontent.com/Abhyuday-Gupta912/subscription-analytics/main/client/config_manager.py
 curl -O https://raw.githubusercontent.com/Abhyuday-Gupta912/subscription-analytics/main/client/requirements.txt
+curl -O https://raw.githubusercontent.com/Abhyuday-Gupta912/subscription-analytics/main/client/config.json
 ```
 
 2. **Set up virtual environment:**
@@ -77,40 +81,38 @@ pip install -r requirements.txt
 ```
 
 4. **Configure access:**
-```bash
-# Create .env file
-cat > .env << 'EOF'
-SUBSCRIPTION_API_URL=https://subscription-analysis-production.up.railway.app
+When you run the universal client for the first time, it will ask you for the url, key and gemini api key which are as follows:
+```
+SUBSCRIPTION_API_URL=https://subscription-analytics.onrender.com
 SUBSCRIPTION_API_KEY=sub_analytics_mhHT-jo1FcowxIKbqf3hAAMyUrRHKODxXhcd_PCHT5k
 GEMINI_API_KEY=your_gemini_api_key_here
-EOF
 ```
 
 5. **Get your Gemini API key:**
-   - Visit: https://ai.google.dev/
-   - Create account and get API key
-   - Replace `your_gemini_api_key_here` in `.env`
+   - **Gemini API key:** Visit https://ai.google.dev/ to get your API key
+   - Replace `your_gemini_api_key_here` with your actual Gemini API key when prompted
 
 6. **Start using:**
 ```bash
 python universal_client.py "database status"
 python universal_client.py "show me subscription summary for last 30 days"
-python universal_client.py "compare 7 days vs 14 days performance"
+python universal_client.py "compare 7 days vs 14 days performance with graphs"
 ```
 
 ### Option 2: Deploy Your Own Server
 
 1. **Fork the repository:**
-   - Go to: https://github.com/Abhyuday-Gupta912/subscription-analytics
+   - Go to your repository URL
    - Click "Fork"
 
-2. **Deploy to Railway:**
-   - Connect your GitHub repo to Railway
+2. **Deploy to Render:**
+   - Connect your GitHub repo to Render
+   - Use the included `render.yaml` configuration
    - Set environment variables (see Configuration section)
-   - Railway will auto-deploy
+   - Render will auto-deploy using the `Dockerfile`
 
 3. **Set up your database:**
-   - Add Railway MySQL service
+   - Add PostgreSQL service in Render
    - Migrate your data using provided scripts
    - Update client configuration
 
@@ -118,21 +120,18 @@ python universal_client.py "compare 7 days vs 14 days performance"
 
 ### Live Server Access
 ```env
-SUBSCRIPTION_API_URL=https://subscription-analysis-production.up.railway.app
+SUBSCRIPTION_API_URL=https://subscription-analytics.onrender.com
 SUBSCRIPTION_API_KEY=sub_analytics_mhHT-jo1FcowxIKbqf3hAAMyUrRHKODxXhcd_PCHT5k
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 ### Your Own Server Deployment
 ```env
-# Railway Environment Variables
-DB_HOST=yamanote.proxy.rlwy.net
-DB_PORT=50495
-DB_USER=root
-DB_PASSWORD=your_railway_mysql_password
-DB_NAME=railway
+# Render Environment Variables
+DATABASE_URL=postgresql://username:password@hostname:port/database
 API_KEY_1=your_secure_api_key_1
 API_KEY_2=your_secure_api_key_2
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 ## 📊 Features
@@ -140,12 +139,14 @@ API_KEY_2=your_secure_api_key_2
 - **🤖 Natural Language Queries**: Ask questions in plain English using Gemini AI
 - **📈 Subscription Analytics**: Track new subscriptions, churn, retention rates
 - **💳 Payment Analytics**: Monitor success rates, revenue, failed transactions
+- **📊 Auto Graph Generation**: Automatic visualization in `generated_graphs/` folder
 - **⏱️ Time Period Comparisons**: Compare metrics across different timeframes
 - **🗄️ Database Monitoring**: Check connection status and basic statistics
 - **🔗 AI Integration**: Works with Claude Desktop via MCP protocol
 - **🎨 Beautiful Formatting**: Human-readable output with emojis and tables
 - **🔒 Secure Access**: API key authentication
 - **🌐 Remote Access**: No local server setup required
+- **🐳 Docker Ready**: Containerized deployment with `Dockerfile`
 
 ## 🤖 Example Queries
 
@@ -155,8 +156,8 @@ python universal_client.py "Compare subscription performance for 7 days vs 30 da
 python universal_client.py "How many new subscriptions did we get this month?"
 python universal_client.py "What's our retention rate for the last 2 weeks?"
 
-# Payment analysis  
-python universal_client.py "What's our payment success rate for the last 2 weeks?"
+# Payment analysis with graphs
+python universal_client.py "What's our payment success rate for the last 2 weeks with chart"
 python universal_client.py "Show me revenue trends and failed transactions"
 python universal_client.py "Compare payment performance across different periods"
 
@@ -176,7 +177,7 @@ python universal_client.py "Give me a comprehensive analytics overview"
       "command": "python",
       "args": ["/path/to/client/mcp_client.py", "--mcp"],
       "env": {
-        "SUBSCRIPTION_API_URL": "https://subscription-analysis-production.up.railway.app",
+        "SUBSCRIPTION_API_URL": "https://subscription-analytics.onrender.com",
         "SUBSCRIPTION_API_KEY": "sub_analytics_mhHT-jo1FcowxIKbqf3hAAMyUrRHKODxXhcd_PCHT5k",
         "GEMINI_API_KEY": "your_gemini_api_key"
       }
@@ -192,17 +193,23 @@ Then ask Claude directly: *"Show me our subscription analytics for the last mont
 ### Option 1: Use Live Server (Easiest)
 - ✅ No setup required
 - ✅ Always updated
-- ✅ Reliable hosting
+- ✅ Reliable Render hosting
 - ✅ Just need client setup
 
-### Option 2: Railway Deployment
+### Option 2: Render Deployment
 1. Fork repository
-2. Connect to Railway
-3. Set environment variables
-4. Auto-deployment from GitHub
+2. Connect to Render
+3. Use included `render.yaml` configuration
+4. Set environment variables
+5. Auto-deployment from GitHub using `Dockerfile`
 
 ### Option 3: Docker
 ```bash
+# Build and run with Docker
+docker build -t subscription-analytics .
+docker run -p 8000:8000 subscription-analytics
+
+# Or use docker-compose if available
 docker-compose up -d
 ```
 
@@ -214,12 +221,11 @@ git clone https://github.com/Abhyuday-Gupta912/subscription-analytics.git
 cd subscription-analytics
 
 # Server setup
-cd server
 pip install -r requirements.txt
 python api_server.py
 
 # Client setup
-cd ../client
+cd client
 pip install -r requirements.txt
 python universal_client.py
 ```
@@ -228,26 +234,34 @@ python universal_client.py
 
 ```
 subscription-analytics/
-├── api_server.py           # Main FastAPI application (moved to root for Railway)
-├── requirements.txt        # Server dependencies
-├── client/                 # Client Applications
-│   ├── universal_client.py # Main client with Gemini AI
-│   ├── mcp_client.py      # MCP wrapper for Claude Desktop
-│   ├── requirements.txt   # Client dependencies
-│   └── .env.example       # Environment template
-├── docs/                  # Documentation
+├── api_server.py              # Main FastAPI application
+├── requirements.txt           # Server dependencies
+├── Dockerfile                 # Docker configuration
+├── render.yaml               # Render deployment config
+├── client/                   # Client Applications
+│   ├── universal_client.py   # Main client with Gemini AI
+│   ├── mcp_client.py        # MCP wrapper for Claude Desktop
+│   ├── config_manager.py    # Configuration management
+│   ├── requirements.txt     # Client dependencies
+│   ├── config.json          # Client configuration
+│   ├── .env                 # Environment variables
+│   └── generated_graphs/    # Auto-generated visualization graphs
+├── model/                   # Data models and schemas
+├── How everything works.md  # Technical documentation
 ├── README.md
 ├── .gitignore
-└── LICENSE
+├── .dockerignore
+└── .env                     # Server environment variables
 ```
 
 ## 🔒 Security & Access
 
 - **🔑 API Key Authentication**: All requests require valid API key
-- **🔐 SSL/TLS Encryption**: All communications encrypted
+- **🔐 SSL/TLS Encryption**: All communications encrypted via Render
 - **🚫 No Data Storage**: Client doesn't store sensitive data locally
 - **⚡ Rate Limiting**: API includes rate limiting for stability
 - **🛡️ Input Validation**: All inputs validated and sanitized
+- **🐳 Secure Deployment**: Containerized deployment with Render
 
 ## 🌍 Access from Anywhere
 
@@ -257,10 +271,11 @@ subscription-analytics/
 - ✅ Command line interface
 - ✅ Interactive mode
 - ✅ Custom applications (via API)
+- ✅ Auto-generated graphs and visualizations
 
 ## 📞 API Endpoints
 
-Base URL: `https://subscription-analysis-production.up.railway.app`
+Base URL: `https://subscription-analytics.onrender.com`
 
 - `GET /health` - Health check
 - `GET /` - API status  
@@ -281,7 +296,7 @@ export SSL_CERT_FILE=""
 ### Network Issues
 ```bash
 # Test connectivity
-curl https://subscription-analysis-production.up.railway.app/health
+curl https://subscription-analytics.onrender.com/health
 
 # Try different network (mobile hotspot)
 # Check corporate firewall settings
@@ -298,3 +313,14 @@ print('URL:', os.getenv('SUBSCRIPTION_API_URL'))
 print('API Key:', os.getenv('SUBSCRIPTION_API_KEY'))
 "
 ```
+
+### Graph Generation Issues
+- Check that `generated_graphs/` folder exists in client directory
+- Ensure proper write permissions
+- Verify matplotlib and visualization dependencies are installed
+
+## 📖 Additional Documentation
+
+- **Technical Details**: See `How everything works.md`
+- **API Documentation**: Visit `https://subscription-analytics.onrender.com/docs`
+- **Configuration Guide**: Check `client/config.json` for client settings
