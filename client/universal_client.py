@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import google.generativeai as genai
 from datetime import datetime, timedelta
 import argparse
+import calendar
 
 # Graph visualization imports
 try:
@@ -140,72 +141,58 @@ class CompleteGraphGenerator:
         return MATPLOTLIB_AVAILABLE
     
     def generate_graph(self, graph_data: Dict, query: str) -> Optional[str]:
-        """Generate graph with complete enhanced error handling and smart type detection."""
+        """Generate graph with complete enhanced error handling and smart type enforcement."""
         if not self.can_generate_graphs():
             logger.warning("Cannot generate graph - matplotlib not available")
             return None
-        
         try:
-            # Validate and prepare data
-            if not self._validate_graph_data(graph_data):
-                logger.error("Invalid graph data structure")
+            # FIXED: Better data validation and preparation
+            if not self._validate_and_prepare_graph_data(graph_data):
+                logger.error("Invalid graph data structure after preparation")
                 return None
             
-            # Smart graph type selection
-            graph_type = graph_data.get('graph_type', '').lower()
+            # ENFORCE: Use the graph_type from graph_data (set by tool call override logic)
+            requested_graph_type = graph_data.get('graph_type', '').lower()
             query_lower = query.lower()
+            # HANDLE "TRY AGAIN" - retry previous user query if requested
+            if query_lower in ['try again', 'retry', 'fix it', 'try that again']:
+                # Get the most recent user query from history (exclude 'try again')
+                recent_user_queries = [line[6:] for line in history if line.startswith('User: ') and 
+                                    not any(retry_word in line.lower() for retry_word in ['try again', 'retry', 'fix it'])]
+                if recent_user_queries:
+                    original_query = recent_user_queries[-1]  # Most recent actual query
+                    logger.info(f"[TRY AGAIN] Retrying with original query: {original_query}")
+                    query = original_query
+                    query_lower = query.lower().strip()
+                else:
+                    logger.warning("[TRY AGAIN] No previous query found in history")
+            logger.info(f"[GRAPH] Received graph_type: '{requested_graph_type}' from tool call. Query: {query}")
             
-            # If user requested bar or line chart, always use that type
-            if 'bar chart' in query_lower or graph_type == 'bar':
-                graph_type = 'bar'
-            elif 'line chart' in query_lower or graph_type == 'line':
-                graph_type = 'line'
-            # If data has two columns and one is a date, use date as x and value as y for bar/line
-            columns = list(graph_data.get('columns', []))
-            data_rows = graph_data.get('rows', [])
-            if (graph_type in ['bar', 'line']) and columns and data_rows and len(columns) == 2:
-                date_col = None
-                value_col = None
-                for col in columns:
-                    if 'date' in col.lower() or 'time' in col.lower():
-                        date_col = col
-                    else:
-                        value_col = col
-                if date_col and value_col:
-                    x_values = [row[columns.index(date_col)] for row in data_rows]
-                    y_values = [row[columns.index(value_col)] for row in data_rows]
-                    graph_data['x_values'] = x_values
-                    graph_data['y_values'] = y_values
+            # Only use requested_graph_type if valid, else fallback to smart detection
+            if requested_graph_type in self.supported_types:
+                graph_type = requested_graph_type
+            else:
+                # Smart fallback if not set or invalid
+                graph_type = self._determine_optimal_graph_type(graph_data, query)
+                logger.info(f"[GRAPH] Falling back to smart-detected graph_type: '{graph_type}'")
+            
+            logger.info(f"[GRAPH] Actually using graph_type: '{graph_type}' for plotting.")
+            
             # Never use pie chart for time series data
-            if graph_type == 'pie' and columns and any('date' in col.lower() or 'time' in col.lower() for col in columns):
-                logger.warning("Pie chart requested for time series data; switching to bar chart.")
-                graph_type = 'bar'
-                # Map data as above
-                date_col = None
-                value_col = None
-                for col in columns:
-                    if 'date' in col.lower() or 'time' in col.lower():
-                        date_col = col
-                    else:
-                        value_col = col
-                if date_col and value_col:
-                    x_values = [row[columns.index(date_col)] for row in data_rows]
-                    y_values = [row[columns.index(value_col)] for row in data_rows]
-                    graph_data['x_values'] = x_values
-                    graph_data['y_values'] = y_values
+            if graph_type == 'pie' and self._is_time_series_data(graph_data):
+                logger.warning("Pie chart requested for time series data; switching to line chart.")
+                graph_type = 'line'
+            
             # Set up matplotlib with error handling
             plt.style.use('default')
             fig, ax = plt.subplots(figsize=(12, 8))
             
             # Generate graph based on type
             success = self._create_graph_by_type(ax, graph_data, graph_type)
-            
             if not success:
                 logger.error(f"Failed to create {graph_type} chart")
                 plt.close(fig)
                 print(f"❌ Could not generate a {graph_type} chart for this data. Try a different chart type or aggregation.")
-                print(f"SQL: {graph_data.get('sql_query', 'N/A')}")
-                print(f"Data: {graph_data.get('rows', [])}")
                 return None
             
             # Enhance graph appearance
@@ -219,13 +206,121 @@ class CompleteGraphGenerator:
                 self._auto_open_graph(str(filepath))
                 logger.info(f"✅ Graph generated successfully: {graph_type}")
                 return str(filepath)
-            
             return None
-            
         except Exception as e:
             logger.error(f"Graph generation failed: {e}")
             plt.close('all')
             return None
+    
+    def _validate_and_prepare_graph_data(self, graph_data: Dict) -> bool:
+        """FIXED: Validate and prepare graph data, converting SQL results to proper format."""
+        try:
+            # Check if we have raw SQL result data that needs conversion
+            if 'data' in graph_data and isinstance(graph_data['data'], list) and len(graph_data['data']) > 0:
+                raw_data = graph_data['data']
+                if isinstance(raw_data[0], dict):
+                    # This is SQL result data - convert to graph format
+                    columns = list(raw_data[0].keys())
+                    
+                    # FIXED: Better column mapping for different chart types
+                    if len(columns) >= 2:
+                        # Try to identify time/date columns and value columns
+                        time_col = None
+                        value_col = None
+                        category_col = None
+                        
+                        for col in columns:
+                            col_lower = col.lower()
+                            if any(word in col_lower for word in ['date', 'time', 'period', 'month', 'year', 'day']):
+                                time_col = col
+                            elif any(word in col_lower for word in ['revenue', 'amount', 'total', 'count', 'value', 'num']):
+                                value_col = col
+                            elif any(word in col_lower for word in ['category', 'status', 'type', 'merchant', 'user']):
+                                category_col = col
+                        
+                        # FIXED: Proper data preparation for different chart types
+                        graph_type = graph_data.get('graph_type', '').lower()
+                        
+                        if graph_type == 'pie':
+                            # For pie charts, use category and value
+                            if category_col and value_col:
+                                graph_data['labels'] = [str(row[category_col]) for row in raw_data]
+                                graph_data['values'] = [float(row[value_col]) if row[value_col] is not None else 0 for row in raw_data]
+                            elif len(columns) >= 2:
+                                # Fallback to first two columns
+                                graph_data['labels'] = [str(row[columns[0]]) for row in raw_data]
+                                graph_data['values'] = [float(row[columns[1]]) if row[columns[1]] is not None else 0 for row in raw_data]
+                        
+                        elif graph_type in ['line', 'bar', 'scatter']:
+                            # For line/bar/scatter charts, use x and y values
+                            if time_col and value_col:
+                                graph_data['x_values'] = [str(row[time_col]) for row in raw_data]
+                                graph_data['y_values'] = [float(row[value_col]) if row[value_col] is not None else 0 for row in raw_data]
+                                graph_data['x_label'] = time_col.replace('_', ' ').title()
+                                graph_data['y_label'] = value_col.replace('_', ' ').title()
+                            elif len(columns) >= 2:
+                                # Fallback to first two columns
+                                graph_data['x_values'] = [str(row[columns[0]]) for row in raw_data]
+                                graph_data['y_values'] = [float(row[columns[1]]) if row[columns[1]] is not None else 0 for row in raw_data]
+                                graph_data['x_label'] = columns[0].replace('_', ' ').title()
+                                graph_data['y_label'] = columns[1].replace('_', ' ').title()
+                        
+                        else:
+                            # Default mapping
+                            if len(columns) >= 2:
+                                graph_data['categories'] = [str(row[columns[0]]) for row in raw_data]
+                                graph_data['values'] = [float(row[columns[1]]) if row[columns[1]] is not None else 0 for row in raw_data]
+            
+            # Now validate the prepared data
+            has_xy_data = 'x_values' in graph_data and 'y_values' in graph_data
+            has_categorical_data = 'labels' in graph_data and 'values' in graph_data
+            has_category_value_data = 'categories' in graph_data and 'values' in graph_data
+            
+            if not (has_xy_data or has_categorical_data or has_category_value_data):
+                logger.error(f"No valid data structure found. Available keys: {list(graph_data.keys())}")
+                return False
+            
+            # Validate data consistency
+            if has_xy_data:
+                x_vals = graph_data['x_values']
+                y_vals = graph_data['y_values']
+                if len(x_vals) > 0 and len(y_vals) > 0 and len(x_vals) == len(y_vals):
+                    return True
+            
+            if has_categorical_data:
+                labels = graph_data['labels']
+                values = graph_data['values']
+                if len(labels) > 0 and len(values) > 0 and len(labels) == len(values):
+                    return True
+            
+            if has_category_value_data:
+                categories = graph_data['categories']
+                values = graph_data['values']
+                if len(categories) > 0 and len(values) > 0 and len(categories) == len(values):
+                    return True
+            
+            return False
+        except Exception as e:
+            logger.error(f"Error in data validation and preparation: {e}")
+            return False
+    
+    def _is_time_series_data(self, graph_data: Dict) -> bool:
+        """Check if data represents time series."""
+        # Check for time-related column names or x_values
+        if 'x_values' in graph_data:
+            x_vals = graph_data['x_values']
+            if x_vals and isinstance(x_vals[0], str):
+                first_val = str(x_vals[0]).lower()
+                return any(word in first_val for word in ['january', 'february', 'march', 'april', 'may', 'june', 
+                                                         'july', 'august', 'september', 'october', 'november', 'december',
+                                                         '2024', '2025', 'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+                                                         'jul', 'aug', 'sep', 'oct', 'nov', 'dec'])
+        
+        if 'data' in graph_data and isinstance(graph_data['data'], list) and len(graph_data['data']) > 0:
+            columns = list(graph_data['data'][0].keys())
+            return any(any(word in col.lower() for word in ['date', 'time', 'period', 'month', 'year']) for col in columns)
+        
+        return False
     
     def _determine_optimal_graph_type(self, graph_data: Dict, query: str) -> str:
         """Smart graph type determination based on data and query."""
@@ -247,7 +342,9 @@ class CompleteGraphGenerator:
             return requested_type
         
         # Smart defaults based on data characteristics
-        if 'labels' in graph_data and 'values' in graph_data:
+        if self._is_time_series_data(graph_data):
+            return 'line'
+        elif 'labels' in graph_data and 'values' in graph_data:
             data_count = len(graph_data.get('values', []))
             if data_count <= 10:
                 return 'pie'
@@ -259,37 +356,6 @@ class CompleteGraphGenerator:
             return 'line'
         
         return 'bar'  # Default fallback
-    
-    def _validate_graph_data(self, graph_data: Dict) -> bool:
-        """Complete enhanced data validation."""
-        try:
-            # Check for required data structures
-            has_xy_data = 'x_values' in graph_data and 'y_values' in graph_data
-            has_categorical_data = 'labels' in graph_data and 'values' in graph_data
-            has_category_value_data = 'categories' in graph_data and 'values' in graph_data
-            
-            if not (has_xy_data or has_categorical_data or has_category_value_data):
-                return False
-            
-            # Validate data consistency
-            if has_xy_data:
-                x_vals = graph_data['x_values']
-                y_vals = graph_data['y_values']
-                return len(x_vals) > 0 and len(y_vals) > 0 and len(x_vals) == len(y_vals)
-            
-            if has_categorical_data:
-                labels = graph_data['labels']
-                values = graph_data['values']
-                return len(labels) > 0 and len(values) > 0 and len(labels) == len(values)
-            
-            if has_category_value_data:
-                categories = graph_data['categories']
-                values = graph_data['values']
-                return len(categories) > 0 and len(values) > 0 and len(categories) == len(values)
-            
-            return False
-        except Exception:
-            return False
     
     def _create_graph_by_type(self, ax, graph_data: Dict, graph_type: str) -> bool:
         """Create graph based on type with complete enhanced error handling."""
@@ -364,7 +430,7 @@ class CompleteGraphGenerator:
             return False
     
     def _create_complete_bar_chart(self, ax, graph_data: Dict) -> bool:
-        """Create complete enhanced bar chart with smart formatting and fallback."""
+        """Create complete enhanced bar chart with smart formatting."""
         try:
             # Prefer x_values/y_values for bar chart if present
             if 'x_values' in graph_data and 'y_values' in graph_data:
@@ -372,13 +438,13 @@ class CompleteGraphGenerator:
                 y_values = graph_data['y_values']
                 if not x_values or not y_values or len(x_values) != len(y_values):
                     return False
-                bars = ax.bar(x_values, y_values, color='steelblue', alpha=0.8, edgecolor='darkblue')
+                
+                bars = ax.bar(range(len(x_values)), y_values, color='steelblue', alpha=0.8, edgecolor='darkblue')
                 ax.set_xlabel(graph_data.get('x_label', 'Categories'), fontsize=12)
                 ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12)
-                if len(x_values) > 10 or any(len(str(x)) > 8 for x in x_values):
-                    ax.set_xticklabels([str(x)[:15] for x in x_values], rotation=45, ha='right')
-                else:
-                    ax.set_xticklabels([str(x)[:15] for x in x_values])
+                ax.set_xticks(range(len(x_values)))
+                ax.set_xticklabels([str(x)[:15] for x in x_values], rotation=45, ha='right')
+                
                 if len(x_values) <= 15:
                     max_val = max(y_values) if y_values else 1
                     for i, (bar, value) in enumerate(zip(bars, y_values)):
@@ -388,23 +454,25 @@ class CompleteGraphGenerator:
                                ha='center', va='bottom', fontsize=8)
                 ax.grid(True, alpha=0.3, axis='y')
                 return True
+            
             # Fallback to categories/values
             categories = graph_data.get('categories', graph_data.get('labels', []))
             values = graph_data.get('values', [])
-            if (not categories or not values or len(categories) != len(values)) and 'x_values' in graph_data and 'y_values' in graph_data:
-                categories = graph_data['x_values']
-                values = graph_data['y_values']
+            
             if not categories or not values or len(categories) != len(values):
                 return False
+            
             if len(categories) > 30:
                 categories = categories[:30]
                 values = values[:30]
                 logger.info("Limited bar chart to 30 categories for readability")
+            
             bars = ax.bar(range(len(categories)), values, color='steelblue', alpha=0.8, edgecolor='darkblue')
             ax.set_xlabel(graph_data.get('x_label', 'Categories'), fontsize=12)
             ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12)
             ax.set_xticks(range(len(categories)))
             ax.set_xticklabels([str(cat)[:15] for cat in categories], rotation=45, ha='right')
+            
             if len(categories) <= 15:
                 max_val = max(values) if values else 1
                 for i, (bar, value) in enumerate(zip(bars, values)):
@@ -412,6 +480,7 @@ class CompleteGraphGenerator:
                     ax.text(bar.get_x() + bar.get_width()/2., height + max_val * 0.01,
                            f'{value:.1f}' if isinstance(value, float) else str(value),
                            ha='center', va='bottom', fontsize=8)
+            
             ax.grid(True, alpha=0.3, axis='y')
             return True
         except Exception as e:
@@ -461,12 +530,13 @@ class CompleteGraphGenerator:
             return False
     
     def _create_complete_line_chart(self, ax, graph_data: Dict) -> bool:
-        """Create complete enhanced line chart with smart date handling."""
+        """FIXED: Create complete enhanced line chart with proper data handling."""
         try:
             x_values = graph_data.get('x_values', [])
             y_values = graph_data.get('y_values', [])
             
             if not x_values or not y_values or len(x_values) != len(y_values):
+                logger.error(f"Line chart data validation failed: x_values={len(x_values) if x_values else 0}, y_values={len(y_values) if y_values else 0}")
                 return False
             
             # Handle large datasets by sampling
@@ -477,16 +547,16 @@ class CompleteGraphGenerator:
                 logger.info(f"Sampled line chart data to {len(x_values)} points")
             
             # Create line chart with complete enhanced styling
-            ax.plot(x_values, y_values, marker='o', linewidth=2, markersize=4, 
+            ax.plot(range(len(x_values)), y_values, marker='o', linewidth=2, markersize=4, 
                    color='darkgreen', markerfacecolor='lightgreen')
             
             # Set labels and formatting
-            ax.set_xlabel(graph_data.get('x_label', 'X Axis'), fontsize=12)
-            ax.set_ylabel(graph_data.get('y_label', 'Y Axis'), fontsize=12)
+            ax.set_xlabel(graph_data.get('x_label', 'Time'), fontsize=12)
+            ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12)
             
-            # Smart x-axis formatting for dates
-            if len(x_values) > 10:
-                ax.tick_params(axis='x', rotation=45)
+            # Set x-axis labels
+            ax.set_xticks(range(len(x_values)))
+            ax.set_xticklabels([str(x)[:15] for x in x_values], rotation=45, ha='right')
             
             ax.grid(True, alpha=0.3)
             return True
@@ -732,16 +802,25 @@ DATE HANDLING:
         # Detect comparison queries and handle as a single query
         query_lower = user_query.lower().strip()
         threshold_info = self._extract_threshold_info(user_query)
+        comparison_info = self._extract_comparison_info(user_query)
         is_comparison = False
-        if (threshold_info['has_threshold'] and threshold_info['numbers'] and
-            (('compare' in query_lower or 'vs' in query_lower or 'versus' in query_lower or 'and' in query_lower))):
-            numbers = threshold_info['numbers']
-            if len(numbers) >= 2:
+        
+        # --- ENHANCED: Also treat time-period comparisons as single query ---
+        is_time_period_comparison = comparison_info.get('comparison_type') == 'time_period_comparison' and comparison_info.get('time_periods')
+        
+        if (
+            (threshold_info['has_threshold'] and threshold_info['numbers'] and
+            (('compare' in query_lower or 'vs' in query_lower or 'versus' in query_lower or 'and' in query_lower)))
+            or is_time_period_comparison
+        ):
+            if is_time_period_comparison or (len(threshold_info['numbers']) >= 2):
                 is_comparison = True
+        
         # Only split if not a comparison query
         if not is_comparison:
             query_separators = [' and ', ';', '\n']
             individual_queries = [user_query.strip()]
+            
             for separator in query_separators:
                 new_queries = []
                 for query in individual_queries:
@@ -751,6 +830,7 @@ DATE HANDLING:
                     else:
                         new_queries.append(query)
                 individual_queries = new_queries
+            
             # Remove duplicates while preserving order
             seen = set()
             unique_queries = []
@@ -760,8 +840,21 @@ DATE HANDLING:
                     unique_queries.append(query)
         else:
             unique_queries = [user_query.strip()]
+        
         logger.info(f"🔧 MULTITOOL: Processing {len(unique_queries)} individual queries")
         all_tool_calls = []
+        
+        # --- FEEDBACK-AWARE: Get best_chart_type and actionable_rules from improvement context for this query ---
+        best_chart_type = None
+        improvement_context = None
+        actionable_rules = []
+        if client:
+            try:
+                improvement_context, best_chart_type, actionable_rules = await self._get_complete_improvement_context(user_query, history, client, return_chart_type=True, return_rules=True)
+            except TypeError:
+                improvement_context, best_chart_type = await self._get_complete_improvement_context(user_query, history, client, return_chart_type=True)
+                actionable_rules = []
+        
         for i, query in enumerate(unique_queries, 1):
             logger.info(f"🔧 MULTITOOL: Processing query {i}/{len(unique_queries)}: {query[:50]}...")
             try:
@@ -770,7 +863,21 @@ DATE HANDLING:
                 auto_union = False
                 auto_no_graph = False
                 auto_chart_type = None
+                auto_aggregate_by = None
                 suggestions_result = None
+                
+                # Apply actionable rules to this query
+                for rule in actionable_rules:
+                    if rule['action'] == 'aggregate_by' and rule['trigger'] in query.lower():
+                        auto_aggregate_by = rule['value']
+                        print_section(f"💡 Auto-applying aggregation: {rule['instruction']}")
+                    if rule['action'] == 'chart_type' and (rule['trigger'] in query.lower() or rule['value'] in query.lower()):
+                        auto_chart_type = rule['value']
+                        print_section(f"💡 Auto-applying chart type: {rule['instruction']}")
+                    if rule['action'] == 'no_graph' and (rule['trigger'] in query.lower() or 'graph' in query.lower() or 'chart' in query.lower()):
+                        auto_no_graph = True
+                        print_section(f"💡 Auto-applying: {rule['instruction']}")
+                
                 if client:
                     try:
                         suggestions_result = await client.call_tool('get_improvement_suggestions', {
@@ -795,20 +902,29 @@ DATE HANDLING:
                                     auto_chart_type = 'pie'
                                     auto_applied = True
                                     print_section(f'💡 Auto-applying past improvement: "{suggestion["user_suggestion"]}"')
-                                if 'line chart' in sug:
+                                if 'line chart' in sug or 'line graph' in sug:
                                     auto_chart_type = 'line'
                                     auto_applied = True
                                     print_section(f'💡 Auto-applying past improvement: "{suggestion["user_suggestion"]}"')
                     except Exception as e:
                         logger.warning(f"Could not fetch improvement suggestions: {e}")
+                
+                # --- FEEDBACK-AWARE: If best_chart_type from improvement context, enforce it ---
+                if best_chart_type and not auto_chart_type:
+                    auto_chart_type = best_chart_type
+                    logger.info(f"[FEEDBACK] Enforcing chart type from feedback: {auto_chart_type}")
                 # --- END FEEDBACK-AWARE LOGIC ---
-                query_tool_calls = await self._process_single_query(query, history, client, auto_union=auto_union, auto_no_graph=auto_no_graph, auto_chart_type=auto_chart_type, force_comparison=is_comparison)
+                
+                query_tool_calls = await self._process_single_query(query, history, client, auto_union=auto_union, auto_no_graph=auto_no_graph, auto_chart_type=auto_chart_type, auto_aggregate_by=auto_aggregate_by, force_comparison=is_comparison)
+                
                 for call in query_tool_calls:
                     call['query_index'] = i
                     call['total_queries'] = len(unique_queries)
                     call['is_multitool'] = len(unique_queries) > 1
+                
                 all_tool_calls.extend(query_tool_calls)
                 logger.info(f"🔧 MULTITOOL: Query {i} generated {len(query_tool_calls)} tool calls")
+                
             except Exception as e:
                 logger.error(f"❌ MULTITOOL: Error processing query {i}: {e}")
                 error_call = {
@@ -823,7 +939,9 @@ DATE HANDLING:
                     'error': str(e)
                 }
                 all_tool_calls.append(error_call)
+        
         logger.info(f"✅ MULTITOOL: Generated total of {len(all_tool_calls)} tool calls for {len(unique_queries)} queries")
+        
         if not all_tool_calls:
             return [{
                 'tool': 'get_database_status',
@@ -835,14 +953,26 @@ DATE HANDLING:
                 'total_queries': 1,
                 'is_multitool': False
             }]
+        
         return all_tool_calls
 
-    async def _process_single_query(self, query: str, history: List[str], client=None, auto_union=False, auto_no_graph=False, auto_chart_type=None, force_comparison=False) -> List[Dict]:
+    async def _process_single_query(self, query: str, history: List[str], client=None, auto_union=False, auto_no_graph=False, auto_chart_type=None, auto_aggregate_by=None, force_comparison=False, actionable_rules=None) -> List[Dict]:
         """Process a single query and return tool calls, with feedback-aware logic. If force_comparison is True, always generate a single UNION SQL."""
         query_lower = query.lower().strip()
+        logger.info(f"[DEBUG] _process_single_query received: {query_lower}")
+        
+        chart_analysis = self._analyze_complete_chart_requirements(query, history)
+        if actionable_rules is None:
+            actionable_rules = []
+        
+        # Apply aggregation override if present
+        if auto_aggregate_by:
+            chart_analysis['aggregation'] = auto_aggregate_by
+        
         # 1. Handle specific date queries directly
         date_info = self._extract_date_info(query)
         if date_info['has_date'] and date_info['dates']:
+            logger.info("[DEBUG] Path: specific date query detected.")
             date_str = date_info['dates'][0]
             try:
                 if re.match(r'\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}', date_str, re.IGNORECASE):
@@ -853,10 +983,12 @@ DATE HANDLING:
                     date_str = date_obj.strftime('%Y-%m-%d')
             except Exception:
                 pass
+                
             sql = f"SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '{date_str}'"
             sql = self._fix_sql_quotes(sql)
             sql = self._validate_and_autofix_sql(sql)
             sql = self._fix_sql_date_math(sql)
+            
             return [{
                 'tool': 'execute_dynamic_sql',
                 'parameters': {'sql_query': sql},
@@ -864,6 +996,36 @@ DATE HANDLING:
                 'wants_graph': False,
                 'chart_analysis': {'chart_type': 'none'}
             }]
+        
+        # 1b. Handle time period comparison queries (e.g., last month vs previous month)
+        comparison_info = self._extract_comparison_info(query)
+        if comparison_info.get('comparison_type') == 'time_period_comparison' and comparison_info.get('time_periods') == ['last_month', 'prev_month']:
+            logger.info("[DEBUG] Path: time period comparison detected (last month vs previous month). Generating UNION SQL.")
+            # Only for revenue/payment queries
+            if ('revenue' in query_lower or 'payment' in query_lower or 'total' in query_lower) and ('last month' in query_lower and ('month before' in query_lower or 'previous month' in query_lower)):
+                sql = """
+SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%M %Y') AS period, SUM(p.trans_amount_decimal) AS total_revenue
+FROM subscription_payment_details p
+WHERE p.status = 'ACTIVE'
+  AND DATE_FORMAT(p.created_date, '%Y-%m') = DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m')
+UNION ALL
+SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 2 MONTH), '%M %Y') AS period, SUM(p.trans_amount_decimal) AS total_revenue
+FROM subscription_payment_details p
+WHERE p.status = 'ACTIVE'
+  AND DATE_FORMAT(p.created_date, '%Y-%m') = DATE_FORMAT(CURDATE() - INTERVAL 2 MONTH, '%Y-%m')
+"""
+                sql = self._fix_sql_quotes(sql)
+                sql = self._validate_and_autofix_sql(sql)
+                sql = self._fix_sql_date_math(sql)
+                
+                return [{
+                    'tool': 'execute_dynamic_sql',
+                    'parameters': {'sql_query': sql},
+                    'original_query': query,
+                    'wants_graph': False,
+                    'chart_analysis': {'chart_type': 'none'}
+                }]
+        
         # 2. Handle comparison queries with UNION ALL
         threshold_info = self._extract_threshold_info(query)
         if force_comparison or (threshold_info['has_threshold'] and threshold_info['numbers'] and (('compare' in query_lower or 'vs' in query_lower or 'versus' in query_lower or 'and' in query_lower))):
@@ -879,6 +1041,7 @@ FROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_us
                 sql = self._fix_sql_quotes(sql)
                 sql = self._validate_and_autofix_sql(sql)
                 sql = self._fix_sql_date_math(sql)
+                
                 return [{
                     'tool': 'execute_dynamic_sql',
                     'parameters': {'sql_query': sql},
@@ -886,6 +1049,7 @@ FROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_us
                     'wants_graph': False,
                     'chart_analysis': {'chart_type': 'none'}
                 }]
+        
         # 2b. Single threshold
         if threshold_info['has_threshold'] and threshold_info['numbers']:
             threshold = threshold_info['numbers'][0]
@@ -902,6 +1066,7 @@ FROM (
                 sql = self._fix_sql_quotes(sql)
                 sql = self._validate_and_autofix_sql(sql)
                 sql = self._fix_sql_date_math(sql)
+                
                 return [{
                     'tool': 'execute_dynamic_sql',
                     'parameters': {'sql_query': sql},
@@ -909,14 +1074,40 @@ FROM (
                     'wants_graph': False,
                     'chart_analysis': {'chart_type': 'none'}
                 }]
+        
         # 3. Handle visualization requests with smart chart selection
         wants_graph = any(word in query_lower for word in ['graph', 'visualize', 'bar chart', 'pie chart', 'line chart', 'show as chart', 'chart'])
+        
         if auto_no_graph:
             wants_graph = False
-        chart_analysis = self._analyze_complete_chart_requirements(query, history)
+            chart_analysis = self._analyze_complete_chart_requirements(query, history)
+        
         if auto_chart_type:
             chart_analysis['chart_type'] = auto_chart_type
+        
         if wants_graph:
+            # FIXED: Better chart type detection and SQL generation for trends over time
+            if any(word in query_lower for word in ['trend', 'over time', 'timeline']) or auto_chart_type == 'line':
+                sql = """
+SELECT DATE_FORMAT(p.created_date, '%M %Y') AS period, SUM(p.trans_amount_decimal) AS total_revenue
+FROM subscription_payment_details p
+WHERE p.status = 'ACTIVE'
+  AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+GROUP BY DATE_FORMAT(p.created_date, '%Y-%m')
+ORDER BY DATE_FORMAT(p.created_date, '%Y-%m')
+"""
+                sql = self._fix_sql_quotes(sql)
+                sql = self._validate_and_autofix_sql(sql)
+                sql = self._fix_sql_date_math(sql)
+                
+                return [{
+                    'tool': 'execute_dynamic_sql_with_graph',
+                    'parameters': {'sql_query': sql, 'graph_type': 'line'},
+                    'original_query': query,
+                    'wants_graph': True,
+                    'chart_analysis': chart_analysis
+                }]
+            
             if ('bar chart' in query_lower or 'visualize' in query_lower) and 'payment' in query_lower:
                 if not any(word in query_lower for word in ['over time', 'by date', 'trend', 'daily', 'per day', 'each day', 'timeline', 'monthly', 'week']):
                     sql = """
@@ -930,6 +1121,7 @@ LIMIT 20
                     sql = self._fix_sql_quotes(sql)
                     sql = self._validate_and_autofix_sql(sql)
                     sql = self._fix_sql_date_math(sql)
+                    
                     return [{
                         'tool': 'execute_dynamic_sql_with_graph',
                         'parameters': {'sql_query': sql, 'graph_type': 'bar'},
@@ -937,6 +1129,7 @@ LIMIT 20
                         'wants_graph': True,
                         'chart_analysis': chart_analysis
                     }]
+            
             if 'pie chart' in query_lower and ('success' in query_lower or 'failure' in query_lower or 'rate' in query_lower):
                 sql = """
 SELECT 
@@ -948,6 +1141,7 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
                 sql = self._fix_sql_quotes(sql)
                 sql = self._validate_and_autofix_sql(sql)
                 sql = self._fix_sql_date_math(sql)
+                
                 return [{
                     'tool': 'execute_dynamic_sql_with_graph',
                     'parameters': {'sql_query': sql, 'graph_type': 'pie'},
@@ -955,38 +1149,71 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
                     'wants_graph': True,
                     'chart_analysis': chart_analysis
                 }]
+        
         # 4. Fall back to AI processing for complex queries
         try:
             comparison_info = self._extract_comparison_info(query)
             history_context = self._build_complete_history_context(history)
             improvement_context = await self._get_complete_improvement_context(query, history, client)
             similar_context = await self._get_similar_queries_context(query, client)
+            
             if auto_chart_type:
                 chart_analysis['chart_type'] = auto_chart_type
+            
             prompt = self._create_enhanced_threshold_prompt(
                 query, history_context, improvement_context, similar_context, 
-                chart_analysis, threshold_info, date_info, comparison_info
+                chart_analysis, threshold_info, date_info, comparison_info, actionable_rules
             )
+            
             tool_calls = await self._generate_with_complete_retries(prompt, query, chart_analysis)
+            
             if auto_no_graph:
                 for call in tool_calls:
                     if call['tool'] == 'execute_dynamic_sql_with_graph':
                         call['tool'] = 'execute_dynamic_sql'
                         call['wants_graph'] = False
+            
             if auto_chart_type:
                 for call in tool_calls:
                     if call['tool'] == 'execute_dynamic_sql_with_graph':
                         call['parameters']['graph_type'] = auto_chart_type
+            
+            # --- ENFORCE CHART TYPE OVERRIDE BASED ON USER QUERY OR FEEDBACK ---
+            # Detect explicit chart type requests in the query
+            chart_type_override = None
+            if any(word in query_lower for word in ['line graph', 'line chart']):
+                chart_type_override = 'line'
+            elif any(word in query_lower for word in ['bar graph', 'bar chart']):
+                chart_type_override = 'bar'
+            elif any(word in query_lower for word in ['pie chart', 'pie graph']):
+                chart_type_override = 'pie'
+            elif any(word in query_lower for word in ['scatter plot', 'scatter chart']):
+                chart_type_override = 'scatter'
+            
+            # Also check for feedback-based override
+            if not chart_type_override and auto_chart_type:
+                chart_type_override = auto_chart_type
+            
+            if chart_type_override:
+                for call in tool_calls:
+                    if call['tool'] == 'execute_dynamic_sql_with_graph':
+                        prev_type = call['parameters'].get('graph_type', None)
+                        call['parameters']['graph_type'] = chart_type_override
+                        logger.info(f"[ENFORCE] Overriding graph_type from {prev_type} to {chart_type_override} due to explicit user request or feedback.")
+            
             for call in tool_calls:
                 if 'sql_query' in call['parameters']:
                     call['parameters']['sql_query'] = self._fix_sql_quotes(call['parameters']['sql_query'])
                     call['parameters']['sql_query'] = self._validate_and_autofix_sql(call['parameters']['sql_query'])
                     call['parameters']['sql_query'] = self._fix_sql_date_math(call['parameters']['sql_query'])
+            
             enhanced_calls = self._enhance_and_validate_complete_tool_calls(
                 tool_calls, query, chart_analysis, threshold_info
             )
+            
             logger.info(f"🧠 AI selected tool(s): {[tc['tool'] for tc in enhanced_calls]}")
             return enhanced_calls
+            
         except Exception as e:
             logger.error(f"Error in AI query processing: {e}", exc_info=True)
             return self._get_complete_smart_fallback_tool_call(query, history)
@@ -1066,19 +1293,33 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
         return date_info
 
     def _extract_comparison_info(self, query: str) -> Dict:
-        """Extract comparison information from query."""
+        """Extract comparison information from query, including time period comparisons."""
         comparison_info = {
             'is_comparison': False,
             'elements': [],
-            'comparison_type': 'unknown'
+            'comparison_type': 'unknown',
+            'time_periods': []
         }
         
         query_lower = query.lower()
         
         # Detect comparison keywords
-        comparison_keywords = ['compare', 'vs', 'versus', 'and', 'both', 'between']
+        comparison_keywords = ['compare', 'vs', 'versus', 'and', 'both', 'between', 'how does', 'difference']
         if any(keyword in query_lower for keyword in comparison_keywords):
             comparison_info['is_comparison'] = True
+        
+        # Detect time period comparison (e.g., last month vs the month before)
+        time_periods = []
+        # Loosened detection: allow for any order, extra words, etc.
+        if ('last month' in query_lower and ('month before' in query_lower or 'previous month' in query_lower)) or (('month before' in query_lower or 'previous month' in query_lower) and 'last month' in query_lower):
+            time_periods = ['last_month', 'prev_month']
+        elif 'this month' in query_lower and 'last month' in query_lower:
+            time_periods = ['this_month', 'last_month']
+        
+        if time_periods:
+            comparison_info['is_comparison'] = True
+            comparison_info['comparison_type'] = 'time_period_comparison'
+            comparison_info['time_periods'] = time_periods
         
         # Extract comparison elements for threshold comparisons
         # Look for patterns like "more than 1" and "more than 2"
@@ -1095,15 +1336,115 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
         
         return comparison_info
 
+    def _extract_actionable_rules_from_suggestions(self, improvements):
+        """Extract actionable rules (aggregation, chart type, etc.) from improvement suggestions."""
+        import re
+        rules = []
+        
+        for imp in improvements:
+            suggestion = imp.get('user_suggestion', '').lower()
+            
+            # Aggregation rules
+            if re.search(r'over time.*week|trend.*week|aggregate.*week|weekly', suggestion):
+                rules.append({
+                    'trigger': 'over time',
+                    'action': 'aggregate_by',
+                    'value': 'week',
+                    'instruction': "ALWAYS aggregate by week for 'over time' or trend queries."
+                })
+            if re.search(r'over time.*month|trend.*month|aggregate.*month|monthly', suggestion):
+                rules.append({
+                    'trigger': 'over time',
+                    'action': 'aggregate_by',
+                    'value': 'month',
+                    'instruction': "ALWAYS aggregate by month for 'over time' or trend queries."
+                })
+            
+            # Chart type rules
+            if 'bar chart' in suggestion:
+                rules.append({'trigger': 'bar chart', 'action': 'chart_type', 'value': 'bar', 'instruction': 'ALWAYS use a bar chart for relevant queries.'})
+            if 'pie chart' in suggestion:
+                rules.append({'trigger': 'pie chart', 'action': 'chart_type', 'value': 'pie', 'instruction': 'ALWAYS use a pie chart for relevant queries.'})
+            if 'line chart' in suggestion or 'line graph' in suggestion:
+                rules.append({'trigger': 'line chart', 'action': 'chart_type', 'value': 'line', 'instruction': 'ALWAYS use a line chart for trend queries.'})
+            if 'scatter' in suggestion:
+                rules.append({'trigger': 'scatter', 'action': 'chart_type', 'value': 'scatter', 'instruction': 'ALWAYS use a scatter plot for correlation/relationship queries.'})
+            
+            # No graph rules
+            if 'do not generate a graph' in suggestion or 'no graph' in suggestion or 'no chart' in suggestion:
+                rules.append({'trigger': 'no graph', 'action': 'no_graph', 'value': True, 'instruction': 'DO NOT generate a graph for this type of query.'})
+        
+        return rules
+
     def _create_enhanced_threshold_prompt(self, user_query: str, history_context: str, 
                                         improvement_context: str, similar_context: str, 
                                         chart_analysis: Dict, threshold_info: Dict, 
-                                        date_info: Dict, comparison_info: Dict) -> str:
+                                        date_info: Dict, comparison_info: Dict, actionable_rules=None) -> str:
         """Create enhanced prompt with threshold awareness and better AI guidance."""
+        
         # Smart metric/ARPU detection
         metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
         user_query_lower = user_query.lower()
         is_metric_query = any(k in user_query_lower for k in metric_keywords)
+        
+        # TOP/BEST QUERY DETECTION - NEW
+        top_keywords = ['top', 'best', 'highest', 'maximum', 'most', 'largest']
+        is_top_query = any(k in user_query_lower for k in top_keywords)
+        
+        # TOP/BEST GUIDANCE - NEW
+        top_guidance = ""
+        if is_top_query:
+            top_guidance = (
+                "\n\n🔥 CRITICAL TOP/BEST QUERY RULES (READ CAREFULLY):\n"
+                "🔥 KEY INSIGHT FOR TOP QUERIES:\n"
+                "- 'top merchant PER week' = Pattern A (different merchant each week)\n"
+                "- 'weekly totals OF THE top merchant' = Pattern B (one merchant, weekly breakdown)\n"
+                "- 'total payments BY top merchant' = Usually Pattern B\n"
+                "- When in doubt, assume Pattern B (user wants one top merchant's breakdown)\n"
+                "\nEXAMPLE A (Different top merchant per week):\n"
+                "User: show me the top merchant per week\n"
+                "SQL: SELECT week, merchant_user_id, total_payments\n"
+                "     FROM (\n"
+                "       SELECT \n"
+                "         YEARWEEK(p.created_date, 1) as week,\n"
+                "         c.merchant_user_id,\n"
+                "         SUM(p.trans_amount_decimal) as total_payments,\n"
+                "         ROW_NUMBER() OVER (PARTITION BY YEARWEEK(p.created_date, 1) ORDER BY SUM(p.trans_amount_decimal) DESC) as rn\n"
+                "       FROM subscription_payment_details p\n"
+                "       JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id\n"
+                "       WHERE p.status = 'ACTIVE'\n"
+                "       GROUP BY YEARWEEK(p.created_date, 1), c.merchant_user_id\n"
+                "     ) ranked\n"
+                "     WHERE rn = 1\n"
+                "     ORDER BY week\n"
+                "\nEXAMPLE B (Weekly totals of THE top merchant):\n"
+                "User: weekly total payments of the top merchant\n"
+                "SQL: SELECT YEARWEEK(p.created_date, 1) as week, c.merchant_user_id, SUM(p.trans_amount_decimal) as total_payments\n"
+                "     FROM subscription_payment_details p\n"
+                "     JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id\n"
+                "     WHERE p.status = 'ACTIVE'\n"
+                "       AND c.merchant_user_id = (\n"
+                "         SELECT c2.merchant_user_id\n"
+                "         FROM subscription_payment_details p2\n"
+                "         JOIN subscription_contract_v2 c2 ON p2.subscription_id = c2.subscription_id\n"
+                "         WHERE p2.status = 'ACTIVE'\n"
+                "         GROUP BY c2.merchant_user_id\n"
+                "         ORDER BY SUM(p2.trans_amount_decimal) DESC\n"
+                "         LIMIT 1\n"
+                "       )\n"
+                "     GROUP BY YEARWEEK(p.created_date, 1), c.merchant_user_id\n"
+                "     ORDER BY week\n"
+                "\nEXAMPLE (Top 3 merchants overall):\n"
+                "User: top 3 merchants by total payments\n"
+                "SQL: SELECT c.merchant_user_id, SUM(p.trans_amount_decimal) as total_payments\n"
+                "     FROM subscription_payment_details p\n"
+                "     JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id\n"
+                "     WHERE p.status = 'ACTIVE'\n"
+                "     GROUP BY c.merchant_user_id\n"
+                "     ORDER BY total_payments DESC\n"
+                "     LIMIT 3\n"
+            )
+
         metric_guidance = ""
         if is_metric_query:
             metric_guidance = (
@@ -1125,9 +1466,64 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
                 "-- Example: WHERE DATE(p.created_date) >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)\n"
                 "-- For 'last quarter', use the correct date range or interval.\n"
             )
+        
+        # --- CRITICAL TIME PERIOD RULES AND EXAMPLES ---
+        time_period_guidance = (
+            "\n\n🔥 CRITICAL TIME PERIOD RULES (READ CAREFULLY):\n"
+            "- If the user says 'X months back', 'X months ago', or 'N months before now', convert this to the correct month using DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL X MONTH), '%Y-%m') in SQL.\n"
+            "- If the user says 'Show revenue for March 2024', convert this to the correct year-month string in SQL: '2024-03'.\n"
+            "- Always use the exact number or month specified by the user.\n"
+            "\nEXAMPLES:\n"
+            "1. 'How was the revenue 2 months back?'\n"
+            "   SQL: SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 2 MONTH), '%M %Y') AS period, SUM(p.trans_amount_decimal) AS total_revenue\n"
+            "        FROM subscription_payment_details p\n"
+            "        WHERE p.status = 'ACTIVE'\n"
+            "          AND DATE_FORMAT(p.created_date, '%Y-%m') = DATE_FORMAT(CURDATE() - INTERVAL 2 MONTH, '%Y-%m')\n"
+            "\n2. 'Show revenue for March 2024'\n"
+            "   SQL: SELECT 'March 2024' AS period, SUM(p.trans_amount_decimal) AS total_revenue\n"
+            "        FROM subscription_payment_details p\n"
+            "        WHERE p.status = 'ACTIVE'\n"
+            "          AND DATE_FORMAT(p.created_date, '%Y-%m') = '2024-03'\n"
+            "\n3. 'What was the total revenue last quarter?'\n"
+            "   SQL: SELECT 'Last Quarter' AS period, SUM(p.trans_amount_decimal) AS total_revenue\n"
+            "        FROM subscription_payment_details p\n"
+            "        WHERE p.status = 'ACTIVE'\n"
+            "          AND QUARTER(p.created_date) = QUARTER(CURDATE() - INTERVAL 1 QUARTER)\n"
+        )
+        
+        # --- FEEDBACK-AWARE: Inject actionable improvement suggestions as direct instructions ---
+        actionable_instructions = []
+        if improvement_context:
+            lower_context = improvement_context.lower()
+            if 'mention the month' in lower_context or 'show the month' in lower_context or 'include the month' in lower_context:
+                actionable_instructions.append('ALWAYS include the full month name and year (e.g., "April 2025") in the result, not just the year-month code.')
+        
+        # Inject general actionable rules
+        if actionable_rules:
+            actionable_instructions.append(self._inject_actionable_instructions(actionable_rules, user_query))
+        
+        # --- ENHANCED: General chart data structuring rules for the AI ---
+        chart_data_guidance = (
+            "\n\n🔥 CRITICAL CHART DATA STRUCTURING RULES (READ CAREFULLY):\n"
+            "- For line charts: ALWAYS use a time, date, or period column as the x-axis, and the main value/metric as the y-axis.\n"
+            "  Example: x = ['April 2025', 'May 2025', 'June 2025'], y = [100, 200, 300] for a trend over months.\n"
+            "- For bar charts: Use categories (e.g., merchant, product, status) as the x-axis, and the value/metric as the y-axis.\n"
+            "  Example: x = ['Merchant A', 'Merchant B'], y = [50, 75].\n"
+            "- For pie charts: Aggregate data into categories and values representing proportions.\n"
+            "  Example: categories = ['Success', 'Fail'], values = [80, 20].\n"
+            "- For scatter plots: Use two numeric columns as x and y.\n"
+            "- ALWAYS return the data in the correct structure for the requested chart type.\n"
+            "- If the data is not suitable for the requested chart, EXPLAIN why and suggest a better chart type or aggregation.\n"
+            "- NEVER return empty or mismatched data for a chart.\n"
+            "- If unsure, ask for feedback or clarification.\n"
+        )
+        
+        feedback_instruction = ("\n\n" + "\n".join([i for i in actionable_instructions if i])) if actionable_instructions else ""
+        
         threshold_guidance = self._get_threshold_guidance(threshold_info, comparison_info)
         date_guidance = self._get_date_guidance(date_info)
         chart_guidance = self._get_complete_chart_guidance(chart_analysis)
+        
         return f"""
 You are an expert subscription analytics assistant with ENHANCED database knowledge and PERFECT threshold handling.
 
@@ -1140,7 +1536,10 @@ CONVERSATION HISTORY:
 
 CURRENT USER QUERY: "{user_query}"
 
+{top_guidance}
 {metric_guidance}
+{time_period_guidance}{feedback_instruction}
+{chart_data_guidance}
 {threshold_guidance}
 {date_guidance}
 {chart_guidance}
@@ -1148,67 +1547,40 @@ CURRENT USER QUERY: "{user_query}"
 
 🔥 CRITICAL THRESHOLD AND COMPARISON RULES:
 1. ⚠️ EXACT NUMBERS: If user says "more than 2", use EXACTLY > 2 (NOT > 1 or any other number!)
-2. ⚠️ If user says "more than 10", use EXACTLY > 10 (NOT > 1 or any other number!)
-3. ⚠️ If user says "more than 100", use EXACTLY > 100 (NOT > 1 or any other number!)
+2. ⚠️ TOP QUERIES: Distinguish between "top per group" vs "breakdown of top overall" (see examples above)
+3. ⚠️ DEFAULT for "top merchant": Assume they want THE top merchant's breakdown (Pattern B)
 4. ⚠️ For comparisons between thresholds, create UNION queries showing both categories
 5. ⚠️ DATES: Always use single quotes and DATE(): DATE(created_date) = '2025-04-23'
 6. ⚠️ JOINS: For merchant info with payments, ALWAYS JOIN tables
 7. ⚠️ TYPO: Column is "subcription_start_date" not "subscription_start_date"
 
-ENHANCED EXAMPLES WITH CORRECT THRESHOLDS:
+🔥 CRITICAL CHART TYPE ENFORCEMENT:
+7. ⚠️ If user asks for LINE CHART or LINE GRAPH, ALWAYS use execute_dynamic_sql_with_graph with graph_type="line"
+8. ⚠️ If user asks for BAR CHART or BAR GRAPH, ALWAYS use execute_dynamic_sql_with_graph with graph_type="bar"  
+9. ⚠️ If user asks for PIE CHART, ALWAYS use execute_dynamic_sql_with_graph with graph_type="pie"
+10. ⚠️ NEVER ignore explicit chart type requests - enforce them strictly!
 
-1. "subscribers with more than 10 transactions":
-   SELECT CASE WHEN total_transactions > 10 THEN 'More than 10 Transactions' ELSE '10 or Fewer Transactions' END as category, COUNT(*) as value
-   FROM (SELECT c.merchant_user_id, COUNT(*) as total_transactions
-         FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
-         GROUP BY c.merchant_user_id) stats
-   GROUP BY CASE WHEN total_transactions > 10 THEN 'More than 10 Transactions' ELSE '10 or Fewer Transactions' END
+ENHANCED EXAMPLES WITH CORRECT TOP QUERIES:
 
-2. "new subscribers on 2025-04-23":
-   SELECT COUNT(*) as new_subscribers FROM subscription_contract_v2 
-   WHERE DATE(subcription_start_date) = '2025-04-23'
+1. "top merchant by payments each week":
+   SELECT week, merchant_user_id, total_payments
+   FROM (
+     SELECT YEARWEEK(p.created_date, 1) as week, c.merchant_user_id, 
+            SUM(p.trans_amount_decimal) as total_payments,
+            ROW_NUMBER() OVER (PARTITION BY YEARWEEK(p.created_date, 1) ORDER BY SUM(p.trans_amount_decimal) DESC) as rn
+     FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
+     WHERE p.status = 'ACTIVE'
+     GROUP BY YEARWEEK(p.created_date, 1), c.merchant_user_id
+   ) ranked WHERE rn = 1 ORDER BY week
 
-3. "number of subscriptions on 2025-04-24":
-   SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '2025-04-24'
+2. "top 5 merchants overall":
+   SELECT c.merchant_user_id, SUM(p.trans_amount_decimal) as total_payments
+   FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
+   WHERE p.status = 'ACTIVE'
+   GROUP BY c.merchant_user_id ORDER BY total_payments DESC LIMIT 5
 
-4. "compare more than 1 vs more than 2 subscriptions":
-   SELECT 'More than 1 Subscription' as category, COUNT(*) as value 
-   FROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > 1) t1
-   UNION ALL
-   SELECT 'More than 2 Subscriptions' as category, COUNT(*) as value  
-   FROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > 2) t2
-
-5. "last date for which data is available":
-   SELECT MAX(DATE(created_date)) as last_payment_date FROM subscription_payment_details
-   UNION ALL
-   SELECT MAX(DATE(subcription_start_date)) as last_subscription_date FROM subscription_contract_v2
-
-6. "subscribers with more than 100 transactions":
-   SELECT CASE WHEN total_transactions > 100 THEN 'More than 100 Transactions' ELSE '100 or Fewer Transactions' END as category, COUNT(*) as value
-   FROM (SELECT c.merchant_user_id, COUNT(*) as total_transactions
-         FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
-         GROUP BY c.merchant_user_id) stats
-   GROUP BY CASE WHEN total_transactions > 100 THEN 'More than 100 Transactions' ELSE '100 or Fewer Transactions' END
-
-7. "ARPU over the last quarter":
-   SELECT SUM(p.trans_amount_decimal) / COUNT(DISTINCT c.merchant_user_id) AS ARPU
-   FROM subscription_payment_details p
-   JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
-   WHERE DATE(p.created_date) >= '2025-04-01' AND p.status = 'ACTIVE'
-   -- Output should be a single row: ARPU: <value>
-
-CRITICAL SQL GENERATION RULES:
-- Always use single quotes for strings and dates: '2025-04-23'
-- Never use double quotes in SQL
-- Use EXACT thresholds specified by user - if they say "more than 2", use > 2, NOT > 1!
-- For date queries, always use DATE() function for date columns
-- For MySQL, NEVER use DATE('now', '-N days'). Instead, use DATE_SUB(CURDATE(), INTERVAL N DAY).
-- For 'last quarter', use the correct date range or interval.
-- Pay attention to the typo in column name: subcription_start_date
-- For pie charts, use execute_dynamic_sql_with_graph with graph_type="pie"
-- For comparisons, use UNION ALL to show multiple categories
-
-🎯 REMEMBER: The user is asking for SPECIFIC thresholds. Use the EXACT numbers they specify!
+🎯 REMEMBER: "TOP" means ONLY the highest ranked results, not ALL results!
+🎯 REMEMBER: Use ROW_NUMBER() for top per group, LIMIT for top overall!
 """
 
     def _get_threshold_guidance(self, threshold_info: Dict, comparison_info: Dict) -> str:
@@ -1259,84 +1631,125 @@ CRITICAL SQL GENERATION RULES:
         """Build complete contextual history with smart filtering. For metric/ARPU queries, filter out unrelated feedback/history."""
         if not history:
             return "No previous context."
+            
         # Smart filtering for metric queries
         metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
         is_metric_query = False
         if user_query:
             user_query_lower = user_query.lower()
             is_metric_query = any(k in user_query_lower for k in metric_keywords)
+        
         recent_history = history[-6:] if len(history) > 6 else history
         context_lines = []
+        
         for line in recent_history:
             if is_metric_query:
                 # Only include lines relevant to metrics
                 if any(k in line.lower() for k in metric_keywords):
                     context_lines.append(line)
             else:
-                if any(keyword in line.lower() for keyword in ['feedback', 'improve', 'try again', 'pie chart', 'bar chart', 'error']):
+                if any(keyword in line.lower() for keyword in ['feedback', 'improve', 'try again', 'pie chart', 'bar chart', 'line chart', 'error']):
                     context_lines.append(f"IMPORTANT: {line}")
                 else:
                     context_lines.append(line)
+        
         if not context_lines:
             return "No previous context."
+            
         return "\n".join(context_lines)
 
-    async def _get_complete_improvement_context(self, user_query: str, history: List[str], client) -> str:
-        """Get complete improvement context with full history analysis and auto-apply best improvement suggestion if available."""
+    async def _get_complete_improvement_context(self, user_query: str, history: List[str], client, return_chart_type=False, return_rules=False):
+        """Get complete improvement context, actionable rules, and best chart type."""
         try:
             improvement_lines = ["COMPLETE LEARNED IMPROVEMENTS AND CONTEXT:"]
             best_suggestion = None
             best_chart_type = None
-            # Analyze recent history for improvement cues
+            actionable_rules = []
+            
             if history:
                 recent_feedback = self._extract_complete_recent_feedback(history)
                 if recent_feedback:
                     improvement_lines.append(f"RECENT USER FEEDBACK: {recent_feedback}")
-            # Get semantic improvements if available
+            
             if client:
                 try:
                     suggestions_result = await client.call_tool('get_improvement_suggestions', {
                         'original_question': user_query
                     })
+                    
                     if (suggestions_result.success and 
                         suggestions_result.data and 
                         suggestions_result.data.get('improvements')):
-                        improvements = suggestions_result.data['improvements'][:2]  # Limit to top 2
+                        improvements = suggestions_result.data['improvements'][:4]  # More for rules
                         improvement_lines.append("PAST USER IMPROVEMENTS:")
-                        # Auto-apply the best suggestion (highest similarity)
+                        
                         if improvements:
                             best_suggestion = improvements[0]['user_suggestion']
-                            # Extract chart type from improvement
                             imp = improvements[0]
                             if 'chart_type' in imp and imp['chart_type']:
                                 best_chart_type = imp['chart_type']
                             else:
-                                # Fallback: parse from suggestion text
                                 suggestion_text = best_suggestion.lower()
                                 if 'bar chart' in suggestion_text:
                                     best_chart_type = 'bar'
                                 elif 'pie chart' in suggestion_text:
                                     best_chart_type = 'pie'
-                                elif 'line chart' in suggestion_text:
+                                elif 'line chart' in suggestion_text or 'line graph' in suggestion_text:
                                     best_chart_type = 'line'
                                 elif 'scatter' in suggestion_text:
                                     best_chart_type = 'scatter'
+                        
                         for improvement in improvements:
                             improvement_lines.append(f"- Issue: {improvement['user_suggestion']}")
                             improvement_lines.append(f"  Context: {improvement['similar_question']}")
                             improvement_lines.append(f"  Category: {improvement['improvement_category']}")
+                        
+                        # Extract actionable rules from all improvements
+                        actionable_rules = self._extract_actionable_rules_from_suggestions(improvements)
+                        
                 except Exception as e:
                     logger.debug(f"Could not get improvement suggestions: {e}")
-            # If there is a best suggestion, inject it as a direct instruction
+            
             if best_suggestion:
                 improvement_lines.insert(1, f"AUTO-APPLIED IMPROVEMENT: {best_suggestion}")
-            # Return both the improvement context and the best chart type for enforcement
-            self._last_best_chart_type = best_chart_type  # Store for parse_query to use
-            return "\n".join(improvement_lines) if len(improvement_lines) > 1 else ""
+            
+            self._last_best_chart_type = best_chart_type
+            
+            if return_chart_type and return_rules:
+                return ("\n".join(improvement_lines) if len(improvement_lines) > 1 else "", best_chart_type, actionable_rules)
+            elif return_chart_type:
+                return ("\n".join(improvement_lines) if len(improvement_lines) > 1 else "", best_chart_type)
+            elif return_rules:
+                return ("\n".join(improvement_lines) if len(improvement_lines) > 1 else "", actionable_rules)
+            else:
+                return "\n".join(improvement_lines) if len(improvement_lines) > 1 else ""
+                
         except Exception as e:
             logger.warning(f"Could not get complete improvement context: {e}")
             self._last_best_chart_type = None
-            return ""
+            if return_chart_type and return_rules:
+                return ("", None, [])
+            elif return_chart_type:
+                return ("", None)
+            elif return_rules:
+                return ("", [])
+            else:
+                return ""
+
+    def _inject_actionable_instructions(self, actionable_rules, user_query):
+        """Return a string of imperative instructions for the prompt based on actionable rules and the current query."""
+        instructions = []
+        q = user_query.lower()
+        
+        for rule in actionable_rules:
+            if rule['action'] == 'aggregate_by' and rule['trigger'] in q:
+                instructions.append(rule['instruction'])
+            if rule['action'] == 'chart_type' and (rule['trigger'] in q or rule['value'] in q):
+                instructions.append(rule['instruction'])
+            if rule['action'] == 'no_graph' and (rule['trigger'] in q or 'graph' in q or 'chart' in q):
+                instructions.append(rule['instruction'])
+        
+        return "\n".join(instructions)
 
     async def _get_similar_queries_context(self, user_query: str, client) -> str:
         """Get similar successful queries for better context."""
@@ -1377,6 +1790,8 @@ CRITICAL SQL GENERATION RULES:
                     return "User specifically requested PIE CHART visualization"
                 elif 'bar chart' in line.lower():
                     return "User specifically requested BAR CHART visualization"
+                elif 'line chart' in line.lower() or 'line graph' in line.lower():
+                    return "User specifically requested LINE CHART visualization"
                 elif 'improve' in line.lower() and ('rate' in line.lower() or 'success' in line.lower()):
                     return "User wants success/failure rate analysis"
                 elif 'try again' in line.lower():
@@ -1430,6 +1845,14 @@ CRITICAL SQL GENERATION RULES:
                     analysis['chart_type'] = 'pie'
                     analysis['specific_request'] = "User previously requested pie chart"
                     break
+                elif 'line chart' in line.lower() or 'line graph' in line.lower():
+                    analysis['chart_type'] = 'line'
+                    analysis['specific_request'] = "User previously requested line chart"
+                    break
+                elif 'bar chart' in line.lower():
+                    analysis['chart_type'] = 'bar'
+                    analysis['specific_request'] = "User previously requested bar chart"
+                    break
         
         # Determine data aggregation needs
         if analysis['chart_type'] == 'pie':
@@ -1474,6 +1897,11 @@ CRITICAL SQL GENERATION RULES:
             guidance.append("- USE: UNION or proper GROUP BY to create category/value pairs")
             guidance.append("- CRITICAL: Follow complete schema rules for merchant_user_id access")
             guidance.append("- FOR MERCHANTS: Use subqueries to categorize merchants by activity/success")
+        elif chart_analysis['chart_type'] == 'line':
+            guidance.append("- LINE CHART REQUIRES: Time series data with period/date and values")
+            guidance.append("- USE: DATE_FORMAT for time grouping (e.g., '%M %Y' for monthly)")
+            guidance.append("- ORDER BY: Always order by time/period for proper line progression")
+            guidance.append("- CRITICAL: Ensure data has time dimension for line charts")
         
         return "\n".join(guidance) + "\n"
 
@@ -1710,6 +2138,7 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
     def _get_complete_smart_fallback_tool_call(self, user_query: str, history: List[str]) -> List[Dict]:
         """Get complete smart fallback based on query analysis. For ARPU/metric queries, fallback to a simple ARPU SQL."""
         query_lower = user_query.lower()
+        
         # If a specific date is present, do not fallback to last N days
         date_patterns = [
             r'\d{4}-\d{2}-\d{2}',
@@ -1724,6 +2153,7 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
                     'original_query': user_query,
                     'wants_graph': False
                 }]
+        
         # ARPU/metric fallback
         metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
         if any(k in query_lower for k in metric_keywords):
@@ -1738,6 +2168,7 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
                 'original_query': user_query,
                 'wants_graph': False
             }]
+        
         if 'subscription' in query_lower and any(word in query_lower for word in ['last', 'recent', 'days']):
             return [{
                 'tool': 'get_subscriptions_in_last_days',
@@ -1773,6 +2204,7 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
         """Validate and auto-fix common SQL syntax issues: parentheses, IN clauses, dangling literals, and unclosed quotes."""
         import re
         fixed = False
+        
         # 1. Balance parentheses
         open_parens = sql_query.count('(')
         close_parens = sql_query.count(')')
@@ -1782,21 +2214,26 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
         elif close_parens > open_parens:
             sql_query = '(' * (close_parens - open_parens) + sql_query
             fixed = True
+        
         # 2. Ensure IN (...) clauses are closed
         in_pattern = re.compile(r'IN\s*\(([^)]*)$', re.IGNORECASE)
         match = in_pattern.search(sql_query)
         if match:
             sql_query += ')'
             fixed = True
+        
         # 3. Warn if SQL ends with a dangling string literal
         if re.search(r"'\w+'\s*$", sql_query) and not sql_query.strip().lower().endswith("'as value"):
             logger.warning("SQL ends with a string literal; possible missing clause or context.")
             # Only log, do not print to user
+        
         # 4. Ensure all quotes are closed
         sql_query = self._ensure_closed_quotes(sql_query)
+        
         if fixed:
             logger.warning(f"SQL auto-fixed for syntax: {sql_query}")
             # Only log, do not print to user
+        
         return sql_query
 
     def _fix_sql_date_math(self, sql_query: str) -> str:
@@ -1834,7 +2271,16 @@ class CompleteEnhancedResultFormatter:
             # Main result
             if result.data and isinstance(result.data, list) and len(result.data) == 1:
                 row = result.data[0]
-                for k, v in row.items():
+                # --- POST-PROCESSING: Convert period like '2025-04' to 'April 2025' ---
+                new_row = dict(row)
+                if 'period' in row and isinstance(row['period'], str):
+                    period_val = row['period']
+                    match = re.match(r'^(20\d{2})-(0[1-9]|1[0-2])$', period_val)
+                    if match:
+                        year, month = match.groups()
+                        month_name = calendar.month_name[int(month)]
+                        new_row['period'] = f"{month_name} {year}"
+                for k, v in new_row.items():
                     output.append(f"{k.replace('_', ' ').capitalize()}: {v}")
             elif result.data and isinstance(result.data, list):
                 # Table output for breakdowns
@@ -1842,12 +2288,23 @@ class CompleteEnhancedResultFormatter:
                 output.append(" | ".join(headers))
                 output.append("-" * (3 * len(headers)))
                 for row in result.data:
-                    output.append(" | ".join(str(row[h]) for h in headers))
+                    # --- POST-PROCESSING: Convert period like '2025-04' to 'April 2025' ---
+                    new_row = dict(row)
+                    if 'period' in row and isinstance(row['period'], str):
+                        period_val = row['period']
+                        match = re.match(r'^(20\d{2})-(0[1-9]|1[0-2])$', period_val)
+                        if match:
+                            year, month = match.groups()
+                            month_name = calendar.month_name[int(month)]
+                            new_row['period'] = f"{month_name} {year}"
+                    output.append(" | ".join(str(new_row[h]) for h in headers))
             else:
                 output.append(str(result.data))
+            
             # Only show graph info if show_graph is True
             if show_graph and getattr(result, 'graph_generated', False):
-                output.append(f"\n[Graph generated: {getattr(result, 'graph_filepath', '[see file]')}]\n")
+                output.append(f"\n[Graph generated: {getattr(result, 'graph_filepath', '[see file]')}]")
+            
             # Show technical details if requested
             if show_details:
                 if getattr(result, 'generated_sql', None):
@@ -1856,6 +2313,7 @@ class CompleteEnhancedResultFormatter:
                     output.append(f"\n❌ Error: {result.error}")
                 if getattr(result, 'message', None):
                     output.append(f"\n📝 {result.message}")
+            
             return "\n".join(output)
         except Exception as e:
             return f"❌ Error formatting result: {e}"
@@ -1865,12 +2323,16 @@ class CompleteEnhancedResultFormatter:
         try:
             if not results:
                 return "❌ No results to display"
+            
             output = [f"🎯 MULTITOOL COMPLETE RESULTS FOR: '{query}'", "=" * 80]
+            
             # Filter out irrelevant/failed/None results
             relevant_tools = {'execute_dynamic_sql', 'execute_dynamic_sql_with_graph', 'get_database_status'}
             filtered_results = [r for r in results if r and getattr(r, 'success', False) and r.data is not None and r.tool_used in relevant_tools]
+            
             if not filtered_results:
                 return "❌ No successful or relevant results to display. Please try rephrasing your query."
+            
             # Group results by query if they have query_index
             results_by_query = {}
             for result in filtered_results:
@@ -1878,270 +2340,32 @@ class CompleteEnhancedResultFormatter:
                 if query_index not in results_by_query:
                     results_by_query[query_index] = []
                 results_by_query[query_index].append(result)
+            
             # Display results grouped by query
             for query_index in sorted(results_by_query.keys()):
                 query_results = results_by_query[query_index]
                 if len(results_by_query) > 1:
                     output.append(f"\n--- Query {query_index} Results ---")
+                
                 for i, result in enumerate(query_results):
                     if len(query_results) > 1:
                         output.append(f"\n  -- Result {i+1} --")
+                    
                     single_result = self.format_single_result(result)
                     if len(results_by_query) > 1:
                         single_result = '\n'.join(f"  {line}" for line in single_result.split('\n'))
                     output.append(single_result)
+            
             # Summary
             total_success = len(filtered_results)
             total_results = len(results)
             output.append(f"\n📊 MULTITOOL Summary: {total_success}/{total_results} successful and relevant results")
             output.append(f"🔗 Processed {len(results_by_query)} individual queries")
+            
             return "\n".join(output)
         except Exception as e:
             logger.error(f"Error formatting MULTITOOL results: {e}")
             return f"❌ Error formatting MULTITOOL results: {str(e)}"
-    
-    def _format_complete_graph_info(self, result: QueryResult) -> str:
-        """Format complete graph information with enhanced details."""
-        try:
-            graph_data = result.graph_data
-            graph_type = graph_data.get('graph_type', 'unknown').title()
-            title = graph_data.get('title', 'Complete Data Visualization')
-            
-            output = [
-                "📊 COMPLETE GRAPH GENERATED",
-                "=" * 50,
-                f"Graph Type: {graph_type}",
-                f"Title: {title}"
-            ]
-            
-            if hasattr(result, 'graph_filepath') and result.graph_filepath:
-                output.append(f"Saved to: {result.graph_filepath}")
-                output.append("🎨 Graph opened in default image viewer")
-            
-            # Add complete data summary
-            data_summary = graph_data.get('data_summary', {})
-            if data_summary:
-                output.append(f"Data Points: {data_summary.get('total_rows', 'N/A')}")
-                output.append(f"Columns: {', '.join(data_summary.get('columns', []))}")
-                output.append(f"Chart Optimization: {data_summary.get('chart_optimization', 'N/A')}")
-            
-            return "\n".join(output)
-        except Exception as e:
-            logger.error(f"Error formatting complete graph info: {e}")
-            return "📊 Complete graph generated (formatting error)"
-    
-    def _format_complete_main_data(self, result: QueryResult) -> str:
-        """Format main data with complete enhanced presentation."""
-        try:
-            is_dynamic = result.tool_used in ['execute_dynamic_sql', 'execute_dynamic_sql_with_graph']
-            
-            header = f"📊 COMPLETE DYNAMIC QUERY RESULT" if is_dynamic else f"📊 COMPLETE RESULT FROM TOOL: {result.tool_used.upper()}"
-            output = [header, "=" * len(header)]
-            
-            if isinstance(result.data, list) and len(result.data) > 0:
-                table_output = self._format_complete_enhanced_table(result.data)
-                output.extend(table_output)
-                
-                # Add complete intelligent insights
-                insights = self._generate_complete_smart_insights(result.data, result.original_query)
-                if insights:
-                    output.extend(insights)
-                    
-            elif isinstance(result.data, dict):
-                output.extend(self._format_complete_dict_data(result.data))
-            else:
-                output.append(str(result.data))
-            
-            return "\n".join(output)
-            
-        except Exception as e:
-            logger.error(f"Error formatting complete main data: {e}")
-            return f"Error formatting complete data: {str(e)}"
-    
-    def _format_complete_enhanced_table(self, data: List[Dict]) -> List[str]:
-        """Format table with complete enhanced styling and smart column handling."""
-        try:
-            if not data:
-                return ["No data to display"]
-            
-            headers = list(data[0].keys())
-            if not headers:
-                return ["No columns to display"]
-            
-            # Complete smart column width calculation
-            col_widths = self._calculate_complete_smart_column_widths(data, headers)
-            
-            output = []
-            
-            # Create header
-            header_line = " | ".join(h.ljust(col_widths[h]) for h in headers)
-            output.append(header_line)
-            output.append("-" * len(header_line))
-            
-            # Add data rows (limit for readability)
-            display_rows = data[:50]
-            for row in display_rows:
-                formatted_row = []
-                for h in headers:
-                    val = self._format_complete_cell_value(row.get(h), col_widths[h])
-                    formatted_row.append(val.ljust(col_widths[h]))
-                output.append(" | ".join(formatted_row))
-            
-            # Add complete summary
-            output.append("")
-            total_rows = len(data)
-            if total_rows > 50:
-                output.append(f"📈 Showing 50 of {total_rows} total rows")
-            else:
-                output.append(f"📈 Total rows: {total_rows}")
-            
-            return output
-            
-        except Exception as e:
-            logger.error(f"Error formatting complete table: {e}")
-            return [f"Error formatting complete table: {str(e)}"]
-    
-    def _calculate_complete_smart_column_widths(self, data: List[Dict], headers: List[str]) -> Dict[str, int]:
-        """Calculate complete smart column widths based on content."""
-        col_widths = {}
-        
-        for h in headers:
-            try:
-                # Start with header length
-                max_width = len(str(h))
-                
-                # Check first 20 rows for content width
-                for row in data[:20]:
-                    val_len = len(self._format_complete_cell_value(row.get(h), 50))
-                    max_width = max(max_width, val_len)
-                
-                # Set reasonable bounds
-                col_widths[h] = max(10, min(max_width, 30))
-                
-            except Exception:
-                col_widths[h] = 15  # Default width
-        
-        return col_widths
-    
-    def _format_complete_cell_value(self, value, max_width: int) -> str:
-        """Format individual cell values with complete smart truncation."""
-        try:
-            if value is None:
-                return ""
-            
-            str_val = str(value)
-            
-            # Handle different value types
-            if isinstance(value, float):
-                str_val = f"{value:.1f}" if value != int(value) else str(int(value))
-            
-            # Truncate if too long
-            if len(str_val) > max_width:
-                str_val = str_val[:max_width-3] + "..."
-            
-            return str_val
-            
-        except Exception:
-            return str(value)[:max_width] if value else ""
-    
-    def _format_complete_dict_data(self, data: Dict) -> List[str]:
-        """Format dictionary data with complete enhanced presentation."""
-        try:
-            output = []
-            for key, value in data.items():
-                try:
-                    if isinstance(value, (dict, list)):
-                        output.append(f"{key}:")
-                        output.append(f"  {json.dumps(value, indent=2, default=str)}")
-                    else:
-                        output.append(f"{key}: {value}")
-                except Exception:
-                    output.append(f"{key}: [Error displaying value]")
-            return output
-        except Exception as e:
-            return [f"Error formatting complete dictionary: {str(e)}"]
-    
-    def _generate_complete_smart_insights(self, data: List[Dict], original_query: str) -> List[str]:
-        """Generate complete smart insights about the data."""
-        try:
-            if not data or len(data) < 2:
-                return []
-            
-            insights = []
-            headers = list(data[0].keys())
-            query_lower = original_query.lower() if original_query else ""
-            
-            # Identify numeric columns
-            numeric_cols = self._identify_complete_numeric_columns(data, headers)
-            date_cols = self._identify_complete_date_columns(data, headers)
-            
-            # Generate complete dataset insights
-            if len(data) > 100:
-                insights.append(f"\n💡 **Large Dataset**: {len(data)} records - consider filtering for specific analysis")
-            
-            # Generate complete time series insights
-            if date_cols and len(data) > 10:
-                insights.append(f"\n📅 **Time Series Data**: Consider grouping by day/week/month for trend analysis")
-            
-            # Generate complete numeric insights
-            for col in numeric_cols[:2]:  # Limit to first 2 numeric columns
-                try:
-                    values = [float(row.get(col, 0)) for row in data 
-                             if row.get(col) is not None and isinstance(row.get(col), (int, float))]
-                    if values:
-                        avg_val = sum(values) / len(values)
-                        max_val = max(values)
-                        min_val = min(values)
-                        if 'rate' in col.lower() or 'percent' in col.lower():
-                            insights.append(f"\n📊 **{col}**: Average: {avg_val:.1f}%, Range: {min_val:.1f}% - {max_val:.1f}%")
-                        else:
-                            insights.append(f"\n📊 **{col}**: Average: {avg_val:.1f}, Maximum: {max_val}")
-                except Exception:
-                    continue
-            
-            # Complete query-specific insights
-            if 'success' in query_lower and 'rate' in query_lower:
-                success_data = [row for row in data if 'success' in str(row).lower()]
-                if success_data:
-                    insights.append(f"\n🎯 **Success Analysis**: Found {len(success_data)} success-related data points")
-            
-            if 'merchant' in query_lower:
-                merchant_data = [row for row in data if any('merchant' in str(v).lower() for v in row.values())]
-                if merchant_data:
-                    insights.append(f"\n🏪 **Merchant Analysis**: Found {len(merchant_data)} merchant-related data points")
-            
-            return insights
-            
-        except Exception as e:
-            logger.debug(f"Could not generate complete insights: {e}")
-            return []
-
-    def _identify_complete_numeric_columns(self, data: List[Dict], headers: List[str]) -> List[str]:
-        """Identify numeric columns in the data with complete logic."""
-        numeric_cols = []
-        
-        for col in headers:
-            try:
-                # Check first 5 values
-                sample_values = [row.get(col) for row in data[:5] if row.get(col) is not None]
-                if sample_values:
-                    numeric_count = sum(1 for val in sample_values if isinstance(val, (int, float)))
-                    if numeric_count >= len(sample_values) * 0.8:  # 80% numeric
-                        numeric_cols.append(col)
-            except Exception:
-                continue
-        
-        return numeric_cols
-
-    def _identify_complete_date_columns(self, data: List[Dict], headers: List[str]) -> List[str]:
-        """Identify date columns in the data with complete logic."""
-        date_cols = []
-        
-        for col in headers:
-            if 'date' in col.lower() or 'time' in col.lower():
-                date_cols.append(col)
-        
-        return date_cols
 
 # Complete Enhanced Universal Client with all fixes
 class CompleteEnhancedUniversalClient:
@@ -2268,7 +2492,7 @@ class CompleteEnhancedUniversalClient:
         )
 
     async def _handle_complete_smart_sql_with_graph(self, parameters: Dict, original_query: str) -> QueryResult:
-        """Complete smart SQL with graph generation handling."""
+        """FIXED: Complete smart SQL with graph generation handling."""
         try:
             # Execute SQL first
             sql_result = await self.call_tool('execute_dynamic_sql', {
@@ -2288,33 +2512,31 @@ class CompleteEnhancedUniversalClient:
             
             # Generate graph with complete enhanced handling
             try:
-                graph_config = {
-                    'data': sql_result.data,
+                # FIXED: Pass SQL result data directly to graph generator
+                graph_data = {
+                    'data': sql_result.data,  # Pass SQL result data
                     'graph_type': parameters.get('graph_type', 'bar'),
-                    'custom_config': {
-                        'title': self._generate_complete_smart_title(original_query),
-                        'description': f"Generated from: {original_query}"
-                    }
+                    'title': self._generate_complete_smart_title(original_query),
+                    'description': f"Generated from: {original_query}"
                 }
                 
-                graph_result = await self.call_tool('generate_graph_data', graph_config)
+                # ENFORCE: Always set graph_type in graph_data to the overridden value
+                enforced_type = parameters.get('graph_type', 'bar')
+                graph_data['graph_type'] = enforced_type
+                logger.info(f"[ENFORCE] Setting graph_data['graph_type'] = '{enforced_type}' before generate_graph")
                 
-                if graph_result.success and graph_result.data:
-                    graph_filepath = self.graph_generator.generate_graph(
-                        graph_result.data, original_query
-                    )
-                    
-                    sql_result.graph_data = graph_result.data
-                    sql_result.graph_generated = graph_filepath is not None
-                    
-                    if graph_filepath:
-                        sql_result.graph_filepath = graph_filepath
-                        sql_result.message = (sql_result.message or "") + f"\n📊 Complete graph generated successfully"
-                    else:
-                        sql_result.message = (sql_result.message or "") + f"\n⚠️ Complete graph data generated but file creation failed"
+                graph_filepath = self.graph_generator.generate_graph(
+                    graph_data, original_query
+                )
+                
+                sql_result.graph_data = graph_data
+                sql_result.graph_generated = graph_filepath is not None
+                
+                if graph_filepath:
+                    sql_result.graph_filepath = graph_filepath
+                    sql_result.message = (sql_result.message or "") + f"\n📊 Complete graph generated successfully"
                 else:
-                    error_msg = graph_result.error if graph_result.error else "Complete graph generation service error"
-                    sql_result.message = (sql_result.message or "") + f"\n⚠️ Complete graph generation failed: {error_msg}"
+                    sql_result.message = (sql_result.message or "") + f"\n⚠️ Complete graph data generated but file creation failed"
             
             except Exception as graph_error:
                 logger.error(f"Complete graph generation error: {graph_error}")
@@ -2355,6 +2577,7 @@ class CompleteEnhancedUniversalClient:
         """Complete enhanced query processing with smart AI and MULTITOOL support. Includes post-processing for metric queries."""
         try:
             parsed_calls = await self.nlp.parse_query(user_query, self.history, client=self)
+            
             if len(parsed_calls) > 1:
                 results = []
                 for call in parsed_calls:
@@ -2381,16 +2604,19 @@ class CompleteEnhancedUniversalClient:
                         error_result.total_queries = call.get('total_queries', len(parsed_calls))
                         error_result.is_multitool = call.get('is_multitool', True)
                         results.append(error_result)
+                
                 # Post-process for metric queries: if user asked for ARPU/metric and got a breakdown, retry with explicit prompt
                 metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
                 user_query_lower = user_query.lower()
                 is_metric_query = any(k in user_query_lower for k in metric_keywords)
+                
                 if is_metric_query:
                     for result in results:
                         if result.data and isinstance(result.data, list) and len(result.data) > 1 and any('category' in row for row in result.data if isinstance(row, dict)):
                             logger.info("Detected breakdown for metric query; retrying with explicit single-value prompt.")
                             explicit_query = user_query + " (Return only a single ARPU value, not a breakdown or category table.)"
                             return await self.query(explicit_query)
+                
                 return results
             else:
                 call = parsed_calls[0]
@@ -2404,15 +2630,18 @@ class CompleteEnhancedUniversalClient:
                 result.query_index = 1
                 result.total_queries = 1
                 result.is_multitool = False
+                
                 # Post-process for metric queries: if user asked for ARPU/metric and got a breakdown, retry with explicit prompt
                 metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
                 user_query_lower = user_query.lower()
                 is_metric_query = any(k in user_query_lower for k in metric_keywords)
+                
                 if is_metric_query:
                     if result.data and isinstance(result.data, list) and len(result.data) > 1 and any('category' in row for row in result.data if isinstance(row, dict)):
                         logger.info("Detected breakdown for metric query; retrying with explicit single-value prompt.")
                         explicit_query = user_query + " (Return only a single ARPU value, not a breakdown or category table.)"
                         return await self.query(explicit_query)
+                
                 return result
         except Exception as e:
             logger.error(f"Error in complete query processing: {e}", exc_info=True)
@@ -2717,9 +2946,11 @@ if __name__ == "__main__":
                             break
                         if not user_query:
                             continue
+                    
                     # Always reload improvement suggestions before each query for immediate feedback effect
                     if hasattr(client.nlp, '_last_best_chart_type'):
                         del client.nlp._last_best_chart_type
+                    
                     # Context-aware query resolution
                     resolved_query = user_query
                     if 'that day' in user_query.lower() and 'last_date' in client.context:
@@ -2728,15 +2959,18 @@ if __name__ == "__main__":
                         resolved_query = user_query.lower().replace('that merchant', client.context['last_merchant'])
                     if 'that count' in user_query.lower() and 'last_count' in client.context:
                         resolved_query = user_query.lower().replace('that count', str(client.context['last_count']))
+                    
                     # Process query (handles both single and multitool automatically)
                     result = await client.query(resolved_query)
                     print_separator()
+                    
                     # Format and display results
                     if isinstance(result, list):
                         print_header(f"MULTITOOL RESULTS FOR: '{resolved_query}'")
                         output = client.formatter.format_multi_result(result, resolved_query)
                         print(f"{output}")
                         print_separator()
+                        
                         # Update context with key results from all queries
                         for individual_result in result:
                             if individual_result.data and isinstance(individual_result.data, list) and len(individual_result.data) > 0:
@@ -2749,14 +2983,17 @@ if __name__ == "__main__":
                                             client.context['last_merchant'] = str(v)
                                         if 'count' in k.lower() or 'num' in k.lower():
                                             client.context['last_count'] = v
+                        
                         # Feedback for multitool results
                         for i, individual_result in enumerate(result, 1):
                             if (getattr(individual_result, 'is_dynamic', False) and 
                                 getattr(individual_result, 'success', False) and 
                                 getattr(individual_result, 'data', None) is not None):
+                                
                                 print_feedback_prompt(f"\n📝 Feedback for Query {i} (generated by AI):")
                                 print_feedback_prompt("Your feedback helps the system learn and improve over time.")
                                 feedback_given = False
+                                
                                 while not feedback_given:
                                     try:
                                         feedback_input = input(f"{MAGENTA}Was Query {i} helpful? (y/n/skip): {RESET}").lower().strip()
@@ -2788,6 +3025,7 @@ if __name__ == "__main__":
                         output = client.formatter.format_single_result(result, show_details=args.show_details)
                         print(f"{output}")
                         print_separator()
+                        
                         # Update context with key results
                         if result.data and isinstance(result.data, list) and len(result.data) > 0:
                             row = result.data[0]
@@ -2799,10 +3037,12 @@ if __name__ == "__main__":
                                         client.context['last_merchant'] = str(v)
                                     if 'count' in k.lower() or 'num' in k.lower():
                                         client.context['last_count'] = v
+                        
                         # Feedback for single result
                         if True:
                             print_feedback_prompt("\n📝 This answer was generated using COMPLETE AI with semantic learning!")
                             print_feedback_prompt("Your feedback helps the system learn and improve over time.")
+                            
                             while True:
                                 try:
                                     feedback_input = input(f"{MAGENTA}Was this helpful? (y/n/skip): {RESET}").lower().strip()
@@ -2828,10 +3068,12 @@ if __name__ == "__main__":
                                         print("Please enter 'y', 'n', or 'skip'.")
                                 except (KeyboardInterrupt, EOFError):
                                     break
+                    
                     client.manage_history(user_query, output)
                 except Exception as e:
                     print_error(f"❌ Error running query: {e}")
                     logger.error(f"Query error: {e}", exc_info=True)
+                
                 args.query = None  # After first run, always prompt interactively
 
     # Run interactive mode or single query

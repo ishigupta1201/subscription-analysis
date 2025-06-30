@@ -889,6 +889,34 @@ Tried locations: """ + str([str(p) for p in config_paths])
         except Exception as e:
             print(f"⚠️ Cleanup warning: {e}", file=sys.stderr)
 
+    async def _process_query(self, query: str, history: list = None, **kwargs):
+        query_lower = query.lower().strip()
+        # 0. Handle month-to-month revenue comparison
+        if (
+            ('last month' in query_lower and 'previous month' in query_lower) or
+            ('compare' in query_lower and 'month' in query_lower and 'revenue' in query_lower)
+        ):
+            sql = """
+SELECT
+  'Last Month' AS period,
+  SUM(p.trans_amount_decimal) AS total_revenue
+FROM subscription_payment_details p
+JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
+WHERE p.status = 'ACTIVE'
+  AND DATE(p.created_date) >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')
+  AND DATE(p.created_date) < DATE_FORMAT(CURDATE(), '%Y-%m-01')
+UNION ALL
+SELECT
+  'Previous Month' AS period,
+  SUM(p.trans_amount_decimal) AS total_revenue
+FROM subscription_payment_details p
+JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
+WHERE p.status = 'ACTIVE'
+  AND DATE(p.created_date) >= DATE_FORMAT(CURDATE() - INTERVAL 2 MONTH, '%Y-%m-01')
+  AND DATE(p.created_date) < DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01');
+"""
+            return await self._execute_dynamic_sql(sql, query)
+
 async def main():
     """Main entry point for COMPLETE MCP server - Compatible with ALL MCP clients"""
     print(f"🚀 COMPLETE MCP Client starting from: {Path(__file__).parent.absolute()}", file=sys.stderr)

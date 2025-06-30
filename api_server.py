@@ -7,6 +7,7 @@ COMPLETE API Server for Subscription Analytics - FIXED VERSION WITH MULTITOOL SU
 - All tools implemented and working
 - MULTITOOL FUNCTIONALITY FULLY SUPPORTED
 - ENHANCED PERFORMANCE AND STABILITY
+- FIXED GRAPH DATA PREPARATION FOR LINE CHARTS
 """
 
 import datetime
@@ -824,6 +825,7 @@ def _auto_fix_sql_errors(sql: str, error: str) -> str:
     """Auto-fix common SQL errors."""
     try:
         error_lower = error.lower()
+        
         # Fix quote escaping issues - this is the most common problem
         if 'syntax' in error_lower or 'quote' in error_lower or '42000' in error_lower:
             # More aggressive quote fixing for syntax errors
@@ -843,6 +845,7 @@ def _auto_fix_sql_errors(sql: str, error: str) -> str:
             sql = re.sub(r'(\d{4}-\d{2}-\d{2})"', r"'\1'", sql)
             # Ensure all string literals use single quotes
             sql = re.sub(r'"([^"]*)"', r"'\1'", sql)
+        
         # Fix date queries specifically
         if 'date' in error_lower or 'created_date' in sql.lower():
             sql = re.sub(r'DATE\s*\(\s*created_date\s*\)\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', 
@@ -851,6 +854,7 @@ def _auto_fix_sql_errors(sql: str, error: str) -> str:
                         r"DATE(created_date) = '\1'", sql)
             sql = re.sub(r'subcription_start_date\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', 
                         r"DATE(subcription_start_date) = '\1'", sql)
+        
         # Fix merchant analysis specifically with better logic
         if 'merchant' in sql.lower() and ('syntax' in error_lower or 'unknown column' in error_lower):
             threshold_match = re.search(r'(\d+)', sql)
@@ -867,6 +871,7 @@ FROM (
 ) merchant_stats
 GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} Transactions' ELSE '{threshold} or Fewer Transactions' END
 """
+        
         # Fix subscription counting queries ONLY if threshold/comparison language is present
         threshold_phrases = ['more than', 'less than', 'at least', 'or more', 'at most', 'or fewer', 'exactly', 'equal to']
         if (
@@ -886,6 +891,7 @@ FROM (
 ) merchant_subscriptions
 GROUP BY CASE WHEN total_subscriptions > {threshold} THEN 'More than {threshold} Subscriptions' ELSE '{threshold} or Fewer Subscriptions' END
 """
+        
         # Fix status value issues
         if 'unknown column' in error_lower or 'status' in error_lower:
             status_values = ['ACTIVE', 'INACTIVE', 'FAILED', 'FAIL', 'INIT', 'CLOSED', 'REJECT']
@@ -893,10 +899,12 @@ GROUP BY CASE WHEN total_subscriptions > {threshold} THEN 'More than {threshold}
                 pattern = rf'\bstatus\s*(?:=|!=|<>)\s*{status}\b'
                 replacement = f"status = '{status}'"
                 sql = re.sub(pattern, replacement, sql, flags=re.IGNORECASE)
+        
         # Clean up and return
         sql = re.sub(r'\s+', ' ', sql).strip()
         logger.info(f"🔧 Auto-fixed SQL: {sql[:100]}...")
         return sql
+        
     except Exception as e:
         logger.warning(f"Auto-fix failed: {e}")
         return sql
@@ -1206,7 +1214,7 @@ class CompleteEnhancedGraphAnalyzer:
             return []
 
 def complete_generate_graph_data(data: List[Dict], graph_type: str = None, custom_config: Dict = None) -> Dict:
-    """COMPLETE enhanced graph data generation with smart pie chart support."""
+    """FIXED: COMPLETE enhanced graph data generation with smart pie chart support and proper data conversion."""
     try:
         if not data or not isinstance(data, list) or len(data) == 0:
             return {"error": "No data provided for complete graph generation"}
@@ -1267,7 +1275,7 @@ def complete_generate_graph_data(data: List[Dict], graph_type: str = None, custo
         if custom_config:
             selected_graph.update(custom_config)
         
-        # Complete enhanced data preparation
+        # FIXED: Complete enhanced data preparation with proper format conversion
         prepared_data = _prepare_complete_graph_data(data, selected_graph)
         if "error" in prepared_data:
             return prepared_data
@@ -1302,9 +1310,12 @@ def complete_generate_graph_data(data: List[Dict], graph_type: str = None, custo
         return {"error": f"Critical complete graph generation failure: {str(e)}"}
 
 def _prepare_complete_graph_data(data: List[Dict], graph_config: Dict) -> Dict:
-    """Prepare complete graph data with advanced handling."""
+    """FIXED: Prepare complete graph data with proper format conversion for all chart types."""
     try:
         graph_type = graph_config.get('type', 'pie')
+        columns = list(data[0].keys()) if data else []
+        
+        logger.info(f"📊 Preparing {graph_type} chart data with columns: {columns}")
         
         if graph_type == 'pie':
             # Complete pie chart data preparation
@@ -1332,7 +1343,6 @@ def _prepare_complete_graph_data(data: List[Dict], graph_config: Dict) -> Dict:
                     return {"labels": labels, "values": values}
             else:
                 # Multiple rows - handle different pie chart types
-                columns = list(data[0].keys())
                 if len(columns) >= 2:
                     category_col = columns[0]
                     value_col = columns[1]
@@ -1353,12 +1363,18 @@ def _prepare_complete_graph_data(data: List[Dict], graph_config: Dict) -> Dict:
                     
                     return {"labels": labels, "values": values}
         
-        elif graph_type in ['bar', 'line']:
-            # Complete bar/line charts
-            columns = list(data[0].keys())
+        elif graph_type in ['bar', 'horizontal_bar']:
+            # FIXED: Complete bar charts with proper data mapping
             if len(columns) >= 2:
+                # Try to identify the best columns for x and y
                 x_col = columns[0]
                 y_col = columns[1]
+                
+                # Look for better column mapping
+                for col in columns:
+                    if any(word in col.lower() for word in ['amount', 'revenue', 'total', 'count', 'value', 'num']):
+                        y_col = col
+                        break
                 
                 categories = []
                 values = []
@@ -1374,20 +1390,89 @@ def _prepare_complete_graph_data(data: List[Dict], graph_config: Dict) -> Dict:
                         except (ValueError, TypeError):
                             values.append(0)
                 
-                if graph_type == 'line':
-                    return {
-                        "x_values": categories, 
-                        "y_values": values,
-                        "x_label": _clean_column_name_for_display(x_col),
-                        "y_label": _clean_column_name_for_display(y_col)
-                    }
-                else:
-                    return {
-                        "categories": categories, 
-                        "values": values,
-                        "x_label": _clean_column_name_for_display(x_col),
-                        "y_label": _clean_column_name_for_display(y_col)
-                    }
+                return {
+                    "categories": categories, 
+                    "values": values,
+                    "x_label": _clean_column_name_for_display(x_col),
+                    "y_label": _clean_column_name_for_display(y_col)
+                }
+        
+        elif graph_type == 'line':
+            # FIXED: Complete line charts with proper time series mapping
+            if len(columns) >= 2:
+                # Smart column identification for time series
+                time_col = None
+                value_col = None
+                
+                # Find time/period column
+                for col in columns:
+                    col_lower = col.lower()
+                    if any(word in col_lower for word in ['date', 'time', 'period', 'month', 'year', 'day']):
+                        time_col = col
+                        break
+                
+                # Find value column
+                for col in columns:
+                    col_lower = col.lower()
+                    if any(word in col_lower for word in ['revenue', 'amount', 'total', 'count', 'value', 'num']):
+                        value_col = col
+                        break
+                
+                # Fallback to first two columns if no smart mapping found
+                if not time_col:
+                    time_col = columns[0]
+                if not value_col:
+                    value_col = columns[1]
+                
+                x_values = []
+                y_values = []
+                
+                for row in data:
+                    x_val = row.get(time_col)
+                    y_val = row.get(value_col)
+                    
+                    if x_val is not None and y_val is not None:
+                        x_values.append(str(x_val))
+                        try:
+                            y_values.append(float(y_val))
+                        except (ValueError, TypeError):
+                            y_values.append(0)
+                
+                logger.info(f"📊 Line chart prepared: {len(x_values)} data points, x_col='{time_col}', y_col='{value_col}'")
+                
+                return {
+                    "x_values": x_values, 
+                    "y_values": y_values,
+                    "x_label": _clean_column_name_for_display(time_col),
+                    "y_label": _clean_column_name_for_display(value_col)
+                }
+        
+        elif graph_type == 'scatter':
+            # Complete scatter plots
+            if len(columns) >= 2:
+                x_col = columns[0]
+                y_col = columns[1]
+                
+                x_values = []
+                y_values = []
+                
+                for row in data:
+                    x_val = row.get(x_col)
+                    y_val = row.get(y_col)
+                    
+                    if x_val is not None and y_val is not None:
+                        try:
+                            x_values.append(float(x_val))
+                            y_values.append(float(y_val))
+                        except (ValueError, TypeError):
+                            continue  # Skip non-numeric values
+                
+                return {
+                    "x_values": x_values, 
+                    "y_values": y_values,
+                    "x_label": _clean_column_name_for_display(x_col),
+                    "y_label": _clean_column_name_for_display(y_col)
+                }
         
         return {"error": f"Cannot prepare data for graph type: {graph_type}"}
         
@@ -1745,6 +1830,7 @@ async def complete_lifespan(app: FastAPI):
     logger.info("🧠 Complete semantic learning with full feedback integration")
     logger.info("🔗 MULTITOOL FUNCTIONALITY FULLY SUPPORTED AND OPTIMIZED")
     logger.info("⚡ Enhanced performance and stability improvements")
+    logger.info("🔧 FIXED: Graph data preparation for all chart types")
     yield
     logger.info("🛑 Shutting down Complete API Server")
 
@@ -1752,7 +1838,7 @@ async def complete_lifespan(app: FastAPI):
 app = FastAPI(
     title="Complete Subscription Analytics API with MULTITOOL Support",
     description="Complete subscription analytics with full semantic learning, smart graph generation, and MULTITOOL functionality",
-    version="complete-2.0.0-multitool",
+    version="complete-2.0.0-multitool-fixed",
     lifespan=complete_lifespan
 )
 
@@ -1776,7 +1862,7 @@ def complete_health_check():
             "complete_semantic_learning": "enabled" if SEMANTIC_LEARNING_ENABLED else "disabled",
             "timestamp": datetime.datetime.now().isoformat(),
             "available_tools": len(COMPLETE_TOOL_REGISTRY),
-            "version": "complete-2.0.0-multitool",
+            "version": "complete-2.0.0-multitool-fixed",
             "multitool_support": "enabled",
             "complete_features": [
                 "complete_core_tools_implemented",
@@ -1788,7 +1874,8 @@ def complete_health_check():
                 "complete_chart_type_awareness",
                 "multitool_functionality_enabled",
                 "enhanced_performance_optimizations",
-                "production_ready_stability"
+                "production_ready_stability",
+                "fixed_graph_data_preparation"
             ]
         }
         
@@ -1818,7 +1905,7 @@ def complete_health_check():
             "status": "error",
             "error": str(e),
             "timestamp": datetime.datetime.now().isoformat(),
-            "version": "complete-2.0.0-multitool"
+            "version": "complete-2.0.0-multitool-fixed"
         }
 
 @app.get("/tools", response_model=List[ToolInfo], dependencies=[Depends(verify_api_key)])
@@ -1914,6 +2001,7 @@ if __name__ == "__main__":
     logger.info("🎯 Complete chart type awareness and learning")
     logger.info("🔗 MULTITOOL FUNCTIONALITY FULLY ENABLED AND OPTIMIZED")
     logger.info("⚡ Enhanced performance and production-ready stability")
+    logger.info("🔧 FIXED: Graph data preparation for line charts and all chart types")
     
     uvicorn.run(
         "api_server:app",
