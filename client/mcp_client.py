@@ -6,6 +6,7 @@ COMPLETE FIXED MCP Client for Subscription Analytics
 - Full semantic learning and feedback system
 - Complete error handling and recovery
 - All tools preserved
+- FIXED MULTITOOL FUNCTIONALITY
 """
 
 import asyncio
@@ -45,13 +46,13 @@ class CompleteSubscriptionAnalyticsMCP:
         self.tools = [
             Tool(
                 name="natural_language_query",
-                description="Process natural language queries about subscription analytics with COMPLETE semantic learning, schema handling, and smart graph generation. Supports complex queries, comparisons, trends, visualizations, and learns from feedback.",
+                description="Process natural language queries about subscription analytics with COMPLETE semantic learning, schema handling, and smart graph generation. Supports complex queries, comparisons, trends, visualizations, and learns from feedback. SUPPORTS MULTITOOL FUNCTIONALITY.",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Natural language query about subscriptions, payments, users, or analytics. The system has complete semantic learning and will use past successful queries to improve responses."
+                            "description": "Natural language query about subscriptions, payments, users, or analytics. The system has complete semantic learning and will use past successful queries to improve responses. Can handle multiple queries separated by 'and', ';', or newlines."
                         }
                     },
                     "required": ["query"]
@@ -196,8 +197,13 @@ Tried locations: """ + str([str(p) for p in config_paths])
         """Initialize HTTP session with COMPLETE enhanced handling"""
         if not self.session:
             try:
+                # Create SSL context with proper certificate verification
+                ssl_context = ssl.create_default_context(cafile=certifi.where())
+                ssl_context.check_hostname = True
+                ssl_context.verify_mode = ssl.CERT_REQUIRED
+                
                 connector = aiohttp.TCPConnector(
-                    ssl=ssl.create_default_context(cafile=certifi.where()),
+                    ssl=ssl_context,
                     limit=10,
                     limit_per_host=5,
                     enable_cleanup_closed=True,
@@ -260,7 +266,7 @@ Tried locations: """ + str([str(p) for p in config_paths])
         print("✅ COMPLETE MCP handlers registered with ALL functionality", file=sys.stderr)
 
     async def _process_complete_natural_language_query(self, query: str) -> Dict:
-        """Process natural language query with COMPLETE functionality preserved"""
+        """Process natural language query with COMPLETE functionality preserved and FIXED MULTITOOL SUPPORT"""
         if not query.strip():
             return {"success": False, "error": "Query cannot be empty"}
         
@@ -303,20 +309,28 @@ Tried locations: """ + str([str(p) for p in config_paths])
                     result = await client.query(query)
                     
                     if isinstance(result, list):
-                        # Multiple results - PRESERVE original handling
+                        # Multiple results - PRESERVE original handling with FIXED MULTITOOL SUPPORT
                         success_count = sum(1 for r in result if r.success)
+                        total_count = len(result)
+                        
+                        # Create comprehensive multitool response
+                        multitool_data = {
+                            "type": "multitool_results",
+                            "results": [self._serialize_complete_result(r) for r in result],
+                            "query": query,
+                            "semantic_learning": "enabled",
+                            "auto_recovery": "enabled",
+                            "success_count": success_count,
+                            "total_count": total_count,
+                            "complete_features": True,
+                            "multitool_execution": True
+                        }
+                        
+                        print(f"✅ MULTITOOL: Processed {total_count} queries, {success_count} successful", file=sys.stderr)
+                        
                         return {
                             "success": True,
-                            "data": {
-                                "type": "multiple_results",
-                                "results": [self._serialize_complete_result(r) for r in result],
-                                "query": query,
-                                "semantic_learning": "enabled",
-                                "auto_recovery": "enabled",
-                                "success_count": success_count,
-                                "total_count": len(result),
-                                "complete_features": True
-                            }
+                            "data": multitool_data
                         }
                     else:
                         # Single result - PRESERVE original handling
@@ -632,7 +646,7 @@ Tried locations: """ + str([str(p) for p in config_paths])
             }
 
     def _format_complete_result(self, result_data: Dict, tool_name: str) -> str:
-        """PRESERVE complete original formatting with ALL enhancements"""
+        """PRESERVE complete original formatting with ALL enhancements and MULTITOOL SUPPORT"""
         try:
             if not result_data.get('success', False):
                 return f"❌ COMPLETE ERROR: {result_data.get('error', 'Unknown error')}"
@@ -649,11 +663,23 @@ Tried locations: """ + str([str(p) for p in config_paths])
             elif tool_name in ["get_database_status", "get_subscriptions_summary", "get_payment_success_rates"]:
                 return self._format_api_tool_result(result_data, tool_name)
             
-            # Handle main query results - PRESERVE ALL
+            # Handle main query results - PRESERVE ALL + MULTITOOL SUPPORT
             if not data:
                 return "✅ COMPLETE query succeeded, but no data returned."
             
-            # Handle multiple results - PRESERVE ALL
+            # FIXED: Handle multitool results
+            if isinstance(data, dict) and data.get('type') == 'multitool_results':
+                output = [f"🎯 MULTITOOL COMPLETE RESULTS FOR: '{data['query']}'", "=" * 80]
+                
+                for i, res_data in enumerate(data['results'], 1):
+                    output.append(f"\n--- COMPLETE Result {i} ---")
+                    output.append(self._format_single_complete_result(res_data))
+                
+                output.append(f"\n📊 MULTITOOL Success Rate: {data.get('success_count', 0)}/{data.get('total_count', 0)}")
+                output.append("✅ MULTITOOL execution completed successfully")
+                return "\n".join(output)
+            
+            # Handle multiple results (legacy format) - PRESERVE ALL
             if isinstance(data, dict) and data.get('type') == 'multiple_results':
                 output = [f"🎯 MULTIPLE COMPLETE RESULTS FOR: '{data['query']}'", "=" * 70]
                 for i, res_data in enumerate(data['results'], 1):
@@ -869,6 +895,7 @@ async def main():
     print(f"🔧 COMPLETE subscription analytics with ALL functionality preserved", file=sys.stderr)
     print(f"🧠 Enhanced with feedback system and smart graph generation", file=sys.stderr)
     print(f"🌐 Compatible with ALL MCP clients: Claude Desktop, Cursor, Windsurf, etc.", file=sys.stderr)
+    print(f"🔗 MULTITOOL FUNCTIONALITY FULLY SUPPORTED AND FIXED", file=sys.stderr)
     
     try:
         mcp_client = CompleteSubscriptionAnalyticsMCP()
@@ -878,6 +905,7 @@ async def main():
             print("🚀 COMPLETE MCP Server ready for ANY MCP CLIENT", file=sys.stderr)
             print("🎯 ALL Features available: Semantic learning, feedback system, smart graphs", file=sys.stderr)
             print("📋 ALL Tools: natural_language_query, record_feedback, get_improvement_suggestions, get_similar_queries, get_database_status, get_subscriptions_summary, get_payment_success_rates", file=sys.stderr)
+            print("🔗 MULTITOOL SUPPORT: Can process multiple queries in a single request", file=sys.stderr)
             
             await mcp_client.server.run(reader, writer, mcp_client.server.create_initialization_options())
     except Exception as e:

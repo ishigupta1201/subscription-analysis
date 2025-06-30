@@ -1,0 +1,70 @@
+[
+  {
+    "question": "Calculate the average revenue per paying user (ARPU) over the last quarter",
+    "sql": "SELECT SUM(p.trans_amount_decimal) / COUNT(DISTINCT c.merchant_user_id) AS ARPU FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id WHERE DATE(p.created_date) >= '2025-04-01' AND p.status = 'ACTIVE'",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-06-30T13:39:30.295473",
+    "chart_type": null,
+    "query_category": "user_analysis",
+    "sql_complexity": "medium",
+    "success_score": 1.0
+  },
+  {
+    "question": "What was the average revenue per user for the last 3 months?",
+    "sql": "SELECT SUM(p.trans_amount_decimal) / COUNT(DISTINCT c.merchant_user_id) AS ARPU FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id WHERE DATE(p.created_date) >= DATE_SUB(CURDATE(), INTERVAL 90 DAY) AND p.status = 'ACTIVE'",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-06-30T13:39:44.843324",
+    "chart_type": null,
+    "query_category": "user_analysis",
+    "sql_complexity": "medium",
+    "success_score": 1.0
+  },
+  {
+    "question": "Compare subscribers with more than 1 and more than 2 subscriptions",
+    "sql": "\nSELECT 'More than 1 Subscriptions' as category, COUNT(*) as value \nFROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > 1) t1\nUNION ALL\nSELECT 'More than 2 Subscriptions' as category, COUNT(*) as value  \nFROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > 2) t2\n",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-06-30T13:40:30.431429",
+    "chart_type": null,
+    "query_category": "comparison_analysis",
+    "sql_complexity": "complex",
+    "success_score": 1.0
+  },
+  {
+    "question": "How many new subscriptions did we get this month",
+    "sql": "SELECT COUNT(*) FROM subscription_contract_v2 WHERE DATE(subcription_start_date) >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-06-30T13:40:43.074099",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "simple",
+    "success_score": 1.0
+  },
+  {
+    "question": "show them them according to the dates they happened",
+    "sql": "SELECT DATE(subcription_start_date) as subscription_date, COUNT(*) as num_subscriptions FROM subscription_contract_v2 GROUP BY subscription_date ORDER BY subscription_date",
+    "was_helpful": false,
+    "feedback_type": "negative",
+    "timestamp": "2025-06-30T13:41:38.513502",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "simple",
+    "success_score": 0.0,
+    "improvement_suggestion": "i only asked for this month which is june 2025",
+    "improvement_category": "general_improvement"
+  },
+  {
+    "question": "show them them according to the dates they happened",
+    "sql": "SELECT DATE(subcription_start_date) as subscription_date, COUNT(*) AS num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) BETWEEN '2025-06-01' AND '2025-06-30' GROUP BY DATE(subcription_start_date)",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-06-30T13:42:11.857212",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "simple",
+    "success_score": 1.0
+  }
+]
