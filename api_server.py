@@ -810,8 +810,10 @@ def _fix_complete_sql_issues(sql: str) -> str:
         # Clean up whitespace
         sql = re.sub(r'\s+', ' ', sql).strip()
         
-        return sql
+        # Fix spaces between function names and parentheses
+        sql = _fix_sql_function_spacing(sql)
         
+        return sql
     except Exception as e:
         logger.warning(f"Error fixing complete SQL: {e}")
         return sql
@@ -1976,6 +1978,13 @@ def execute_complete_tool(request: ToolRequest):
             gc.collect()
         except Exception:
             pass
+
+def _fix_sql_function_spacing(sql_query: str) -> str:
+    """Fix spaces between function names and parentheses."""
+    functions = ['MIN', 'MAX', 'COUNT', 'SUM', 'AVG', 'DATE_FORMAT', 'YEARWEEK']
+    for func in functions:
+        sql_query = re.sub(rf'\b{func}\s+\(', f'{func}(', sql_query, flags=re.IGNORECASE)
+    return sql_query
 
 if __name__ == "__main__":
     # Validate environment variables

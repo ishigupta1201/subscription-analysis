@@ -210,5 +210,38 @@
     "query_category": "general_query",
     "sql_complexity": "simple",
     "success_score": 1.0
+  },
+  {
+    "question": "total subscriptions in 2023",
+    "sql": "SELECT COUNT(*) as total_subscriptions_2023 FROM subscription_contract_v2 WHERE DATE_FORMAT(subcription_start_date, '%Y') = '2023'",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-07-01T11:58:52.715446",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "simple",
+    "success_score": 1.0
+  },
+  {
+    "question": "when was the first subscription",
+    "sql": "SELECT MIN (subcription_start_date) as first_subscription FROM subscription_contract_v2",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-07-01T11:59:36.800163",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "simple",
+    "success_score": 1.0
+  },
+  {
+    "question": "show all transaction details in 2023",
+    "sql": "SELECT p.subscription_id, p.status, p.trans_amount_decimal, p.created_date, c.merchant_user_id FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id WHERE DATE_FORMAT(p.created_date, '%Y') = '2023'",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-07-01T12:00:12.098095",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "medium",
+    "success_score": 1.0
   }
 ]
