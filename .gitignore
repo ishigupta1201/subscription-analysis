@@ -156,3 +156,6 @@ Temporary Items
 api_server.log
 query_memory.json
 query_vectors.npy
+
+# Ignore generated graphs
+/generated_graphs/
