@@ -1,6 +1,6 @@
 # Subscription Analytics Platform
 
-A modern, AI-powered analytics tool for subscription and payment data. Use natural language to get insights, graphs, and reports from your subscription business—either from the command line or via Claude Desktop (MCP protocol).
+A modern, AI-powered analytics tool for subscription and payment data. Use natural language to get insights, graphs, and reports from your subscription business—either from the command line or via any MCP-compatible client.
 
 ---
 
@@ -11,7 +11,7 @@ A modern, AI-powered analytics tool for subscription and payment data. Use natur
 - Feedback-driven improvement (CLI)
 - Auto-generated graphs (PNG)
 - Secure, remote API access
-- Claude Desktop (MCP) integration
+- MCP integration
 
 ---
 
@@ -67,7 +67,7 @@ A modern, AI-powered analytics tool for subscription and payment data. Use natur
 
 ---
 
-## Quick Start (Claude Desktop / MCP Client)
+## Quick Start (MCP Client)
 
 1. **Install dependencies (if not already):**
 
@@ -86,10 +86,10 @@ A modern, AI-powered analytics tool for subscription and payment data. Use natur
    python mcp_client.py
    ```
 
-   - This will start the MCP server and wait for connections from Claude Desktop or any MCP-compatible client.
+   - This will start the MCP server and wait for connections from any MCP-compatible client.
 
-4. **Configure Claude Desktop:**
-   - Add to your Claude Desktop config (usually at `~/Library/Application Support/Claude/claude_desktop_config.json`):
+4. **Configure your MCP client:**
+   - Add to your MCP client config (see your client's documentation):
      ```json
      {
        "servers": {
@@ -105,12 +105,12 @@ A modern, AI-powered analytics tool for subscription and payment data. Use natur
        }
      }
      ```
-   - Restart Claude Desktop if needed.
-   - Now you can ask Claude: _"Show me our subscription analytics for the last month"_
+   - Restart your MCP client if needed.
+   - Now you can ask: _"Show me our subscription analytics for the last month"_
 
 ---
 
-## Example Queries (CLI or Claude)
+## Example Queries (CLI or MCP)
 
 ```bash
 python universal_client.py "Compare subscription performance for 7 days vs 30 days"
@@ -127,7 +127,7 @@ python universal_client.py "Show me database status and recent subscription summ
 subscription_analysis/
 ├── client/
 │   ├── universal_client.py   # Main CLI client
-│   ├── mcp_client.py         # MCP/Claude Desktop server
+│   ├── mcp_client.py         # MCP server
 │   ├── config_manager.py     # Config loader
 │   ├── requirements.txt      # Client dependencies
 │   ├── config.json           # Your credentials

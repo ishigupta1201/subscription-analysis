@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 """
-COMPLETE API Server for Subscription Analytics - FIXED VERSION WITH MULTITOOL SUPPORT
-- Fixed security check to not block legitimate queries
-- Fixed SQL quote and date handling
-- Enhanced error handling and auto-fixing
-- All tools implemented and working
-- MULTITOOL FUNCTIONALITY FULLY SUPPORTED
-- ENHANCED PERFORMANCE AND STABILITY
-- FIXED GRAPH DATA PREPARATION FOR LINE CHARTS
+API Server for Subscription Analytics
+- FastAPI backend for analytics tools and data access
+- Secure, production-ready, and scalable
 """
 
 import datetime

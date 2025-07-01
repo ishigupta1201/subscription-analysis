@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """
-COMPLETE FIXED MCP Client for Subscription Analytics
-- Maintains ALL original functionality
-- Works with ANY MCP client (Claude Desktop, Cursor, Windsurf, etc.)
-- Full semantic learning and feedback system
-- Complete error handling and recovery
-- All tools preserved
-- FIXED MULTITOOL FUNCTIONALITY
+MCP Client for Subscription Analytics
+- Works with any MCP-compatible client
+- Semantic learning, feedback, and multitool support
 """
 
 import asyncio
@@ -922,7 +918,7 @@ async def main():
     print(f"🚀 COMPLETE MCP Client starting from: {Path(__file__).parent.absolute()}", file=sys.stderr)
     print(f"🔧 COMPLETE subscription analytics with ALL functionality preserved", file=sys.stderr)
     print(f"🧠 Enhanced with feedback system and smart graph generation", file=sys.stderr)
-    print(f"🌐 Compatible with ALL MCP clients: Claude Desktop, Cursor, Windsurf, etc.", file=sys.stderr)
+    print(f"🌐 Compatible with ALL MCP clients: Cursor, Windsurf, etc.", file=sys.stderr)
     print(f"🔗 MULTITOOL FUNCTIONALITY FULLY SUPPORTED AND FIXED", file=sys.stderr)
     
     try:

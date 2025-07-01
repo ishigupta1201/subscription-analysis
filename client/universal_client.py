@@ -1,3 +1,10 @@
+"""
+Universal Client for Subscription Analytics
+- Command-line and interactive analytics using natural language
+- Graph generation and feedback-driven improvement
+- Connects to remote API and Gemini AI
+"""
+
 # client/universal_client.py - COMPLETE FIXED VERSION WITH ALL FUNCTIONALITY AND MULTITOOL SUPPORT
 
 import asyncio
