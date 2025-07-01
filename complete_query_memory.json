@@ -254,5 +254,16 @@
     "query_category": "rate_analysis",
     "sql_complexity": "simple",
     "success_score": 1.0
+  },
+  {
+    "question": "generate a pie chart of payment success rate for april 2025",
+    "sql": "\nSELECT \n    CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END as category,\n    COUNT(*) as value\nFROM subscription_payment_details\nWHERE DATE_FORMAT(created_date, '%Y-%m') = '2025-04' GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END\n",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-07-01T12:52:28.717671",
+    "chart_type": null,
+    "query_category": "pie_chart_request",
+    "sql_complexity": "simple",
+    "success_score": 1.0
   }
 ]

@@ -1,5 +1,6 @@
 {
     "GOOGLE_API_KEY": "AIzaSyBhYCfRh8M-N6W1ShRE81c6EWQsDMZ2HW8",
     "API_KEY_1": "sub_analytics_mhHT-jo1FcowxIKbqf3hAAMyUrRHKODxXhcd_PCHT5k",
-    "SUBSCRIPTION_API_URL": "https://subscription-analytics.onrender.com"
+    "SUBSCRIPTION_API_URL": "http://localhost:8000"
+
 }
