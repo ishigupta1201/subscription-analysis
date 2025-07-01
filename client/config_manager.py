@@ -5,7 +5,7 @@ import os
 import sys
 
 CONFIG_FILE_NAME = "config.json"
-DEFAULT_SERVER_URL = "https://subscription-analysis-production.up.railway.app"
+DEFAULT_SERVER_URL = "https://subscription-analytics.onrender.com"
 
 class ConfigManager:
     """Handles loading, saving, and prompting for user-specific configuration."""

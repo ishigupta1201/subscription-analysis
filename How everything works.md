@@ -28,9 +28,12 @@ The Subscription Analytics Platform lets you query your subscription and payment
 
 ```
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│  CLI User    │    │ Claude User  │    │   API Server │
-│ (universal_  │    │ (Claude +    │    │ (FastAPI,    │
-│ client.py)   │    │ mcp_client)  │    │ PostgreSQL)  │
+│  CLI User    │    │ MCP Client User │    │   API Server │
+│ (universal_  │    │ (mcp_client)    │    │ (FastAPI,    │
+│ client.py)   │    │ any MCP client) │    │ MySQL on    │
+│             │    │                 │    │ Railway,    │
+│             │    │                 │    │ deployed on │
+│             │    │                 │    │ Render)      │
 └─────┬────────┘    └─────┬────────┘    └─────┬────────┘
       │                   │                   │
       │                   │                   │
@@ -52,7 +55,7 @@ The Subscription Analytics Platform lets you query your subscription and payment
 ## Usage
 
 - **CLI:** Run `python universal_client.py "your query"` or just `python universal_client.py` for interactive mode.
-- **MCP Client:** Run `python mcp_client.py` and connect via your MCP client.
+- **MCP Client:** Run `python mcp_client.py` and connect via your MCP-compatible client.
 
 ## Data Flow
 
@@ -83,7 +86,7 @@ app = FastAPI(
 - **Modern Python**: Full type hints, async/await support
 - **Automatic Documentation**: OpenAPI/Swagger docs generated automatically
 - **Data Validation**: Pydantic models ensure type safety
-- **Easy Deployment**: Works seamlessly with Railway and other platforms
+- **Easy Deployment**: Works seamlessly with Render and other platforms
 
 #### MySQL with mysql-connector-python
 
@@ -100,15 +103,15 @@ def get_db_connection():
 
 - **ACID Compliance**: Ensures data consistency for financial data
 - **Mature Ecosystem**: Well-established with excellent tooling
-- **Railway Integration**: Managed MySQL service with automatic backups
+- **Render Integration**: Managed PostgreSQL service with automatic backups
 - **Performance**: Optimized for read-heavy analytics workloads
+- **Managed Services**: MySQL (on Railway), Redis, PostgreSQL available
 
-#### Railway Deployment Platform
+#### Render Deployment Platform
 
-**Why Railway:**
+**Why Render:**
 
 - **Zero Configuration**: Automatic deployments from Git
-- **Managed Services**: MySQL, Redis, PostgreSQL available
 - **Environment Variables**: Secure configuration management
 - **Scaling**: Automatic scaling based on traffic
 - **SSL/TLS**: Built-in HTTPS for all applications
@@ -213,7 +216,7 @@ config = {
 
 ### 1. API Server (`api_server.py`)
 
-The API server is the data access layer, running on Railway and connected to a MySQL database.
+The API server is the data access layer, running on Render and connected to a MySQL database on Railway.
 
 #### Database Configuration
 
@@ -832,11 +835,11 @@ echo $SUBSCRIPTION_API_URL
 
 # Verify .env file contains:
 API_KEY_1=sub_analytics_mhHT-jo1FcowxIKbqf3hAAMyUrRHKODxXhcd_PCHT5k
-SUBSCRIPTION_API_URL=https://subscription-analysis-production.up.railway.app
+SUBSCRIPTION_API_URL=https://subscription-analytics.onrender.com
 
 # Test API directly
 curl -H "Authorization: Bearer sub_analytics_mhHT-jo1FcowxIKbqf3hAAMyUrRHKODxXhcd_PCHT5k" \
-     https://subscription-analysis-production.up.railway.app/health
+     https://subscription-analytics.onrender.com/health
 ```
 
 #### 2. SSL Certificate Issues (Mac)
@@ -897,7 +900,7 @@ export GEMINI_API_KEY=your_actual_key_here
 **Solutions:**
 
 ```bash
-# Check Railway MySQL status
+# Check Render PostgreSQL status
 # Verify environment variables:
 DB_HOST=yamanote.proxy.rlwy.net
 DB_PORT=50495
@@ -926,7 +929,7 @@ mysql -h yamanote.proxy.rlwy.net -P 50495 -u root -p
       "command": "python",
       "args": ["/full/path/to/mcp_client.py", "--mcp"],
       "env": {
-        "SUBSCRIPTION_API_URL": "https://subscription-analysis-production.up.railway.app",
+        "SUBSCRIPTION_API_URL": "https://subscription-analytics.onrender.com",
         "API_KEY_1": "sub_analytics_mhHT-jo1FcowxIKbqf3hAAMyUrRHKODxXhcd_PCHT5k",
         "GEMINI_API_KEY": "your_gemini_key"
       }
@@ -945,7 +948,7 @@ python mcp_client.py --mcp
 #### 1. API Health Check
 
 ```bash
-curl https://subscription-analysis-production.up.railway.app/health
+curl https://subscription-analytics.onrender.com/health
 ```
 
 Expected response:
@@ -962,7 +965,7 @@ Expected response:
 
 ```bash
 curl -H "Authorization: Bearer <api_key>" \
-     https://subscription-analysis-production.up.railway.app/tools
+     https://subscription-analytics.onrender.com/tools
 ```
 
 #### 3. Direct Tool Execution
@@ -972,7 +975,7 @@ curl -X POST \
   -H "Authorization: Bearer <api_key>" \
   -H "Content-Type: application/json" \
   -d '{"tool_name": "get_database_status", "parameters": {}}' \
-  https://subscription-analysis-production.up.railway.app/execute
+  https://subscription-analytics.onrender.com/execute
 ```
 
 #### 4. Client Debug Mode
