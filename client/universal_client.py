@@ -654,7 +654,7 @@ class CompleteGraphGenerator:
             import subprocess
             import os
             
-            if os.name == 'nt':  # Windows
+            if os   .name == 'nt':  # Windows
                 os.startfile(filepath)
             elif sys.platform == 'darwin':  # macOS
                 subprocess.run(['open', filepath], check=True, timeout=5)
@@ -670,10 +670,10 @@ class CompleteSmartNLPProcessor:
     """COMPLETE NLP processor with enhanced threshold detection and better prompting. FIXED MULTITOOL SUPPORT."""
     
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        self.model = genai.GenerativeModel('gemini-2.0-flash-lite')
         self.db_schema = self._get_complete_database_schema()
         self.chart_keywords = self._get_chart_keywords()
-        self.tools = self._get_tools_config()
+        self.tools = self._get_tools_config()   
 
     def _get_complete_database_schema(self) -> str:
         """Get COMPLETE CORRECTED database schema with full column information."""
@@ -1380,11 +1380,55 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
                                         improvement_context: str, similar_context: str, 
                                         chart_analysis: Dict, threshold_info: Dict, 
                                         date_info: Dict, comparison_info: Dict, actionable_rules=None) -> str:
-        """Create enhanced prompt with threshold awareness and better AI guidance."""
+        """Create enhanced prompt with context awareness and better SQL generation."""
         
+        # CONTEXT AWARENESS FOR FOLLOW-UP QUERIES - NEW
+        context_guidance = ""
+        user_query_lower = user_query.lower()
+        
+        # Detect follow-up queries that need context
+        followup_patterns = ['and what about', 'what about', 'how about', 'and for', 'and in', 'and last', 'and this']
+        is_followup = any(pattern in user_query_lower for pattern in followup_patterns)
+        
+        if is_followup and history_context:
+            context_guidance = (
+                "\n\n🔥 CRITICAL FOLLOW-UP QUERY RULES:\n"
+                "- This appears to be a follow-up question referring to previous context.\n"
+                "- Look at the conversation history to understand what type of analysis the user was asking for.\n"
+                "- Apply the same analysis type but with the new time period/filter mentioned.\n"
+                "- If previous query was about 'new subscriptions this month', and user asks 'what about last month', \n"
+                "  generate SQL for new subscriptions count for last month.\n"
+                "\nFOLLOW-UP EXAMPLES:\n"
+                "Previous: 'How many new subscriptions this month?' \n"
+                "Follow-up: 'and what about last month?' \n"
+                "→ Generate: SELECT COUNT(*) as subscriptions_last_month FROM subscription_contract_v2 WHERE DATE_FORMAT(subcription_start_date, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m')\n"
+                "\nPrevious: 'Show payment success rate this week'\n"
+                "Follow-up: 'and for last week?'\n"
+                "→ Generate similar query but for last week time range\n"
+            )
+        
+        # ENHANCED SQL GENERATION RULES - NEW  
+        sql_generation_guidance = (
+            "\n\n🔥 CRITICAL SQL GENERATION RULES:\n"
+            "- ALWAYS return actual data counts, not function names or column headers\n"
+            "- For month-based queries, use proper date filtering:\n"
+            "  THIS MONTH: WHERE DATE_FORMAT(date_column, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')\n"
+            "  LAST MONTH: WHERE DATE_FORMAT(date_column, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m')\n"
+            "- For counting queries, use SELECT COUNT(*) as descriptive_name, not just raw functions\n"
+            "- NEVER return SQL function names as results - execute them properly\n"
+            "\nCORRECT SQL EXAMPLES:\n"
+            "User: How many new subscriptions this month?\n"
+            "SQL: SELECT COUNT(*) as new_subscriptions_this_month \n"
+            "     FROM subscription_contract_v2 \n"
+            "     WHERE DATE_FORMAT(subcription_start_date, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')\n"
+            "\nUser: What about last month?\n"
+            "SQL: SELECT COUNT(*) as new_subscriptions_last_month \n"
+            "     FROM subscription_contract_v2 \n"
+            "     WHERE DATE_FORMAT(subcription_start_date, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m')\n"
+        )
+
         # Smart metric/ARPU detection
         metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
-        user_query_lower = user_query.lower()
         is_metric_query = any(k in user_query_lower for k in metric_keywords)
         
         # TOP/BEST QUERY DETECTION - NEW
@@ -1525,7 +1569,7 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
         chart_guidance = self._get_complete_chart_guidance(chart_analysis)
         
         return f"""
-You are an expert subscription analytics assistant with ENHANCED database knowledge and PERFECT threshold handling.
+You are an expert subscription analytics assistant with ENHANCED context awareness and SQL generation.
 
 CONVERSATION HISTORY:
 {history_context}
@@ -1534,8 +1578,10 @@ CONVERSATION HISTORY:
 
 {similar_context}
 
-CURRENT USER QUERY: "{user_query}"
+CURRENT USER QUERY: \"{user_query}\"
 
+{context_guidance}
+{sql_generation_guidance}
 {top_guidance}
 {metric_guidance}
 {time_period_guidance}{feedback_instruction}
@@ -1545,42 +1591,13 @@ CURRENT USER QUERY: "{user_query}"
 {chart_guidance}
 {self.db_schema}
 
-🔥 CRITICAL THRESHOLD AND COMPARISON RULES:
-1. ⚠️ EXACT NUMBERS: If user says "more than 2", use EXACTLY > 2 (NOT > 1 or any other number!)
-2. ⚠️ TOP QUERIES: Distinguish between "top per group" vs "breakdown of top overall" (see examples above)
-3. ⚠️ DEFAULT for "top merchant": Assume they want THE top merchant's breakdown (Pattern B)
-4. ⚠️ For comparisons between thresholds, create UNION queries showing both categories
-5. ⚠️ DATES: Always use single quotes and DATE(): DATE(created_date) = '2025-04-23'
-6. ⚠️ JOINS: For merchant info with payments, ALWAYS JOIN tables
-7. ⚠️ TYPO: Column is "subcription_start_date" not "subscription_start_date"
+🔥 CRITICAL RULES:
+1. ⚠️ CONTEXT: If this is a follow-up query, apply the same analysis type with new parameters
+2. ⚠️ SQL RESULTS: Return actual counts/data, never function names or malformed output
+3. ⚠️ MONTH QUERIES: Use DATE_FORMAT for month comparisons, not raw date math
+4. ⚠️ FOLLOW-UPS: \"what about X\" means apply previous query logic to X
 
-🔥 CRITICAL CHART TYPE ENFORCEMENT:
-7. ⚠️ If user asks for LINE CHART or LINE GRAPH, ALWAYS use execute_dynamic_sql_with_graph with graph_type="line"
-8. ⚠️ If user asks for BAR CHART or BAR GRAPH, ALWAYS use execute_dynamic_sql_with_graph with graph_type="bar"  
-9. ⚠️ If user asks for PIE CHART, ALWAYS use execute_dynamic_sql_with_graph with graph_type="pie"
-10. ⚠️ NEVER ignore explicit chart type requests - enforce them strictly!
-
-ENHANCED EXAMPLES WITH CORRECT TOP QUERIES:
-
-1. "top merchant by payments each week":
-   SELECT week, merchant_user_id, total_payments
-   FROM (
-     SELECT YEARWEEK(p.created_date, 1) as week, c.merchant_user_id, 
-            SUM(p.trans_amount_decimal) as total_payments,
-            ROW_NUMBER() OVER (PARTITION BY YEARWEEK(p.created_date, 1) ORDER BY SUM(p.trans_amount_decimal) DESC) as rn
-     FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
-     WHERE p.status = 'ACTIVE'
-     GROUP BY YEARWEEK(p.created_date, 1), c.merchant_user_id
-   ) ranked WHERE rn = 1 ORDER BY week
-
-2. "top 5 merchants overall":
-   SELECT c.merchant_user_id, SUM(p.trans_amount_decimal) as total_payments
-   FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
-   WHERE p.status = 'ACTIVE'
-   GROUP BY c.merchant_user_id ORDER BY total_payments DESC LIMIT 5
-
-🎯 REMEMBER: "TOP" means ONLY the highest ranked results, not ALL results!
-🎯 REMEMBER: Use ROW_NUMBER() for top per group, LIMIT for top overall!
+🎯 REMEMBER: Generate working SQL that returns meaningful data, not function names!
 """
 
     def _get_threshold_guidance(self, threshold_info: Dict, comparison_info: Dict) -> str:
