@@ -980,9 +980,9 @@ def _fix_select_columns_for_group_by(self, select_columns: str) -> str:
                 fixed_columns.append(col)
             # Add MAX() to other columns to make them GROUP BY compatible
             else:
-                # Remove table aliases for cleaner output
                 clean_col = col.replace('c.', '').strip()
-                fixed_columns.append(f'MAX({col}) as {clean_col}')
+                alias_name = clean_col.replace('.', '_')
+                fixed_columns.append(f'MAX({col}) as {alias_name}')
         
         result = ', '.join(fixed_columns)
         logger.info(f"🔧 Fixed SELECT columns: {result}")
