@@ -157,9 +157,17 @@ class CompleteGraphGenerator:
             if not self._validate_and_prepare_graph_data(graph_data):
                 logger.error("Invalid graph data structure after preparation")
                 return None
-            
-            # ENFORCE: Use the graph_type from graph_data (set by tool call override logic)
-            requested_graph_type = graph_data.get('graph_type', '').lower()
+
+            # DEFENSIVE: Ensure graph_type is always a valid string
+            requested_graph_type = graph_data.get('graph_type')
+            if not requested_graph_type or not isinstance(requested_graph_type, str) or requested_graph_type.lower() == 'none':
+                # Try to infer from query
+                if any(word in query.lower() for word in ['line', 'trend', 'over time', 'timeline', 'time series', 'progression']):
+                    requested_graph_type = 'line'
+                else:
+                    requested_graph_type = 'bar'
+                logger.warning(f"[DEFENSIVE] graph_type was missing or invalid, defaulted to '{requested_graph_type}'")
+            requested_graph_type = requested_graph_type.lower()
             query_lower = query.lower()
             # HANDLE "TRY AGAIN" - retry previous user query if requested
             if query_lower in ['try again', 'retry', 'fix it', 'try that again']:
@@ -308,7 +316,7 @@ class CompleteGraphGenerator:
                             return False
                     
                     elif graph_type == 'line':
-                        # FIXED: Better handling for line charts
+                        # FIXED: Better handling forN line charts
                         if len(columns) >= 2:
                             x_col = columns[0]
                             y_col = columns[1]
@@ -864,7 +872,7 @@ class CompleteGraphGenerator:
 
 class SimpleAIModel:
     """Simple wrapper for Google AI model."""
-    def __init__(self, model_name="gemini-1.5-flash"):
+    def __init__(self, model_name="gemini-2.0-flash-lite"):
         import google.generativeai as genai
         self.model = genai.GenerativeModel(model_name)
     async def generate_content_async(self, prompt: str):
@@ -940,6 +948,14 @@ class CompleteSmartNLPProcessor:
     def _extract_tool_calls_from_text(self, text: str, query: str, chart_analysis: dict) -> list:
         """Extract tool calls from unstructured AI response."""
         query_lower = query.lower()
+        # Fuzzy matching for graph/chart requests, including common typos
+        fuzzy_graph_keywords = [
+            'chart', 'graph', 'visualize', 'plot', 'show',
+            'grahp', 'grap', 'chrat', 'vusualize', 'plto', 'shoe', 'shwo', 'shwoe', 'shwo me', 'shoe me'
+        ]
+        wants_graph = any(word in query_lower for word in fuzzy_graph_keywords)
+        if wants_graph:
+            logger.info(f"[FUZZY] Detected graph/chart request in query (fuzzy match): '{query}'")
         sql_patterns = [
             r'```sql\s*(SELECT.*?)```',
             r'```\s*(SELECT.*?)```',
@@ -953,7 +969,6 @@ class CompleteSmartNLPProcessor:
                 sql_query = sql_query.strip().rstrip(';')
                 break
         if sql_query:
-            wants_graph = any(word in query_lower for word in ['chart', 'graph', 'visualize', 'plot'])
             tool_name = 'execute_dynamic_sql_with_graph' if wants_graph else 'execute_dynamic_sql'
             tool_call = {
                 'tool': tool_name,
@@ -962,8 +977,15 @@ class CompleteSmartNLPProcessor:
                 'wants_graph': wants_graph,
                 'chart_analysis': chart_analysis or {'chart_type': 'none'}
             }
-            if wants_graph and 'graph_type' not in tool_call['parameters']:
-                tool_call['parameters']['graph_type'] = chart_analysis.get('chart_type', 'bar')
+            if wants_graph:
+                chart_type = chart_analysis.get('chart_type', None)
+                if not chart_type or not isinstance(chart_type, str) or chart_type.lower() == 'none':
+                    if any(word in query_lower for word in ['line', 'trend', 'over time', 'timeline', 'time series', 'progression']):
+                        chart_type = 'line'
+                    else:
+                        chart_type = 'bar'
+                    logger.warning(f"[DEFENSIVE] graph_type was missing or invalid in _extract_tool_calls_from_text, defaulted to '{chart_type}'")
+                tool_call['parameters']['graph_type'] = chart_type
             logger.info(f"🔧 Extracted SQL tool call: {tool_name}")
             return [tool_call]
         if 'database_status' in text.lower() or 'get_database_status' in text.lower():
@@ -1880,8 +1902,15 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
                         call['parameters']['sql_query'] = sql
                         
                         # Set default graph type if missing
-                        if call['tool'] == 'execute_dynamic_sql_with_graph' and 'graph_type' not in call['parameters']:
-                            call['parameters']['graph_type'] = chart_analysis.get('chart_type', 'bar')
+                        if call['tool'] == 'execute_dynamic_sql_with_graph':
+                            chart_type = call['parameters'].get('graph_type', chart_analysis.get('chart_type', None))
+                            if not chart_type or not isinstance(chart_type, str) or chart_type.lower() == 'none':
+                                if any(word in query.lower() for word in ['line', 'trend', 'over time', 'timeline', 'time series', 'progression']):
+                                    chart_type = 'line'
+                                else:
+                                    chart_type = 'bar'
+                                logger.warning(f"[DEFENSIVE] graph_type was missing or invalid in _enhance_and_validate_complete_tool_calls, defaulted to '{chart_type}'")
+                            call['parameters']['graph_type'] = chart_type
                 
                 enhanced_calls.append(call)
                 
@@ -3081,9 +3110,15 @@ class CompleteEnhancedUniversalClient:
                     'title': self._generate_complete_smart_title(original_query),
                     'description': f"Generated from: {original_query}"
                 }
-                
                 # ENFORCE: Always set graph_type in graph_data to the overridden value
                 enforced_type = parameters.get('graph_type', 'bar')
+                # DEFENSIVE: Ensure enforced_type is valid
+                if not enforced_type or not isinstance(enforced_type, str) or enforced_type.lower() == 'none':
+                    if any(word in original_query.lower() for word in ['line', 'trend', 'over time', 'timeline', 'time series', 'progression']):
+                        enforced_type = 'line'
+                    else:
+                        enforced_type = 'bar'
+                    logger.warning(f"[DEFENSIVE] graph_type was missing or invalid in _handle_complete_smart_sql_with_graph, defaulted to '{enforced_type}'")
                 graph_data['graph_type'] = enforced_type
                 logger.info(f"[ENFORCE] Setting graph_data['graph_type'] = '{enforced_type}' before generate_graph")
                 
