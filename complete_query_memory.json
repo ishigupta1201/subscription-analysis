@@ -1,0 +1,61 @@
+[
+  {
+    "question": "Tell me the last date for which data is available",
+    "sql": "SELECT MAX(created_date) AS last_date FROM subscription_payment_details UNION ALL SELECT MAX(subcription_start_date) AS last_date FROM subscription_contract_v2",
+    "was_helpful": false,
+    "feedback_type": "negative",
+    "timestamp": "2025-07-02T13:38:04.352874",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "complex",
+    "success_score": 0.0,
+    "improvement_suggestion": "if the date is same, only show the date its fine",
+    "improvement_category": "general_improvement"
+  },
+  {
+    "question": "Tell me the last date for which data is available",
+    "sql": "SELECT MAX(created_date) AS last_date FROM subscription_payment_details UNION ALL SELECT MAX(subcription_start_date) FROM subscription_contract_v2",
+    "was_helpful": false,
+    "feedback_type": "negative",
+    "timestamp": "2025-07-02T13:38:27.146933",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "complex",
+    "success_score": 0.0,
+    "improvement_suggestion": "dont show it twice, once is enough if the date is same",
+    "improvement_category": "general_improvement"
+  },
+  {
+    "question": "Number of subscriptions on 24 april 2025",
+    "sql": "SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '2025-04-24'",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-07-02T13:38:45.004509",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "simple",
+    "success_score": 1.0
+  },
+  {
+    "question": "Compare subscribers with more than 1 and more than 2 subscriptions",
+    "sql": "\nSELECT 'More than 1 Subscriptions' as category, COUNT(*) as value \nFROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > 1) t1\nUNION ALL\nSELECT 'More than 2 Subscriptions' as category, COUNT(*) as value  \nFROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > 2) t2\n",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-07-02T13:38:56.901857",
+    "chart_type": null,
+    "query_category": "comparison_analysis",
+    "sql_complexity": "complex",
+    "success_score": 1.0
+  },
+  {
+    "question": "show me the details of ones with more than 1",
+    "sql": "SELECT DISTINCT c.merchant_user_id, c.user_email, c.user_name, sub_count.total_subscriptions\nFROM subscription_contract_v2 c\nJOIN (\n    SELECT merchant_user_id,   COUNT(*) as total_subscriptions\n    FROM subscription_contract_v2 \n    GROUP BY merchant_user_id \n    HAVING COUNT(*) > 1\n) sub_count ON c.merchant_user_id = sub_count.merchant_user_id\nORDER BY sub_count.total_subscriptions DESC\nLIMIT 50",
+    "was_helpful": true,
+    "feedback_type": "positive",
+    "timestamp": "2025-07-02T13:39:11.313123",
+    "chart_type": null,
+    "query_category": "general_query",
+    "sql_complexity": "complex",
+    "success_score": 1.0
+  }
+]

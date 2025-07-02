@@ -437,27 +437,406 @@ class CompleteEnhancedSemanticLearner:
             logger.warning(f"⚠️ Similar queries search failed: {e}")
             return []
 
-    def _auto_fix_sql_errors(self, sql: str, error: str) -> str:
-        """Enhanced auto-fix for SQL errors with comprehensive GROUP BY handling."""
-        import re
-        
+# Database Configuration
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST'),
+    'port': int(os.getenv('DB_PORT', 3306)),
+    'database': os.getenv('DB_NAME'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'autocommit': True,
+    'connect_timeout': 10,
+    'charset': 'utf8mb4',
+    'raise_on_warnings': False,
+    'use_pure': True
+}
+
+# Enhanced Database Functions
+def get_db_connection():
+    """Get database connection with enhanced error handling."""
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            error_lower = error.lower()
-            
-            # Fix MySQL GROUP BY errors (ONLY_FULL_GROUP_BY mode) - ENHANCED VERSION
-            if ('group by' in error_lower and 'not in group by clause' in error_lower) or '1055' in error:
-                logger.info("🔧 Fixing MySQL GROUP BY error with enhanced logic")
+            connection = mysql.connector.connect(**DB_CONFIG)
+            if connection.is_connected():
+                return connection
+            else:
+                logger.error(f"Database connection failed on attempt {attempt + 1}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(1)
+                    continue
+                return None
+        except Error as e:
+            logger.error(f"❌ MySQL Connection Error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(1)
+                continue
+            return None
+        except Exception as e:
+            logger.error(f"❌ Unexpected database error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(1)
+                continue
+            return None
+    
+    return None
+
+def sanitize_for_json(obj):
+    """Convert objects to JSON-serializable format with enhanced handling."""
+    try:
+        if isinstance(obj, list):
+            return [sanitize_for_json(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {key: sanitize_for_json(value) for key, value in obj.items()}
+        elif isinstance(obj, decimal.Decimal):
+            return float(obj)
+        elif isinstance(obj, (datetime.datetime, datetime.date)):
+            return obj.isoformat()
+        elif obj is None:
+            return None
+        else:
+            return obj
+    except Exception as e:
+        logger.warning(f"⚠️ Enhanced sanitization error for {type(obj)}: {e}")
+        return str(obj)
+
+def _execute_query(query: str, params: tuple = ()) -> Tuple[Optional[List[Dict]], Optional[str]]:
+    """Execute database query with enhanced error handling."""
+    connection = None
+    cursor = None
+    
+    try:
+        logger.info(f"🔍 Executing query: {query[:100]}...")
+        # Log the final SQL query used for execution
+        logger.info(f"FINAL SQL QUERY: {query}")
+        connection = get_db_connection()
+        if not connection:
+            return None, "Database connection failed after retries"
+        
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+        
+        # Sanitize results for JSON
+        sanitized_results = sanitize_for_json(results)
+        
+        logger.info(f"✅ Query executed successfully, returned {len(results)} rows")
+        return sanitized_results, None
+        
+    except Error as e:
+        error_msg = f"Database error: {str(e)}"
+        logger.error(f"❌ Database query failed: {e}")
+        logger.error(f"❌ Query was: {query}")
+        return None, error_msg
+        
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(f"❌ Unexpected error in query execution: {e}")
+        logger.error(f"❌ Query was: {query}")
+        return None, error_msg
+        
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except Exception as e:
+            logger.warning(f"Error closing database connection: {e}")
+
+# ===== COMPLETE CORE TOOL FUNCTIONS =====
+
+def get_subscriptions_in_last_days(days: int) -> Dict:
+    """Get subscription statistics for the last N days."""
+    try:
+        if not isinstance(days, int) or days < 1 or days > 365:
+            return {"error": "Days must be between 1 and 365"}
+        
+        query = """
+        SELECT 
+            COUNT(*) as total_subscriptions,
+            SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_subscriptions,
+            SUM(CASE WHEN status = 'INACTIVE' THEN 1 ELSE 0 END) as inactive_subscriptions,
+            DATE(subcription_start_date) as start_date
+        FROM subscription_contract_v2 
+        WHERE subcription_start_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+        GROUP BY DATE(subcription_start_date)
+        ORDER BY start_date DESC
+        """
+        
+        results, error = _execute_query(query, (days,))
+        
+        if error:
+            return {"error": error}
+        
+        if not results:
+            return {"data": [], "message": f"No subscriptions found in the last {days} days"}
+        
+        return {"data": results, "message": f"Found {len(results)} days with subscription data"}
+        
+    except Exception as e:
+        logger.error(f"Error in get_subscriptions_in_last_days: {e}")
+        return {"error": f"Function error: {str(e)}"}
+
+def get_payment_success_rate_in_last_days(days: int) -> Dict:
+    """Get payment success rate and revenue statistics for the last N days."""
+    try:
+        if not isinstance(days, int) or days < 1 or days > 365:
+            return {"error": "Days must be between 1 and 365"}
+        
+        query = """
+        SELECT 
+            COUNT(*) as total_transactions,
+            SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as successful_transactions,
+            SUM(CASE WHEN status != 'ACTIVE' THEN 1 ELSE 0 END) as failed_transactions,
+            ROUND((SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as success_rate,
+            SUM(CASE WHEN status = 'ACTIVE' THEN trans_amount_decimal ELSE 0 END) as total_revenue,
+            DATE(created_date) as transaction_date
+        FROM subscription_payment_details 
+        WHERE created_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+        GROUP BY DATE(created_date)
+        ORDER BY transaction_date DESC
+        """
+        
+        results, error = _execute_query(query, (days,))
+        
+        if error:
+            return {"error": error}
+        
+        if not results:
+            return {"data": [], "message": f"No payment data found in the last {days} days"}
+        
+        return {"data": results, "message": f"Found payment data for {len(results)} days"}
+        
+    except Exception as e:
+        logger.error(f"Error in get_payment_success_rate_in_last_days: {e}")
+        return {"error": f"Function error: {str(e)}"}
+
+def get_user_payment_history(merchant_user_id: str, days: int = 90) -> Dict:
+    """Get payment history for a specific user by merchant_user_id."""
+    try:
+        if not merchant_user_id or not isinstance(merchant_user_id, str):
+            return {"error": "merchant_user_id must be a non-empty string"}
+        
+        if not isinstance(days, int) or days < 1 or days > 365:
+            days = 90
+        
+        query = """
+        SELECT 
+            p.subscription_id,
+            p.status,
+            p.trans_amount_decimal,
+            p.created_date,
+            c.status as subscription_status,
+            c.subcription_start_date
+        FROM subscription_payment_details p
+        JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
+        WHERE c.merchant_user_id = %s 
+        AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+        ORDER BY p.created_date DESC
+        """
+        
+        results, error = _execute_query(query, (merchant_user_id, days))
+        
+        if error:
+            return {"error": error}
+        
+        if not results:
+            return {"data": [], "message": f"No payment history found for user {merchant_user_id} in the last {days} days"}
+        
+        return {"data": results, "message": f"Found {len(results)} payment records for user {merchant_user_id}"}
+        
+    except Exception as e:
+        logger.error(f"Error in get_user_payment_history: {e}")
+        return {"error": f"Function error: {str(e)}"}
+
+def get_database_status() -> Dict:
+    """Check database connection and get basic statistics."""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return {"error": "Cannot connect to database"}
+        
+        # Test queries
+        test_queries = [
+            ("Total Subscriptions", "SELECT COUNT(*) as count FROM subscription_contract_v2"),
+            ("Total Payments", "SELECT COUNT(*) as count FROM subscription_payment_details"),
+            ("Active Subscriptions", "SELECT COUNT(*) as count FROM subscription_contract_v2 WHERE status = 'ACTIVE'"),
+            ("Recent Payments (Last 7 days)", "SELECT COUNT(*) as count FROM subscription_payment_details WHERE created_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)")
+        ]
+        
+        stats = {}
+        
+        for stat_name, query in test_queries:
+            try:
+                results, error = _execute_query(query)
+                if error:
+                    stats[stat_name] = f"Error: {error}"
+                elif results and len(results) > 0:
+                    stats[stat_name] = results[0].get('count', 0)
+                else:
+                    stats[stat_name] = 0
+            except Exception as e:
+                stats[stat_name] = f"Error: {str(e)}"
+        
+        connection.close()
+        
+        return {
+            "data": {
+                "status": "connected",
+                "database": DB_CONFIG.get('database', 'unknown'),
+                "host": DB_CONFIG.get('host', 'unknown'),
+                "statistics": stats,
+                "timestamp": datetime.datetime.now().isoformat()
+            },
+            "message": "Database connection successful"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in get_database_status: {e}")
+        return {"error": f"Database status check failed: {str(e)}"}
+
+def complete_execute_dynamic_sql(sql_query: str) -> Dict:
+    """Execute SQL with enhanced error handling and auto-retry."""
+    try:
+        if not sql_query or not isinstance(sql_query, str):
+            return {"error": "SQL query must be a non-empty string"}
+        
+        # Clean and validate SQL
+        cleaned_sql = sql_query.strip().rstrip(';').strip()
+        
+        # Security check - only allow SELECT statements
+        if not cleaned_sql.upper().startswith('SELECT'):
+            return {"error": "Only SELECT statements are allowed for security reasons"}
+        
+        # Enhanced security checks
+        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE', 'REPLACE']
+        sql_upper = cleaned_sql.upper()
+        
+        for keyword in dangerous_keywords:
+            pattern = r'\b' + keyword + r'\b'
+            if re.search(pattern, sql_upper):
+                return {"error": f"SQL contains dangerous keyword '{keyword}' - not allowed"}
+        
+        # Apply initial fixes
+        cleaned_sql = _fix_complete_sql_issues(cleaned_sql)
+        
+        logger.info(f"🔍 Executing enhanced dynamic SQL: {cleaned_sql[:100]}...")
+        
+        # ENHANCED RETRY LOGIC with progressive fixes
+        max_sql_retries = 3
+        for attempt in range(max_sql_retries):
+            try:
+                results, error = _execute_query(cleaned_sql)
                 
-                # Strategy 1: Detect user detail queries and rewrite as subquery
-                if ('user_email' in sql.lower() or 'user_name' in sql.lower()) and 'merchant_user_id' in sql.lower():
-                    logger.info("🔧 Detected user detail query - rewriting as subquery")
+                if error and attempt < max_sql_retries - 1:
+                    logger.warning(f"🔧 SQL attempt {attempt + 1} failed, applying enhanced auto-fix: {error}")
+                    cleaned_sql = _auto_fix_sql_errors(cleaned_sql, error)
+                    continue
+                elif error:
+                    return {"error": f"SQL execution failed after {max_sql_retries} enhanced attempts: {error}"}
+                else:
+                    # Success!
+                    break
                     
-                    # Extract threshold from HAVING clause
-                    threshold_match = re.search(r'HAVING COUNT\(\*\) > (\d+)', sql)
-                    threshold = int(threshold_match.group(1)) if threshold_match else 1
-                    
-                    # Rewrite as proper subquery to avoid GROUP BY issues
-                    fixed_sql = f"""
+            except Exception as e:
+                if attempt < max_sql_retries - 1:
+                    logger.warning(f"🔧 SQL execution attempt {attempt + 1} failed, applying enhanced auto-fix: {e}")
+                    cleaned_sql = _auto_fix_sql_errors(cleaned_sql, str(e))
+                    continue
+                else:
+                    return {"error": f"SQL execution failed after {max_sql_retries} enhanced attempts: {str(e)}"}
+        
+        if not results:
+            return {"data": [], "message": "Query executed successfully but returned no data"}
+        
+        return {
+            "data": results,
+            "message": f"Enhanced query executed successfully, returned {len(results)} rows",
+            "sql_executed": cleaned_sql
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in enhanced execute_dynamic_sql: {e}")
+        return {"error": f"Enhanced dynamic SQL execution failed: {str(e)}"}
+
+def _fix_complete_sql_issues(sql: str) -> str:
+    """Fix common SQL issues with complete handling."""
+    try:
+        # Clean quotes more carefully - this is the main issue
+        # Remove only problematic escaped quotes, not all quotes
+        sql = sql.replace("\\'", "'")  # Remove escaped single quotes
+        sql = sql.replace('\\"', '"')  # Remove escaped double quotes
+        
+        # Fix problematic quote patterns more carefully
+        # Only fix quotes that are clearly wrong (like "value" should be 'value')
+        sql = re.sub(r'"([^"]*?)"(?=\s*(=|!=|<>|\bin\b|\blike\b))', r"'\1'", sql, flags=re.IGNORECASE)
+        
+        # Fix specific date quote issues - dates should be in single quotes
+        # Pattern: "YYYY-MM-DD" -> 'YYYY-MM-DD'
+        sql = re.sub(r'"(\d{4}-\d{2}-\d{2})"', r"'\1'", sql)
+        sql = re.sub(r'"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})"', r"'\1'", sql)
+        
+        # Fix incomplete quotes at start/end of string
+        if sql.startswith('"') and not sql.endswith('"'):
+            sql = sql[1:]  # Remove starting quote
+        if sql.endswith('"') and not sql.startswith('"'):
+            sql = sql[:-1]  # Remove ending quote
+            
+        # Fix status value issues - ensure they're properly quoted
+        status_values = ['ACTIVE', 'INACTIVE', 'FAILED', 'FAIL', 'INIT', 'CLOSED', 'REJECT']
+        for status in status_values:
+            # Fix unquoted status values - be more careful about context
+            pattern = rf'\bstatus\s*(?:=|!=|<>)\s*{status}\b'
+            replacement = f"status = '{status}'"
+            sql = re.sub(pattern, replacement, sql, flags=re.IGNORECASE)
+        
+        # Complete schema fixes - handle merchant_user_id GROUP BY issues
+        if 'GROUP BY merchant_user_id' in sql and 'subscription_payment_details' in sql and 'JOIN' not in sql.upper():
+            logger.warning("🔧 Fixing merchant_user_id GROUP BY without JOIN")
+            # This is problematic - merchant_user_id doesn't exist in payment_details alone
+            # Add proper JOIN or remove the GROUP BY
+            if 'subscription_contract_v2' not in sql:
+                # Add the JOIN
+                sql = sql.replace('FROM subscription_payment_details', 
+                                'FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id')
+                sql = sql.replace('GROUP BY merchant_user_id', 'GROUP BY c.merchant_user_id')
+        
+        # Clean up whitespace
+        sql = re.sub(r'\s+', ' ', sql).strip()
+        
+        # Fix spaces between function names and parentheses
+        sql = _fix_sql_function_spacing(sql)
+        
+        return sql
+    except Exception as e:
+        logger.warning(f"Error fixing complete SQL: {e}")
+        return sql
+
+def _auto_fix_sql_errors(sql: str, error: str) -> str:
+    """Enhanced auto-fix for SQL errors with comprehensive GROUP BY handling."""
+    import re
+    
+    try:
+        error_lower = error.lower()
+        
+        # Fix MySQL GROUP BY errors (ONLY_FULL_GROUP_BY mode) - ENHANCED VERSION
+        if ('group by' in error_lower and 'not in group by clause' in error_lower) or '1055' in error:
+            logger.info("🔧 Fixing MySQL GROUP BY error with enhanced logic")
+            
+            # Strategy 1: Detect user detail queries and rewrite as subquery
+            if ('user_email' in sql.lower() or 'user_name' in sql.lower()) and 'merchant_user_id' in sql.lower():
+                logger.info("🔧 Detected user detail query - rewriting as subquery")
+                
+                # Extract threshold from HAVING clause
+                threshold_match = re.search(r'HAVING COUNT\(\*\) > (\d+)', sql)
+                threshold = int(threshold_match.group(1)) if threshold_match else 1
+                
+                # Rewrite as proper subquery to avoid GROUP BY issues
+                fixed_sql = f"""
 SELECT DISTINCT c.merchant_user_id, 
        c.user_email, 
        c.user_name,
@@ -472,19 +851,19 @@ JOIN (
 ORDER BY sub_count.total_subscriptions DESC
 LIMIT 50
 """
-                    logger.info(f"🔧 Rewritten user detail query with threshold {threshold}")
-                    return fixed_sql.strip()
+                logger.info(f"🔧 Rewritten user detail query with threshold {threshold}")
+                return fixed_sql.strip()
+            
+            # Strategy 2: For payment detail queries
+            elif ('payment' in sql.lower() or 'transaction' in sql.lower()) and 'GROUP BY' in sql.upper():
+                logger.info("🔧 Detected payment query with GROUP BY issues")
                 
-                # Strategy 2: For payment detail queries
-                elif ('payment' in sql.lower() or 'transaction' in sql.lower()) and 'GROUP BY' in sql.upper():
-                    logger.info("🔧 Detected payment query with GROUP BY issues")
+                # Common payment query fix
+                if 'merchant_user_id' in sql.lower() and 'payment' in sql.lower():
+                    threshold_match = re.search(r'HAVING COUNT\(\*\) > (\d+)', sql)
+                    threshold = int(threshold_match.group(1)) if threshold_match else 1
                     
-                    # Common payment query fix
-                    if 'merchant_user_id' in sql.lower() and 'payment' in sql.lower():
-                        threshold_match = re.search(r'HAVING COUNT\(\*\) > (\d+)', sql)
-                        threshold = int(threshold_match.group(1)) if threshold_match else 1
-                        
-                        fixed_sql = f"""
+                    fixed_sql = f"""
 SELECT DISTINCT c.merchant_user_id,
        c.user_email,
        c.user_name,
@@ -500,119 +879,98 @@ JOIN (
 ORDER BY payment_count.total_payments DESC
 LIMIT 50
 """
-                        logger.info(f"🔧 Rewritten payment query with threshold {threshold}")
-                        return fixed_sql.strip()
+                    logger.info(f"🔧 Rewritten payment query with threshold {threshold}")
+                    return fixed_sql.strip()
+            
+            # Strategy 3: General GROUP BY fix using aggregation functions
+            else:
+                logger.info("🔧 Applying general GROUP BY fix with aggregation functions")
                 
-                # Strategy 3: General GROUP BY fix using aggregation functions
-                else:
-                    logger.info("🔧 Applying general GROUP BY fix with aggregation functions")
+                select_match = re.search(r'SELECT\s+(.*?)\s+FROM', sql, re.IGNORECASE | re.DOTALL)
+                group_by_match = re.search(r'GROUP BY\s+(.*?)(?:\s+HAVING|\s+ORDER|\s*$)', sql, re.IGNORECASE)
+                
+                if select_match and group_by_match:
+                    select_columns = [col.strip() for col in select_match.group(1).split(',')]
+                    group_by_cols = [col.strip() for col in group_by_match.group(1).split(',')]
                     
-                    select_match = re.search(r'SELECT\s+(.*?)\s+FROM', sql, re.IGNORECASE | re.DOTALL)
-                    group_by_match = re.search(r'GROUP BY\s+(.*?)(?:\s+HAVING|\s+ORDER|\s*$)', sql, re.IGNORECASE)
-                    
-                    if select_match and group_by_match:
-                        select_columns = [col.strip() for col in select_match.group(1).split(',')]
-                        group_by_cols = [col.strip() for col in group_by_match.group(1).split(',')]
-                        
-                        # Fix columns not in GROUP BY
-                        fixed_columns = []
-                        for col in select_columns:
-                            col_clean = col.strip()
-                            # Skip if already an aggregation function
-                            if any(func in col_clean.lower() for func in ['count(', 'sum(', 'max(', 'min(', 'avg(']):
-                                fixed_columns.append(col_clean)
-                            # Check if column is in GROUP BY
-                            elif any(group_col in col_clean for group_col in group_by_cols):
-                                fixed_columns.append(col_clean)
-                            # Add MAX() to make it GROUP BY compatible
+                    # Fix columns not in GROUP BY
+                    fixed_columns = []
+                    for col in select_columns:
+                        col_clean = col.strip()
+                        # Skip if already an aggregation function
+                        if any(func in col_clean.lower() for func in ['count(', 'sum(', 'max(', 'min(', 'avg(']):
+                            fixed_columns.append(col_clean)
+                        # Check if column is in GROUP BY
+                        elif any(group_col in col_clean for group_col in group_by_cols):
+                            fixed_columns.append(col_clean)
+                        # Add MAX() to make it GROUP BY compatible
+                        else:
+                            if ' as ' in col_clean.lower():
+                                base_col, alias = col_clean.split(' as ', 1)
+                                fixed_columns.append(f'MAX({base_col.strip()}) as {alias.strip()}')
                             else:
-                                if ' as ' in col_clean.lower():
-                                    base_col, alias = col_clean.split(' as ', 1)
-                                    fixed_columns.append(f'MAX({base_col.strip()}) as {alias.strip()}')
-                                else:
-                                    alias_name = col_clean.replace('.', '_')
-                                    fixed_columns.append(f'MAX({col_clean}) as {alias_name}')
-                        
-                        # Rebuild SELECT clause
-                        new_select = ', '.join(fixed_columns)
-                        sql = re.sub(r'SELECT\s+.*?\s+FROM', f'SELECT {new_select} FROM', sql, flags=re.IGNORECASE)
-                        logger.info(f"🔧 Fixed SELECT columns with aggregation functions")
+                                # FIXED: Properly escape the dot in the replacement
+                                alias_name = col_clean.replace('.', '_')
+                                fixed_columns.append(f'MAX({col_clean}) as {alias_name}')
+                    
+                    # Rebuild SELECT clause
+                    new_select = ', '.join(fixed_columns)
+                    sql = re.sub(r'SELECT\s+.*?\s+FROM', f'SELECT {new_select} FROM', sql, flags=re.IGNORECASE)
+                    logger.info(f"🔧 Fixed SELECT columns with aggregation functions")
+        
+        # Fix quote escaping issues
+        elif 'syntax' in error_lower or 'quote' in error_lower or '42000' in error_lower:
+            logger.info("🔧 Applying enhanced quote fixes")
+            # Remove escaped quotes
+            sql = sql.replace("\\'", "'").replace('\\"', '"').replace("''", "'")
+            sql = sql.strip()
             
-            # Fix quote escaping issues
-            elif 'syntax' in error_lower or 'quote' in error_lower or '42000' in error_lower:
-                logger.info("🔧 Applying enhanced quote fixes")
-                # Remove escaped quotes
-                sql = sql.replace("\\'", "'").replace('\\"', '"').replace("''", "'")
-                sql = sql.strip()
-                
-                # Fix orphaned quotes
-                if sql.startswith('"') and sql.count('"') % 2 == 1:
-                    sql = sql[1:]
-                if sql.endswith('"') and sql.count('"') % 2 == 1:
-                    sql = sql[:-1]
-                
-                # Fix date strings specifically
-                sql = re.sub(r'"(\d{4}-\d{2}-\d{2})', r"'\1'", sql)
-                sql = re.sub(r'(\d{4}-\d{2}-\d{2})"', r"'\1'", sql)
-                
-                # Fix general string literals
-                sql = re.sub(r'"([^"]*)"', r"'\1'", sql)
+            # Fix orphaned quotes
+            if sql.startswith('"') and sql.count('"') % 2 == 1:
+                sql = sql[1:]
+            if sql.endswith('"') and sql.count('"') % 2 == 1:
+                sql = sql[:-1]
             
-            # Fix date-related errors
-            elif 'date' in error_lower or 'created_date' in sql.lower():
-                logger.info("🔧 Fixing date-related errors")
-                sql = re.sub(r'DATE\s*\(\s*created_date\s*\)\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', 
-                            r"DATE(created_date) = '\1'", sql)
-                sql = re.sub(r'created_date\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', 
-                            r"DATE(created_date) = '\1'", sql)
+            # Fix date strings specifically
+            sql = re.sub(r'"(\d{4}-\d{2}-\d{2})', r"'\1'", sql)
+            sql = re.sub(r'(\d{4}-\d{2}-\d{2})"', r"'\1'", sql)
             
-            # Fix status value errors
-            elif 'unknown column' in error_lower and 'status' in sql.lower():
-                logger.info("🔧 Fixing status value quoting")
-                status_values = ['ACTIVE', 'INACTIVE', 'FAILED', 'FAIL', 'INIT', 'CLOSED', 'REJECT']
-                for status in status_values:
-                    # Fix unquoted status values
-                    pattern = rf'\bstatus\s*(?:=|!=|<>)\s*{status}\b'
-                    replacement = f"status = '{status}'"
-                    sql = re.sub(pattern, replacement, sql, flags=re.IGNORECASE)
-            
-            # Clean up whitespace and return
-            sql = re.sub(r'\s+', ' ', sql).strip()
-            logger.info(f"🔧 Enhanced auto-fix complete: {sql[:150]}...")
-            return sql
-            
-        except Exception as e:
-            logger.warning(f"Enhanced auto-fix failed: {e}")
-            return sql
+            # Fix general string literals
+            sql = re.sub(r'"([^"]*)"', r"'\1'", sql)
+        
+        # Fix date-related errors
+        elif 'date' in error_lower or 'created_date' in sql.lower():
+            logger.info("🔧 Fixing date-related errors")
+            sql = re.sub(r'DATE\s*\(\s*created_date\s*\)\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', 
+                        r"DATE(created_date) = '\1'", sql)
+            sql = re.sub(r'created_date\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', 
+                        r"DATE(created_date) = '\1'", sql)
+        
+        # Fix status value errors
+        elif 'unknown column' in error_lower and 'status' in sql.lower():
+            logger.info("🔧 Fixing status value quoting")
+            status_values = ['ACTIVE', 'INACTIVE', 'FAILED', 'FAIL', 'INIT', 'CLOSED', 'REJECT']
+            for status in status_values:
+                # Fix unquoted status values
+                pattern = rf'\bstatus\s*(?:=|!=|<>)\s*{status}\b'
+                replacement = f"status = '{status}'"
+                sql = re.sub(pattern, replacement, sql, flags=re.IGNORECASE)
+        
+        # Clean up whitespace and return
+        sql = re.sub(r'\s+', ' ', sql).strip()
+        logger.info(f"🔧 Enhanced auto-fix complete: {sql[:150]}...")
+        return sql
+        
+    except Exception as e:
+        logger.warning(f"Enhanced auto-fix failed: {e}")
+        return sql
 
-    def _fix_select_columns_for_group_by(self, select_columns: str) -> str:
-        """Fix SELECT columns for GROUP BY compatibility by adding aggregation functions."""
-        try:
-            columns = [col.strip() for col in select_columns.split(',')]
-            fixed_columns = []
-            
-            for col in columns:
-                col_lower = col.lower()
-                
-                # Skip if already an aggregation function
-                if any(func in col_lower for func in ['count(', 'sum(', 'max(', 'min(', 'avg(']):
-                    fixed_columns.append(col)
-                # Keep merchant_user_id as-is (it's in GROUP BY)
-                elif 'merchant_user_id' in col_lower:
-                    fixed_columns.append(col)
-                # Add MAX() to other columns to make them GROUP BY compatible
-                else:
-                    clean_col = col.replace('c.', '').strip()
-                    alias_name = clean_col.replace('.', '_')
-                    fixed_columns.append(f'MAX({col}) as {alias_name}')
-            
-            result = ', '.join(fixed_columns)
-            logger.info(f"🔧 Fixed SELECT columns: {result}")
-            return result
-            
-        except Exception as e:
-            logger.warning(f"Error fixing SELECT columns: {e}")
-            return select_columns
+def _fix_sql_function_spacing(sql_query: str) -> str:
+    """Fix spaces between function names and parentheses."""
+    functions = ['MIN', 'MAX', 'COUNT', 'SUM', 'AVG', 'DATE_FORMAT', 'YEARWEEK']
+    for func in functions:
+        sql_query = re.sub(rf'\b{func}\s+\(', f'{func}(', sql_query, flags=re.IGNORECASE)
+    return sql_query
 
 # ===== COMPLETE ENHANCED GRAPH GENERATION =====
 
@@ -1686,13 +2044,6 @@ def execute_complete_tool(request: ToolRequest):
             gc.collect()
         except Exception:
             pass
-
-def _fix_sql_function_spacing(sql_query: str) -> str:
-    """Fix spaces between function names and parentheses."""
-    functions = ['MIN', 'MAX', 'COUNT', 'SUM', 'AVG', 'DATE_FORMAT', 'YEARWEEK']
-    for func in functions:
-        sql_query = re.sub(rf'\b{func}\s+\(', f'{func}(', sql_query, flags=re.IGNORECASE)
-    return sql_query
 
 if __name__ == "__main__":
     # Validate environment variables
