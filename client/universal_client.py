@@ -228,11 +228,14 @@ class CompleteGraphGenerator:
                 if isinstance(raw_data[0], dict):
                     columns = list(raw_data[0].keys())
                     graph_type = graph_data.get('graph_type', '').lower()
-                    # ENHANCED: Better pie chart data preparation
+                    
+                    logger.info(f"[GRAPH] Preparing {graph_type} chart with columns: {columns}")
+                    
                     if graph_type == 'pie':
-                        # Look for category/value columns
+                        # Look for category/value columns for pie charts
                         category_col = None
                         value_col = None
+                        
                         # Priority mapping for pie charts
                         for col in columns:
                             col_lower = col.lower()
@@ -240,31 +243,132 @@ class CompleteGraphGenerator:
                                 category_col = col
                             elif col_lower in ['value', 'count', 'amount', 'total', 'num']:
                                 value_col = col
+                        
                         # Fallback to first two columns if no exact match
                         if not category_col and len(columns) >= 1:
                             category_col = columns[0]
                         if not value_col and len(columns) >= 2:
                             value_col = columns[1]
+                        
                         if category_col and value_col:
                             graph_data['labels'] = [str(row[category_col]) for row in raw_data]
                             graph_data['values'] = [float(row[value_col]) if row[value_col] is not None else 0 for row in raw_data]
-                            logger.info(f"[PIE] Prepared data: labels={graph_data['labels']}, values={graph_data['values']}")
+                            logger.info(f"[PIE] Prepared data: labels={len(graph_data['labels'])}, values={len(graph_data['values'])}")
                         else:
                             logger.error(f"[PIE] Could not find category/value columns in: {columns}")
                             return False
-            # Validate final structure
+                    
+                    elif graph_type in ['bar', 'horizontal_bar']:
+                        # FIXED: Better handling for bar charts
+                        if len(columns) >= 2:
+                            # Smart column detection
+                            category_col = columns[0]  # Usually the first column is the category
+                            value_col = columns[1]     # Usually the second column is the value
+                            
+                            # Try to find better value column
+                            for col in columns:
+                                col_lower = col.lower()
+                                if any(keyword in col_lower for keyword in ['amount', 'total', 'count', 'num', 'value', 'payment', 'revenue']):
+                                    value_col = col
+                                    break
+                            
+                            # Prepare bar chart data
+                            categories = []
+                            values = []
+                            
+                            for row in raw_data:
+                                cat_val = row.get(category_col)
+                                num_val = row.get(value_col)
+                                
+                                if cat_val is not None and num_val is not None:
+                                    # Truncate long category names for better display
+                                    cat_str = str(cat_val)
+                                    if len(cat_str) > 15:
+                                        cat_str = cat_str[:12] + "..."
+                                    categories.append(cat_str)
+                                    
+                                    try:
+                                        values.append(float(num_val))
+                                    except (ValueError, TypeError):
+                                        values.append(0)
+                            
+                            if categories and values and len(categories) == len(values):
+                                graph_data['x_values'] = categories
+                                graph_data['y_values'] = values
+                                graph_data['x_label'] = category_col.replace('_', ' ').title()
+                                graph_data['y_label'] = value_col.replace('_', ' ').title()
+                                logger.info(f"[BAR] Prepared data: {len(categories)} categories, {len(values)} values")
+                                logger.info(f"[BAR] Sample data: {categories[:3]} -> {values[:3]}")
+                                return True
+                            else:
+                                logger.error(f"[BAR] Data preparation failed: categories={len(categories)}, values={len(values)}")
+                                return False
+                        else:
+                            logger.error(f"[BAR] Insufficient columns for bar chart: {len(columns)}")
+                            return False
+                    
+                    elif graph_type == 'line':
+                        # FIXED: Better handling for line charts
+                        if len(columns) >= 2:
+                            x_col = columns[0]
+                            y_col = columns[1]
+                            
+                            # Try to find better time/value columns
+                            for col in columns:
+                                col_lower = col.lower()
+                                if any(keyword in col_lower for keyword in ['date', 'time', 'period', 'month', 'year']):
+                                    x_col = col
+                                elif any(keyword in col_lower for keyword in ['amount', 'total', 'count', 'value', 'revenue']):
+                                    y_col = col
+                            
+                            x_values = []
+                            y_values = []
+                            
+                            for row in raw_data:
+                                x_val = row.get(x_col)
+                                y_val = row.get(y_col)
+                                
+                                if x_val is not None and y_val is not None:
+                                    x_values.append(str(x_val))
+                                    try:
+                                        y_values.append(float(y_val))
+                                    except (ValueError, TypeError):
+                                        y_values.append(0)
+                            
+                            if x_values and y_values and len(x_values) == len(y_values):
+                                graph_data['x_values'] = x_values
+                                graph_data['y_values'] = y_values
+                                graph_data['x_label'] = x_col.replace('_', ' ').title()
+                                graph_data['y_label'] = y_col.replace('_', ' ').title()
+                                logger.info(f"[LINE] Prepared data: {len(x_values)} points")
+                                return True
+                            else:
+                                logger.error(f"[LINE] Data preparation failed: x={len(x_values)}, y={len(y_values)}")
+                                return False
+        
+            # Validate final structure based on graph type
             graph_type = graph_data.get('graph_type', '').lower()
             if graph_type == 'pie':
-                has_pie_data = 'labels' in graph_data and 'values' in graph_data
-                if has_pie_data:
-                    labels = graph_data['labels']
-                    values = graph_data['values']
-                    if len(labels) > 0 and len(values) > 0 and len(labels) == len(values):
-                        return True
-                logger.error(f"[PIE] Invalid pie data structure: {list(graph_data.keys())}")
-                return False
-            # ... rest of validation for other chart types
+                return 'labels' in graph_data and 'values' in graph_data and len(graph_data['labels']) > 0
+            elif graph_type in ['bar', 'horizontal_bar']:
+                return ('x_values' in graph_data and 'y_values' in graph_data and 
+                       len(graph_data['x_values']) > 0 and len(graph_data['y_values']) > 0)
+            elif graph_type == 'line':
+                # ADDED: Check for extreme value ranges in line charts
+                if 'y_values' in graph_data and len(graph_data['y_values']) > 1:
+                    y_values = graph_data['y_values']
+                    min_val = min(y_values)
+                    max_val = max(y_values)
+                    if min_val > 0:
+                        ratio = max_val / min_val
+                        if ratio > 500:
+                            logger.warning(f"[VALIDATION] Extreme value range detected in line chart: {ratio:.1f}")
+                            logger.warning(f"[VALIDATION] Small values might be hard to see: min={min_val:,.0f}, max={max_val:,.0f}")
+                            graph_data['scaling_warning'] = f"Note: Values range from {min_val:,.0f} to {max_val:,.0f}"
+                return ('x_values' in graph_data and 'y_values' in graph_data and 
+                       len(graph_data['x_values']) > 0 and len(graph_data['y_values']) > 0)
             return True
+            
         except Exception as e:
             logger.error(f"Error in data validation and preparation: {e}")
             return False
@@ -395,61 +499,87 @@ class CompleteGraphGenerator:
             return False
     
     def _create_complete_bar_chart(self, ax, graph_data: Dict) -> bool:
-        """Create complete enhanced bar chart with smart formatting."""
+        """FIXED: Create complete enhanced bar chart with smart formatting."""
         try:
-            # Prefer x_values/y_values for bar chart if present
+            # Check for x_values/y_values first (preferred format)
             if 'x_values' in graph_data and 'y_values' in graph_data:
                 x_values = graph_data['x_values']
                 y_values = graph_data['y_values']
+                
                 if not x_values or not y_values or len(x_values) != len(y_values):
+                    logger.error(f"[BAR] Invalid x/y values: x={len(x_values) if x_values else 0}, y={len(y_values) if y_values else 0}")
                     return False
                 
+                # Limit to reasonable number of bars
+                if len(x_values) > 30:
+                    x_values = x_values[:30]
+                    y_values = y_values[:30]
+                    logger.info("[BAR] Limited to 30 bars for readability")
+                
+                # Create bar chart
                 bars = ax.bar(range(len(x_values)), y_values, color='steelblue', alpha=0.8, edgecolor='darkblue')
+                
+                # Set labels
                 ax.set_xlabel(graph_data.get('x_label', 'Categories'), fontsize=12)
                 ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12)
                 ax.set_xticks(range(len(x_values)))
-                ax.set_xticklabels([str(x)[:15] for x in x_values], rotation=45, ha='right')
+                ax.set_xticklabels(x_values, rotation=45, ha='right')
                 
+                # Add value labels on bars if not too many
                 if len(x_values) <= 15:
                     max_val = max(y_values) if y_values else 1
                     for i, (bar, value) in enumerate(zip(bars, y_values)):
                         height = bar.get_height()
                         ax.text(bar.get_x() + bar.get_width()/2., height + max_val * 0.01,
-                               f'{value:.1f}' if isinstance(value, float) else str(value),
+                               f'{value:.0f}' if isinstance(value, float) else str(value),
                                ha='center', va='bottom', fontsize=8)
+                
                 ax.grid(True, alpha=0.3, axis='y')
+                logger.info(f"[BAR] Successfully created bar chart with {len(x_values)} bars")
                 return True
             
-            # Fallback to categories/values
-            categories = graph_data.get('categories', graph_data.get('labels', []))
-            values = graph_data.get('values', [])
+            # Fallback to categories/values format
+            elif 'categories' in graph_data and 'values' in graph_data:
+                categories = graph_data['categories']
+                values = graph_data['values']
+                
+                if not categories or not values or len(categories) != len(values):
+                    logger.error(f"[BAR] Invalid categories/values: cat={len(categories) if categories else 0}, val={len(values) if values else 0}")
+                    return False
+                
+                # Limit to reasonable number
+                if len(categories) > 30:
+                    categories = categories[:30]
+                    values = values[:30]
+                    logger.info("[BAR] Limited to 30 categories for readability")
+                
+                bars = ax.bar(range(len(categories)), values, color='steelblue', alpha=0.8, edgecolor='darkblue')
+                ax.set_xlabel(graph_data.get('x_label', 'Categories'), fontsize=12)
+                ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12)
+                ax.set_xticks(range(len(categories)))
+                ax.set_xticklabels([str(cat)[:15] for cat in categories], rotation=45, ha='right')
+                
+                # Add value labels if not too many
+                if len(categories) <= 15:
+                    max_val = max(values) if values else 1
+                    for i, (bar, value) in enumerate(zip(bars, values)):
+                        height = bar.get_height()
+                        ax.text(bar.get_x() + bar.get_width()/2., height + max_val * 0.01,
+                               f'{value:.0f}' if isinstance(value, float) else str(value),
+                               ha='center', va='bottom', fontsize=8)
+                
+                ax.grid(True, alpha=0.3, axis='y')
+                logger.info(f"[BAR] Successfully created bar chart with {len(categories)} categories")
+                return True
             
-            if not categories or not values or len(categories) != len(values):
+            else:
+                logger.error("[BAR] Missing required data: need either (x_values, y_values) or (categories, values)")
                 return False
             
-            if len(categories) > 30:
-                categories = categories[:30]
-                values = values[:30]
-                logger.info("Limited bar chart to 30 categories for readability")
-            
-            bars = ax.bar(range(len(categories)), values, color='steelblue', alpha=0.8, edgecolor='darkblue')
-            ax.set_xlabel(graph_data.get('x_label', 'Categories'), fontsize=12)
-            ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12)
-            ax.set_xticks(range(len(categories)))
-            ax.set_xticklabels([str(cat)[:15] for cat in categories], rotation=45, ha='right')
-            
-            if len(categories) <= 15:
-                max_val = max(values) if values else 1
-                for i, (bar, value) in enumerate(zip(bars, values)):
-                    height = bar.get_height()
-                    ax.text(bar.get_x() + bar.get_width()/2., height + max_val * 0.01,
-                           f'{value:.1f}' if isinstance(value, float) else str(value),
-                           ha='center', va='bottom', fontsize=8)
-            
-            ax.grid(True, alpha=0.3, axis='y')
-            return True
         except Exception as e:
-            logger.error(f"Complete bar chart creation failed: {e}")
+            logger.error(f"[BAR] Bar chart creation failed: {e}")
+            import traceback
+            logger.error(f"[BAR] Traceback: {traceback.format_exc()}")
             return False
     
     def _create_complete_horizontal_bar_chart(self, ax, graph_data: Dict) -> bool:
@@ -495,39 +625,140 @@ class CompleteGraphGenerator:
             return False
     
     def _create_complete_line_chart(self, ax, graph_data: Dict) -> bool:
-        """FIXED: Create complete enhanced line chart with proper data handling."""
+        """FIXED: Create line chart with proper scaling for small values."""
         try:
-            x_values = graph_data.get('x_values', [])
-            y_values = graph_data.get('y_values', [])
-            
-            if not x_values or not y_values or len(x_values) != len(y_values):
-                logger.error(f"Line chart data validation failed: x_values={len(x_values) if x_values else 0}, y_values={len(y_values) if y_values else 0}")
+            # Check for x_values/y_values format
+            if 'x_values' in graph_data and 'y_values' in graph_data:
+                x_values = graph_data['x_values']
+                y_values = graph_data['y_values']
+                
+                if not x_values or not y_values or len(x_values) != len(y_values):
+                    logger.error(f"[LINE] Invalid x/y values: x={len(x_values) if x_values else 0}, y={len(y_values) if y_values else 0}")
+                    return False
+                
+                # CRITICAL FIX: Check for extreme value ranges that cause scaling issues
+                if len(y_values) > 1:
+                    min_val = min(y_values)
+                    max_val = max(y_values)
+                    value_range_ratio = max_val / min_val if min_val > 0 else float('inf')
+                    
+                    logger.info(f"[LINE] Value range: {min_val:,.0f} to {max_val:,.0f} (ratio: {value_range_ratio:.1f})")
+                    
+                    # If we have extreme scaling issues (ratio > 500), use log scale or adjust
+                    if value_range_ratio > 500 and min_val > 0:
+                        logger.warning(f"[LINE] Extreme value range detected (ratio: {value_range_ratio:.1f})")
+                        logger.info("[LINE] Applying scaling fix to prevent small values from disappearing")
+                        
+                        # Option 1: Use log scale if all values are positive
+                        if all(val > 0 for val in y_values):
+                            ax.set_yscale('log')
+                            logger.info("[LINE] Applied logarithmic Y-axis scale")
+                        
+                        # Option 2: Set a reasonable Y-axis minimum to show small values
+                        else:
+                            # Set Y-axis to start from 0 but ensure small values are visible
+                            y_margin = max_val * 0.05  # 5% margin
+                            ax.set_ylim(bottom=0, top=max_val + y_margin)
+                            logger.info(f"[LINE] Set Y-axis range: 0 to {max_val + y_margin:,.0f}")
+                
+                # Create the line chart
+                line = ax.plot(range(len(x_values)), y_values, 
+                              color='darkgreen', linewidth=2.5, marker='o', 
+                              markersize=5, markerfacecolor='green', alpha=0.8)
+                
+                # Set labels and formatting
+                ax.set_xlabel(graph_data.get('x_label', 'Time Period'), fontsize=12, fontweight='bold')
+                ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12, fontweight='bold')
+                ax.set_xticks(range(len(x_values)))
+                ax.set_xticklabels(x_values, rotation=45, ha='right')
+                
+                # ENHANCED: Add value labels on points for better readability
+                if len(x_values) <= 20:  # Only add labels if not too crowded
+                    for i, (x, y) in enumerate(zip(range(len(x_values)), y_values)):
+                        # Format large numbers with K, M suffixes
+                        if y >= 1000000:
+                            label = f'{y/1000000:.1f}M'
+                        elif y >= 1000:
+                            label = f'{y/1000:.0f}K'
+                        else:
+                            label = f'{y:.0f}'
+                        # Position label above the point
+                        ax.annotate(label, (x, y), textcoords="offset points", 
+                                   xytext=(0,10), ha='center', fontsize=8, 
+                                   bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7))
+                
+                # Enhanced grid and styling
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                
+                # CRITICAL: Force the plot to show all data points properly
+                ax.autoscale(tight=False)
+                
+                logger.info(f"[LINE] Successfully created line chart with {len(x_values)} points")
+                return True
+                
+            else:
+                logger.error("[LINE] Missing required x_values/y_values data")
                 return False
-            
-            # Handle large datasets by sampling
-            if len(x_values) > 100:
-                step = max(1, len(x_values) // 50)
-                x_values = x_values[::step]
-                y_values = y_values[::step]
-                logger.info(f"Sampled line chart data to {len(x_values)} points")
-            
-            # Create line chart with complete enhanced styling
-            ax.plot(range(len(x_values)), y_values, marker='o', linewidth=2, markersize=4, 
-                   color='darkgreen', markerfacecolor='lightgreen')
-            
-            # Set labels and formatting
-            ax.set_xlabel(graph_data.get('x_label', 'Time'), fontsize=12)
-            ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12)
-            
-            # Set x-axis labels
-            ax.set_xticks(range(len(x_values)))
-            ax.set_xticklabels([str(x)[:15] for x in x_values], rotation=45, ha='right')
-            
-            ax.grid(True, alpha=0.3)
-            return True
-            
+                
         except Exception as e:
-            logger.error(f"Complete line chart creation failed: {e}")
+            logger.error(f"[LINE] Line chart creation failed: {e}")
+            import traceback
+            logger.error(f"[LINE] Traceback: {traceback.format_exc()}")
+            return False
+
+    def _create_dual_scale_line_chart(self, ax, graph_data: Dict) -> bool:
+        """Alternative: Create line chart with dual Y-axis for extreme value ranges."""
+        try:
+            if 'x_values' in graph_data and 'y_values' in graph_data:
+                x_values = graph_data['x_values']
+                y_values = graph_data['y_values']
+                
+                # Detect if we need dual scale
+                min_val = min(y_values)
+                max_val = max(y_values)
+                ratio = max_val / min_val if min_val > 0 else 1
+                
+                if ratio > 1000:
+                    logger.info("[LINE] Using dual-scale approach for extreme value range")
+                    
+                    # Separate small and large values
+                    threshold = max_val * 0.1  # 10% of max
+                    small_indices = [i for i, val in enumerate(y_values) if val < threshold]
+                    large_indices = [i for i, val in enumerate(y_values) if val >= threshold]
+                    
+                    if small_indices and large_indices:
+                        # Create main plot for large values
+                        large_x = [x_values[i] for i in large_indices]
+                        large_y = [y_values[i] for i in large_indices]
+                        
+                        ax.plot([i for i in large_indices], large_y, 
+                               color='darkgreen', linewidth=2.5, marker='o', label='High Values')
+                        
+                        # Create secondary axis for small values
+                        ax2 = ax.twinx()
+                        small_x = [x_values[i] for i in small_indices]
+                        small_y = [y_values[i] for i in small_indices]
+                        
+                        ax2.plot([i for i in small_indices], small_y, 
+                                color='orange', linewidth=2.5, marker='s', label='Low Values')
+                        
+                        # Set labels
+                        ax.set_ylabel('High Values', color='darkgreen')
+                        ax2.set_ylabel('Low Values', color='orange')
+                        
+                        # Add legend
+                        lines1, labels1 = ax.get_legend_handles_labels()
+                        lines2, labels2 = ax2.get_legend_handles_labels()
+                        ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+                        
+                        return True
+                
+                # Fall back to regular line chart
+                return self._create_complete_line_chart(ax, graph_data)
+        except Exception as e:
+            logger.error(f"[DUAL-LINE] Dual scale chart creation failed: {e}")
             return False
     
     def _create_complete_scatter_plot(self, ax, graph_data: Dict) -> bool:
@@ -631,14 +862,135 @@ class CompleteGraphGenerator:
         except Exception:
             return False
 
+class SimpleAIModel:
+    """Simple wrapper for Google AI model."""
+    def __init__(self, model_name="gemini-1.5-flash"):
+        import google.generativeai as genai
+        self.model = genai.GenerativeModel(model_name)
+    async def generate_content_async(self, prompt: str):
+        try:
+            response = self.model.generate_content(prompt)
+            return response
+        except Exception as e:
+            logger.error(f"AI generation failed: {e}")
+            return None
+
 class CompleteSmartNLPProcessor:
     """COMPLETE NLP processor with enhanced threshold detection and better prompting. FIXED MULTITOOL SUPPORT."""
     
-    def __init__(self):
+    def __init__(self, config=None):
+        self.config = config or {}
+        try:
+            import google.generativeai as genai
+            api_key = self.config.get('GOOGLE_API_KEY') if self.config else None
+            if api_key:
+                genai.configure(api_key=api_key)
+            self.ai_model = SimpleAIModel()
+            logger.info("✅ AI model initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize AI model: {e}")
+            self.ai_model = None
         self.model = genai.GenerativeModel('gemini-2.0-flash-lite')
         self.db_schema = self._get_complete_database_schema()
         self.chart_keywords = self._get_chart_keywords()
-        self.tools = self._get_tools_config()   
+        self.tools = self._get_tools_config()
+
+    async def _generate_with_complete_retries(self, prompt: str, original_query: str, chart_analysis: dict) -> list:
+        """Enhanced generation with better error handling and retries."""
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                logger.info(f"🧠 Complete AI generation attempt {attempt + 1}")
+                response = await self.ai_model.generate_content_async(prompt)
+                if not response or not hasattr(response, 'text') or not response.text:
+                    logger.warning(f"Complete AI generation attempt {attempt + 1} failed: empty response")
+                    continue
+                response_text = response.text.strip()
+                if not response_text:
+                    logger.warning(f"Complete AI generation attempt {attempt + 1} failed: empty text")
+                    continue
+                logger.info(f"🧠 AI Response: {response_text[:200]}...")
+                json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
+                if json_match:
+                    try:
+                        tool_calls = json.loads(json_match.group())
+                        if tool_calls and isinstance(tool_calls, list):
+                            logger.info(f"✅ Successfully parsed {len(tool_calls)} tool calls")
+                            enhanced_calls = []
+                            for call in tool_calls:
+                                if isinstance(call, dict) and 'tool' in call and 'parameters' in call:
+                                    call['original_query'] = original_query
+                                    call['wants_graph'] = call.get('tool') == 'execute_dynamic_sql_with_graph'
+                                    call['chart_analysis'] = chart_analysis or {'chart_type': 'none'}
+                                    enhanced_calls.append(call)
+                            if enhanced_calls:
+                                return enhanced_calls
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"JSON parse error: {e}")
+                        continue
+                tool_calls = self._extract_tool_calls_from_text(response_text, original_query, chart_analysis)
+                if tool_calls:
+                    return tool_calls
+            except Exception as e:
+                logger.warning(f"Complete AI generation attempt {attempt + 1} failed: {e}")
+                continue
+        logger.warning("All AI generation attempts failed, using fallback.")
+        return self._get_complete_smart_fallback_tool_call(original_query, [])
+
+    def _extract_tool_calls_from_text(self, text: str, query: str, chart_analysis: dict) -> list:
+        """Extract tool calls from unstructured AI response."""
+        query_lower = query.lower()
+        sql_patterns = [
+            r'```sql\s*(SELECT.*?)```',
+            r'```\s*(SELECT.*?)```',
+            r'(SELECT.*?;|SELECT.*?\n\n|SELECT.*?$)',
+        ]
+        sql_query = None
+        for pattern in sql_patterns:
+            sql_match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if sql_match:
+                sql_query = sql_match.group(1) if pattern.startswith('```') else sql_match.group()
+                sql_query = sql_query.strip().rstrip(';')
+                break
+        if sql_query:
+            wants_graph = any(word in query_lower for word in ['chart', 'graph', 'visualize', 'plot'])
+            tool_name = 'execute_dynamic_sql_with_graph' if wants_graph else 'execute_dynamic_sql'
+            tool_call = {
+                'tool': tool_name,
+                'parameters': {'sql_query': sql_query},
+                'original_query': query,
+                'wants_graph': wants_graph,
+                'chart_analysis': chart_analysis or {'chart_type': 'none'}
+            }
+            if wants_graph and 'graph_type' not in tool_call['parameters']:
+                tool_call['parameters']['graph_type'] = chart_analysis.get('chart_type', 'bar')
+            logger.info(f"🔧 Extracted SQL tool call: {tool_name}")
+            return [tool_call]
+        if 'database_status' in text.lower() or 'get_database_status' in text.lower():
+            return [{
+                'tool': 'get_database_status',
+                'parameters': {},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        if 'payment' in text.lower() and 'success' in text.lower():
+            return [{
+                'tool': 'get_payment_success_rate_in_last_days',
+                'parameters': {'days': 30},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        if 'subscription' in text.lower() and 'last' in text.lower():
+            return [{
+                'tool': 'get_subscriptions_in_last_days',
+                'parameters': {'days': 30},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        return []
 
     def _get_complete_database_schema(self) -> str:
         """Get COMPLETE CORRECTED database schema with full column information."""
@@ -647,26 +999,81 @@ COMPLETE CORRECTED Database Schema:
 
 Tables:
 1. subscription_contract_v2:
-   - subscription_id (VARCHAR, PRIMARY KEY)
-   - merchant_user_id (VARCHAR) 
-   - status (ENUM: 'ACTIVE', 'INACTIVE', 'CLOSED', 'REJECT', 'INIT')
-   - subcription_start_date (DATE) -- Note: column name has typo "subcription"
+   - subscription_id (bigint, PRIMARY KEY, auto_increment)
+   - merchant_user_id (varchar(255))
+   - frequency (int)
+   - frequency_unit (int)
+   - grace_days (int)
+   - merchant_id (varchar(255), NOT NULL)
+   - payer_account_number (varchar(255))
+   - internal_user_id (varchar(255))
+   - subs_payment_mode (varchar(255))
+   - saved_card_id (bigint)
+   - subcription_start_date (datetime, NOT NULL) -- Note: column name has typo "subcription"
+   - subcription_end_date (datetime, NOT NULL) -- Note: column name has typo "subcription"
+   - status (varchar(255), NOT NULL)
+   - website (varchar(255))
+   - industry_type (varchar(255))
+   - created_date (datetime, DEFAULT CURRENT_TIMESTAMP)
+   - updated_date (datetime, ON UPDATE CURRENT_TIMESTAMP)
+   - retry_count (int, DEFAULT 0)
+   - amount_type (int, DEFAULT 0)
+   - max_amount (float)
+   - user_email (varchar(255)) -- AVAILABLE: Customer email addresses
+   - user_mobile (varchar(255))
+   - user_name (varchar(255)) -- AVAILABLE: Customer names
+   - order_id (varchar(255))
+   - start_date_flow (int, DEFAULT 1)
+   - channel_id (varchar(20))
+   - service_id (varchar(100))
+   - account_type (varchar(255))
+   - sub_status (varchar(255))
+   - renewal_amount (decimal(16,2))
+   - auto_renewal (tinyint, DEFAULT 0)
+   - auto_retry (tinyint, NOT NULL, DEFAULT 0)
+   - is_communication_manager (tinyint, NOT NULL, DEFAULT 0)
+   - subs_goods_info (varchar(255))
+   - subs_callback_url (varchar(255))
+   - sub_due_date (datetime)
+   - is_new_subscription (tinyint(1), NOT NULL, DEFAULT 0)
+   - metadata (text)
+   - card_info_id (bigint)
+   - link_id (bigint)
+   - plan_id (bigint)
+   - si_hub_details_id (bigint)
+   - token_details_id (bigint)
+   - max_amount_decimal (decimal(16,2))
 
 2. subscription_payment_details:
-   - subscription_id (VARCHAR, FOREIGN KEY to subscription_contract_v2.subscription_id)
-   - status (ENUM: 'ACTIVE', 'FAILED', 'FAIL', 'INIT') 
-   - trans_amount_decimal (DECIMAL)
-   - created_date (DATE)
-   - NOTE: This table does NOT have merchant_user_id directly
+   - subcription_payment_details_id (bigint, PRIMARY KEY, auto_increment) -- Note: column name has typo "subcription"
+   - subscription_id (bigint, NOT NULL, FOREIGN KEY to subscription_contract_v2.subscription_id)
+   - acquirement_id (varchar(255))
+   - trans_amount (decimal(16,2))
+   - order_id (varchar(255))
+   - time_out (datetime)
+   - created_date (datetime, DEFAULT CURRENT_TIMESTAMP)
+   - updated_date (datetime, ON UPDATE CURRENT_TIMESTAMP)
+   - status (varchar(255)) -- Payment status
+   - payment_type (varchar(255), NOT NULL)
+   - metadata (varchar(255))
+   - payment_time (datetime)
+   - trans_amount_decimal (decimal(16,2))
 
 CRITICAL COMPLETE SCHEMA RULES:
+- EMAIL IS AVAILABLE: Use c.user_email for customer email addresses
+- END DATE IS AVAILABLE: Use c.subcription_end_date for subscription end dates  
+- NAME IS AVAILABLE: Use c.user_name for customer names
+- PRIMARY KEY: Use subcription_payment_details_id (with typo) for payments table
 - To get merchant_user_id info from payments, you MUST JOIN:
   FROM subscription_payment_details p 
   JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
   
 - NEVER use merchant_user_id in GROUP BY with subscription_payment_details alone
 - Always use proper JOINs when accessing both tables
-- merchant_user_id is ONLY in subscription_contract_v2 table
+
+COMPLETE STATUS VALUES:
+- Subscription status: ACTIVE, INACTIVE, CLOSED, REJECT, INIT
+- Payment status: ACTIVE, INIT, FAIL (and possibly others)
 
 COMPLETE THRESHOLD HANDLING:
 - Pay VERY close attention to numbers in queries: "more than 1", "more than 2", "more than 10", etc.
@@ -679,7 +1086,7 @@ DATE HANDLING:
 - Always use single quotes for date strings: '2025-04-23'
 - Use DATE() function for date comparisons: DATE(created_date) = '2025-04-23'
 - Never use double quotes around dates
-- Remember column typo: subcription_start_date (not subscription_start_date)
+- Remember column typos: subcription_start_date, subcription_end_date (not subscription_)
 """
 
     def _get_chart_keywords(self) -> Dict[str, List[str]]:
@@ -769,10 +1176,8 @@ DATE HANDLING:
         threshold_info = self._extract_threshold_info(user_query)
         comparison_info = self._extract_comparison_info(user_query)
         is_comparison = False
-        
         # --- ENHANCED: Also treat time-period comparisons as single query ---
         is_time_period_comparison = comparison_info.get('comparison_type') == 'time_period_comparison' and comparison_info.get('time_periods')
-        
         if (
             (threshold_info['has_threshold'] and threshold_info['numbers'] and
             (('compare' in query_lower or 'vs' in query_lower or 'versus' in query_lower or 'and' in query_lower)))
@@ -780,12 +1185,16 @@ DATE HANDLING:
         ):
             if is_time_period_comparison or (len(threshold_info['numbers']) >= 2):
                 is_comparison = True
-        
-        # Only split if not a comparison query
-        if not is_comparison:
+        # --- COMPLEX ANALYTICAL QUERY DETECTION ---
+        complex_patterns = [
+            'list of customers', 'show me their', 'customers who have', 
+            'users who have', 'find customers', 'get customers'
+        ]
+        is_complex_analytical = any(pattern in query_lower for pattern in complex_patterns)
+        # Only split if not a comparison AND not complex analytical query
+        if not is_comparison and not is_complex_analytical:
             query_separators = [' and ', ';', '\n']
             individual_queries = [user_query.strip()]
-            
             for separator in query_separators:
                 new_queries = []
                 for query in individual_queries:
@@ -795,7 +1204,6 @@ DATE HANDLING:
                     else:
                         new_queries.append(query)
                 individual_queries = new_queries
-            
             # Remove duplicates while preserving order
             seen = set()
             unique_queries = []
@@ -954,8 +1362,12 @@ DATE HANDLING:
         if auto_aggregate_by:
             chart_analysis['aggregation'] = auto_aggregate_by
         
-        # 1. Handle specific date queries directly
+        # FIXED: Define all required variables before using them
+        threshold_info = self._extract_threshold_info(query)
         date_info = self._extract_date_info(query)
+        comparison_info = self._extract_comparison_info(query)
+        
+        # 1. Handle specific date queries directly
         if date_info['has_date'] and date_info['dates']:
             logger.info("[DEBUG] Path: specific date query detected.")
             date_str = date_info['dates'][0]
@@ -968,7 +1380,7 @@ DATE HANDLING:
                     date_str = date_obj.strftime('%Y-%m-%d')
             except Exception:
                 pass
-                
+                    
             sql = f"SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '{date_str}'"
             sql = self._fix_sql_quotes(sql)
             sql = self._validate_and_autofix_sql(sql)
@@ -983,7 +1395,6 @@ DATE HANDLING:
             }]
         
         # 1b. Handle time period comparison queries (e.g., last month vs previous month)
-        comparison_info = self._extract_comparison_info(query)
         if comparison_info.get('comparison_type') == 'time_period_comparison' and comparison_info.get('time_periods') == ['last_month', 'prev_month']:
             logger.info("[DEBUG] Path: time period comparison detected (last month vs previous month). Generating UNION SQL.")
             # Only for revenue/payment queries
@@ -1012,7 +1423,6 @@ WHERE p.status = 'ACTIVE'
                 }]
         
         # 2. Handle comparison queries with UNION ALL
-        threshold_info = self._extract_threshold_info(query)
         if force_comparison or (threshold_info['has_threshold'] and threshold_info['numbers'] and (('compare' in query_lower or 'vs' in query_lower or 'versus' in query_lower or 'and' in query_lower))):
             numbers = threshold_info['numbers']
             if len(numbers) >= 2:
@@ -1137,7 +1547,6 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
         
         # 4. Fall back to AI processing for complex queries
         try:
-            comparison_info = self._extract_comparison_info(query)
             history_context = self._build_complete_history_context(history)
             improvement_context = await self._get_complete_improvement_context(query, history, client)
             similar_context = await self._get_similar_queries_context(query, client)
@@ -1203,6 +1612,49 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
             logger.error(f"Error in AI query processing: {e}", exc_info=True)
             return self._get_complete_smart_fallback_tool_call(query, history)
 
+    def handle_specific_date_queries(self, query: str, history: List[str]) -> List[Dict]:
+        """Handle specific date queries with improved date parsing."""
+        date_info = self._extract_date_info(query)
+        
+        if date_info['has_date'] and date_info['dates']:
+            date_str = date_info['dates'][0]
+            
+            # Convert different date formats to YYYY-MM-DD
+            try:
+                if re.match(r'\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}', date_str, re.IGNORECASE):
+                    # Parse "24 april 2025" format
+                    from datetime import datetime
+                    date_obj = datetime.strptime(date_str, '%d %B %Y')
+                    date_str = date_obj.strftime('%Y-%m-%d')
+                elif re.match(r'\d{2}/\d{2}/\d{4}', date_str):
+                    # Parse "MM/DD/YYYY" format  
+                    from datetime import datetime
+                    date_obj = datetime.strptime(date_str, '%m/%d/%Y')
+                    date_str = date_obj.strftime('%Y-%m-%d')
+                # YYYY-MM-DD format is already correct
+            except Exception as e:
+                logger.warning(f"Could not parse date '{date_str}': {e}")
+                return []
+                
+            # Generate the correct SQL query
+            if 'subscription' in query.lower():
+                sql = f"SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '{date_str}'"
+            elif 'payment' in query.lower():
+                sql = f"SELECT COUNT(*) as num_payments FROM subscription_payment_details WHERE DATE(created_date) = '{date_str}'"
+            else:
+                # Default to subscriptions
+                sql = f"SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '{date_str}'"
+            
+            return [{
+                'tool': 'execute_dynamic_sql',
+                'parameters': {'sql_query': sql},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        
+        return []
+
     def _extract_threshold_info(self, query: str) -> Dict:
         """Extract threshold information from query with enhanced accuracy."""
         threshold_info = {
@@ -1246,7 +1698,7 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
         return threshold_info
 
     def _extract_date_info(self, query: str) -> Dict:
-        """Extract date information from query."""
+        """Extract date information from query with improved parsing."""
         date_info = {
             'has_date': False,
             'dates': [],
@@ -1256,8 +1708,8 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
         # Extract dates in various formats
         date_patterns = [
             r'\d{4}-\d{2}-\d{2}',  # YYYY-MM-DD
-            r'\d{2}/\d{2}/\d{4}',  # MM/DD/YYYY
-            r'\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}',  # 23 april 2025
+            r'\d{2}/\d{2}/\d{4}',  # MM/DD/YYYY  
+            r'\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}',  # 24 april 2025
         ]
         
         for pattern in date_patterns:
@@ -1361,266 +1813,414 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
         
         return rules
 
+    def _format_chart_requirements(self, chart_analysis: Dict) -> str:
+        """Format chart requirements for the AI prompt."""
+        if not chart_analysis:
+            return "No chart requested."
+        
+        chart_type = chart_analysis.get('chart_type', 'none')
+        
+        if chart_type == 'none':
+            return "No chart requested."
+        elif chart_type == 'pie':
+            return """PIE CHART REQUIRED:
+- Use execute_dynamic_sql_with_graph tool
+- SQL must return exactly 2 columns: category (text) and value (number)
+- Example: SELECT 'Successful' as category, COUNT(*) as value FROM ... UNION ALL SELECT 'Failed' as category, COUNT(*) as value FROM ..."""
+        elif chart_type == 'bar':
+            return """BAR CHART REQUIRED:
+- Use execute_dynamic_sql_with_graph tool  
+- SQL should return category and value columns
+- Limit to reasonable number of bars (≤30)"""
+        elif chart_type == 'line':
+            return """LINE CHART REQUIRED:
+- Use execute_dynamic_sql_with_graph tool
+- SQL should return time/period and value columns
+- Order by time ascending"""
+        else:
+            return f"CHART REQUIRED: {chart_type} - Use execute_dynamic_sql_with_graph tool"
+
+    def _enhance_and_validate_complete_tool_calls(self, tool_calls: List[Dict], 
+                                                 query: str, chart_analysis: Dict, 
+                                                 threshold_info: Dict) -> List[Dict]:
+        """Enhanced validation with proper original_query handling."""
+        enhanced_calls = []
+        
+        for call in tool_calls:
+            try:
+                # Ensure original_query is always present
+                if 'original_query' not in call:
+                    call['original_query'] = query
+                
+                # Ensure wants_graph is present
+                if 'wants_graph' not in call:
+                    call['wants_graph'] = call.get('tool') == 'execute_dynamic_sql_with_graph'
+                
+                # Ensure chart_analysis is present
+                if 'chart_analysis' not in call:
+                    call['chart_analysis'] = chart_analysis or {'chart_type': 'none'}
+                
+                # Validate tool and parameters
+                if 'tool' not in call or 'parameters' not in call:
+                    logger.warning(f"Invalid tool call structure: {call}")
+                    continue
+                
+                # Enhanced SQL validation for dynamic SQL tools
+                if call['tool'] in ['execute_dynamic_sql', 'execute_dynamic_sql_with_graph']:
+                    if 'sql_query' in call['parameters']:
+                        sql = call['parameters']['sql_query']
+                        
+                        # Apply enhanced SQL fixes
+                        sql = self._fix_sql_quotes(sql)
+                        sql = self._validate_and_autofix_sql(sql)
+                        
+                        # Apply date fixes with user query context
+                        sql = self._fix_sql_date_math(sql, query)
+                        
+                        call['parameters']['sql_query'] = sql
+                        
+                        # Set default graph type if missing
+                        if call['tool'] == 'execute_dynamic_sql_with_graph' and 'graph_type' not in call['parameters']:
+                            call['parameters']['graph_type'] = chart_analysis.get('chart_type', 'bar')
+                
+                enhanced_calls.append(call)
+                
+            except Exception as e:
+                logger.warning(f"Error enhancing tool call: {e}")
+                # Create a safe fallback tool call
+                fallback_call = {
+                    'tool': 'get_database_status',
+                    'parameters': {},
+                    'original_query': query,
+                    'wants_graph': False,
+                    'chart_analysis': {'chart_type': 'none'}
+                }
+                enhanced_calls.append(fallback_call)
+        
+        if not enhanced_calls:
+            # Return fallback if no valid calls
+            return [{
+                'tool': 'get_database_status',
+                'parameters': {},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        
+        return enhanced_calls
+
+    def _get_complete_smart_fallback_tool_call(self, query: str, history: List[str]) -> List[Dict]:
+        """Enhanced fallback with all required keys."""
+        query_lower = query.lower()
+        
+        # Check for detail-oriented queries that failed
+        if any(phrase in query_lower for phrase in ['show me the ones', 'list the users', 'show users', 'user details']):
+            # Try a simple user listing query for common cases
+            if 'more than' in query_lower and any(word in query_lower for word in ['subscription', 'subscriptions']):
+                # Extract threshold
+                threshold_match = re.search(r'more than (\d+)', query_lower)
+                threshold = int(threshold_match.group(1)) if threshold_match else 1
+                
+                sql = f"""
+SELECT DISTINCT c.merchant_user_id, 
+       c.user_email, 
+       c.user_name,
+       sub_count.total_subscriptions
+FROM subscription_contract_v2 c
+JOIN (
+    SELECT merchant_user_id, COUNT(*) as total_subscriptions
+    FROM subscription_contract_v2 
+    GROUP BY merchant_user_id 
+    HAVING COUNT(*) > {threshold}
+) sub_count ON c.merchant_user_id = sub_count.merchant_user_id
+ORDER BY sub_count.total_subscriptions DESC
+LIMIT 20
+"""
+                
+                return [{
+                    'tool': 'execute_dynamic_sql',
+                    'parameters': {'sql_query': sql},
+                    'original_query': query,
+                    'wants_graph': False,
+                    'chart_analysis': {'chart_type': 'none'}
+                }]
+        
+        # Original fallback logic for other cases with proper structure
+        if any(word in query_lower for word in ['payment', 'transaction', 'revenue']):
+            return [{
+                'tool': 'get_payment_success_rate_in_last_days', 
+                'parameters': {'days': 30},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        elif any(word in query_lower for word in ['subscription', 'subscriber', 'user']):
+            return [{
+                'tool': 'get_subscriptions_in_last_days', 
+                'parameters': {'days': 30},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        else:
+            return [{
+                'tool': 'get_database_status', 
+                'parameters': {},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+
     def _create_enhanced_threshold_prompt(self, user_query: str, history_context: str, 
                                         improvement_context: str, similar_context: str, 
                                         chart_analysis: Dict, threshold_info: Dict, 
                                         date_info: Dict, comparison_info: Dict, actionable_rules=None) -> str:
-        """Create enhanced prompt with context awareness and better SQL generation."""
-        import re
-        # CONTEXT AWARENESS FOR FOLLOW-UP QUERIES - NEW
-        context_guidance = ""
+        """Create enhanced prompt with better user intent detection - FIXED VERSION."""
+        from datetime import datetime
+        
+        current_year = datetime.now().year
+        current_month = datetime.now().strftime('%B')
+        
+        # CRITICAL: Analyze user intent for details vs counts
         user_query_lower = user_query.lower()
-        # Detect follow-up queries that need context
-        followup_patterns = ['and what about', 'what about', 'how about', 'and for', 'and in', 'and last', 'and this']
-        is_followup = any(pattern in user_query_lower for pattern in followup_patterns)
-        if is_followup and history_context:
-            context_guidance = (
-                "\n\n🔥 CRITICAL FOLLOW-UP QUERY RULES:\n"
-                "- This appears to be a follow-up question referring to previous context.\n"
-                "- Look at the conversation history to understand what type of analysis the user was asking for.\n"
-                "- Apply the same analysis type but with the new time period/filter mentioned.\n"
-                "- If previous query was about 'new subscriptions this month', and user asks 'what about last month', \n"
-                "  generate SQL for new subscriptions count for last month.\n"
-                "\nFOLLOW-UP EXAMPLES:\n"
-                "Previous: 'How many new subscriptions this month?' \n"
-                "Follow-up: 'and what about last month?' \n"
-                "→ Generate: SELECT COUNT(*) as subscriptions_last_month FROM subscription_contract_v2 WHERE DATE_FORMAT(subcription_start_date, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m')\n"
-                "\nPrevious: 'Show payment success rate this week'\n"
-                "Follow-up: 'and for last week?'\n"
-                "→ Generate similar query but for last week time range\n"
-            )
-        # ENHANCED SQL GENERATION RULES - NEW  
-        sql_generation_guidance = (
-            "\n\n🔥 CRITICAL SQL GENERATION RULES:\n"
-            "- ALWAYS return actual data counts, not function names or column headers\n"
-            "- NO SPACES between function names and parentheses: MIN(date), MAX(date), COUNT(*), SUM(amount)\n"
-            "- NEVER write 'MIN (date)' - always write 'MIN(date)'\n"
-            "- For month-based queries, use proper date filtering:\n"
-            "  THIS MONTH: WHERE DATE_FORMAT(date_column, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')\n"
-            "  LAST MONTH: WHERE DATE_FORMAT(date_column, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m')\n"
-            "- For counting queries, use SELECT COUNT(*) as descriptive_name, not just raw functions\n"
-            "- NEVER return SQL function names as results - execute them properly\n"
-            "\nCORRECT SQL EXAMPLES:\n"
-            "User: When did the first transaction occur?\n"
-            "SQL: SELECT MIN(created_date) as first_transaction_date FROM subscription_payment_details\n"
-            "\nUser: What's the earliest subscription date?\n"
-            "SQL: SELECT MIN(subcription_start_date) as earliest_subscription FROM subscription_contract_v2\n"
-            "\nUser: How many new subscriptions this month?\n"
-            "SQL: SELECT COUNT(*) as new_subscriptions_this_month \n"
-            "     FROM subscription_contract_v2 \n"
-            "     WHERE DATE_FORMAT(subcription_start_date, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')\n"
-            "\nUser: What about last month?\n"
-            "SQL: SELECT COUNT(*) as new_subscriptions_last_month \n"
-            "     FROM subscription_contract_v2 \n"
-            "     WHERE DATE_FORMAT(subcription_start_date, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m')\n"
-        )
-        # MULTI-METRIC QUERY RULES - NEW
-        multi_metric_guidance = (
-            "\n\n🔥 CRITICAL MULTI-METRIC QUERY RULES:\n"
-            "- If user asks for multiple different counts in one query, use UNION ALL\n"
-            "- Each metric should be a separate SELECT statement\n"
-            "- Give descriptive category names for each metric\n"
-            "\nEXAMPLE (Multiple metrics in one query):\n"
-            "User: subscribers with more than 5 subscriptions and subscribers with more than 5 failed payments\n"
-            "SQL: SELECT 'More than 5 Subscriptions' as category, COUNT(*) as value\n"
-            "     FROM (SELECT merchant_user_id FROM subscription_contract_v2 \n"
-            "           GROUP BY merchant_user_id HAVING COUNT(*) > 5) t1\n"
-            "     UNION ALL\n"
-            "     SELECT 'More than 5 Failed Payments' as category, COUNT(*) as value\n"
-            "     FROM (SELECT c.merchant_user_id FROM subscription_payment_details p\n"
-            "           JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id\n"
-            "           WHERE p.status != 'ACTIVE'\n"
-            "           GROUP BY c.merchant_user_id HAVING COUNT(*) > 5) t2\n"
-        )
-        # Smart metric/ARPU detection
-        metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
-        is_metric_query = any(k in user_query_lower for k in metric_keywords)
-        # TOP/BEST QUERY DETECTION - NEW
-        top_keywords = ['top', 'best', 'highest', 'maximum', 'most', 'largest']
-        is_top_query = any(k in user_query_lower for k in top_keywords)
-        # TOP/BEST GUIDANCE - NEW
-        top_guidance = ""
-        if is_top_query:
-            top_guidance = (
-                "\n\n🔥 CRITICAL TOP/BEST QUERY RULES (READ CAREFULLY):\n"
-                "🔥 KEY INSIGHT FOR TOP QUERIES:\n"
-                "- 'top merchant PER week' = Pattern A (different merchant each week)\n"
-                "- 'weekly totals OF THE top merchant' = Pattern B (one merchant, weekly breakdown)\n"
-                "- 'total payments BY top merchant' = Usually Pattern B\n"
-                "- When in doubt, assume Pattern B (user wants one top merchant's breakdown)\n"
-                "\nEXAMPLE A (Different top merchant per week):\n"
-                "User: show me the top merchant per week\n"
-                "SQL: SELECT week, merchant_user_id, total_payments\n"
-                "     FROM (\n"
-                "       SELECT \n"
-                "         YEARWEEK(p.created_date, 1) as week,\n"
-                "         c.merchant_user_id,\n"
-                "         SUM(p.trans_amount_decimal) as total_payments,\n"
-                "         ROW_NUMBER() OVER (PARTITION BY YEARWEEK(p.created_date, 1) ORDER BY SUM(p.trans_amount_decimal) DESC) as rn\n"
-                "       FROM subscription_payment_details p\n"
-                "       JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id\n"
-                "       WHERE p.status = 'ACTIVE'\n"
-                "       GROUP BY YEARWEEK(p.created_date, 1), c.merchant_user_id\n"
-                "     ) ranked\n"
-                "     WHERE rn = 1\n"
-                "     ORDER BY week\n"
-                "\nEXAMPLE B (Weekly totals of THE top merchant):\n"
-                "User: weekly total payments of the top merchant\n"
-                "SQL: SELECT YEARWEEK(p.created_date, 1) as week, c.merchant_user_id, SUM(p.trans_amount_decimal) as total_payments\n"
-                "     FROM subscription_payment_details p\n"
-                "     JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id\n"
-                "     WHERE p.status = 'ACTIVE'\n"
-                "       AND c.merchant_user_id = (\n"
-                "         SELECT c2.merchant_user_id\n"
-                "         FROM subscription_payment_details p2\n"
-                "         JOIN subscription_contract_v2 c2 ON p2.subscription_id = c2.subscription_id\n"
-                "         WHERE p2.status = 'ACTIVE'\n"
-                "         GROUP BY c2.merchant_user_id\n"
-                "         ORDER BY SUM(p2.trans_amount_decimal) DESC\n"
-                "         LIMIT 1\n"
-                "       )\n"
-                "     GROUP BY YEARWEEK(p.created_date, 1), c.merchant_user_id\n"
-                "     ORDER BY week\n"
-                "\nEXAMPLE (Top 3 merchants overall):\n"
-                "User: top 3 merchants by total payments\n"
-                "SQL: SELECT c.merchant_user_id, SUM(p.trans_amount_decimal) as total_payments\n"
-                "     FROM subscription_payment_details p\n"
-                "     JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id\n"
-                "     WHERE p.status = 'ACTIVE'\n"
-                "     GROUP BY c.merchant_user_id\n"
-                "     ORDER BY total_payments DESC\n"
-                "     LIMIT 3\n"
-            )
-        metric_guidance = ""
-        if is_metric_query:
-            metric_guidance = (
-                "\n\n🔥 CRITICAL METRIC QUERY RULES (READ CAREFULLY):\n"
-                "- If the user asks for ARPU (average revenue per user) or any average/total metric, ALWAYS return a single value (not a breakdown or category table).\n"
-                "- Ignore unrelated numbers or thresholds unless the user explicitly requests a comparison.\n"
-                "- The output should be a single row: e.g., ARPU: 1234.56\n"
-                "- If the user asks for a comparison (e.g., ARPU for two groups), then use UNION ALL.\n"
-                "- Otherwise, for metric queries, return only the metric value.\n"
-                "- If you are unsure, err on the side of returning a single value.\n"
-                "\nEXAMPLE (ARPU, single value):\n"
-                "User: Calculate the average revenue per paying user (ARPU) over the last quarter\n"
-                "SQL: SELECT SUM(p.trans_amount_decimal) / COUNT(DISTINCT c.merchant_user_id) AS ARPU\n"
-                "     FROM subscription_payment_details p\n"
-                "     JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id\n"
-                "     WHERE DATE(p.created_date) >= '2025-04-01' AND p.status = 'ACTIVE'\n"
-                "Output: ARPU: 1234.56\n"
-                "\n-- For MySQL, NEVER use DATE('now', '-N days'). Instead, use DATE_SUB(CURDATE(), INTERVAL N DAY).\n"
-                "-- Example: WHERE DATE(p.created_date) >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)\n"
-                "-- For 'last quarter', use the correct date range or interval.\n"
-            )
-        # --- CRITICAL TIME PERIOD RULES AND EXAMPLES ---
-        time_period_guidance = (
-            "\n\n🔥 CRITICAL TIME PERIOD RULES (READ CAREFULLY):\n"
-            "- If the user says 'X months back', 'X months ago', or 'N months before now', convert this to the correct month using DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL X MONTH), '%Y-%m') in SQL.\n"
-            "- If the user says 'Show revenue for March 2024', convert this to the correct year-month string in SQL: '2024-03'.\n"
-            "- Always use the exact number or month specified by the user.\n"
-            "\nEXAMPLES:\n"
-            "1. 'How was the revenue 2 months back?'\n"
-            "   SQL: SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 2 MONTH), '%M %Y') AS period, SUM(p.trans_amount_decimal) AS total_revenue\n"
-            "        FROM subscription_payment_details p\n"
-            "        WHERE p.status = 'ACTIVE'\n"
-            "          AND DATE_FORMAT(p.created_date, '%Y-%m') = DATE_FORMAT(CURDATE() - INTERVAL 2 MONTH, '%Y-%m')\n"
-            "\n2. 'Show revenue for March 2024'\n"
-            "   SQL: SELECT 'March 2024' AS period, SUM(p.trans_amount_decimal) AS total_revenue\n"
-            "        FROM subscription_payment_details p\n"
-            "        WHERE p.status = 'ACTIVE'\n"
-            "          AND DATE_FORMAT(p.created_date, '%Y-%m') = '2024-03'\n"
-            "\n3. 'What was the total revenue last quarter?'\n"
-            "   SQL: SELECT 'Last Quarter' AS period, SUM(p.trans_amount_decimal) AS total_revenue\n"
-            "        FROM subscription_payment_details p\n"
-            "        WHERE p.status = 'ACTIVE'\n"
-            "          AND QUARTER(p.created_date) = QUARTER(CURDATE() - INTERVAL 1 QUARTER)\n"
-        )
-        # --- FEEDBACK-AWARE: Inject actionable improvement suggestions as direct instructions ---
-        actionable_instructions = []
-        if improvement_context:
-            lower_context = improvement_context.lower()
-            if 'mention the month' in lower_context or 'show the month' in lower_context or 'include the month' in lower_context:
-                actionable_instructions.append('ALWAYS include the full month name and year (e.g., "April 2025") in the result, not just the year-month code.')
-        # Inject general actionable rules
-        if actionable_rules:
-            actionable_instructions.append(self._inject_actionable_instructions(actionable_rules, user_query))
-        # --- ENHANCED: General chart data structuring rules for the AI ---
-        chart_data_guidance = (
-            "\n\n🔥 CRITICAL CHART DATA STRUCTURING RULES (READ CAREFULLY):\n"
-            "- For line charts: ALWAYS use a time, date, or period column as the x-axis, and the main value/metric as the y-axis.\n"
-        )
-        # --- ENHANCED: Date filtering guidance ---
-        date_filtering_guidance = (
-            "\n\n🔥 CRITICAL DATE FILTERING RULES:\n"
-            "- For specific months/years, ALWAYS use exact date filtering\n"
-            "- 'April 2025' = WHERE DATE_FORMAT(created_date, '%Y-%m') = '2025-04'\n"
-            "- 'March 2024' = WHERE DATE_FORMAT(created_date, '%Y-%m') = '2024-03'\n"
-            "- NEVER return overall data when user specifies a month/year\n"
-            "- For pie charts, ALWAYS use category/value structure with descriptive labels\n"
-            "\nCORRECT DATE EXAMPLES:\n"
-            "User: payment success rate for april 2025\n"
-            "SQL: SELECT \n"
-            "       CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END as category,\n"
-            "       COUNT(*) as value\n"
-            "     FROM subscription_payment_details\n"
-            "     WHERE DATE_FORMAT(created_date, '%Y-%m') = '2025-04'\n"
-            "     GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END\n"
-            "\nUser: subscriptions in march 2024\n"
-            "SQL: SELECT COUNT(*) as subscriptions_march_2024\n"
-            "     FROM subscription_contract_v2\n"
-            "     WHERE DATE_FORMAT(subcription_start_date, '%Y-%m') = '2024-03'\n"
-        )
-        # --- MONTH/YEAR DETECTION ---
-        month_year_detection = ""
-        if re.search(r'\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+20\d{2}\b', user_query_lower):
-            month_year_detection = (
-                "\n🚨 MONTH/YEAR DETECTED IN QUERY! 🚨\n"
-                "The user specified a specific month and year. YOU MUST include date filtering.\n"
-                "NEVER return overall data when a specific month/year is mentioned.\n"
-                "Use: WHERE DATE_FORMAT(created_date, '%Y-%m') = 'YYYY-MM'\n"
-                "Example: 'april 2025' = WHERE DATE_FORMAT(created_date, '%Y-%m') = '2025-04'\n"
-            )
-        # --- Compose the prompt ---
-        feedback_instruction = ""
-        if actionable_instructions:
-            feedback_instruction = "\n\nFEEDBACK-DRIVEN INSTRUCTIONS (MANDATORY):\n" + "\n".join(actionable_instructions)
-        threshold_guidance = self._get_threshold_guidance(threshold_info, comparison_info)
-        date_guidance = self._get_date_guidance(date_info)
-        chart_guidance = self._get_complete_chart_guidance(chart_analysis)
-        return f"""
-You are an expert subscription analytics assistant with ENHANCED context awareness and SQL generation.
+        wants_details = any(phrase in user_query_lower for phrase in [
+            'show me the ones', 'list the users', 'who are the', 'get user details',
+            'show user', 'list user', 'user info', 'details', 'names', 'emails',
+            'show them', 'list them', 'the actual', 'specific users'
+        ])
+        
+        wants_count_only = any(phrase in user_query_lower for phrase in [
+            'how many', 'count of', 'number of', 'total count', 'how much'
+        ]) and not wants_details
+        
+        detail_preference = "SHOW ACTUAL USER/RECORD DETAILS" if wants_details else "COUNT OR AGGREGATE" if wants_count_only else "PREFER DETAILS UNLESS ASKING FOR COUNTS"
+        
+        # Chart requirements handling
+        chart_type = chart_analysis.get('chart_type', 'none')
+        if chart_type == 'pie':
+            chart_requirements = """PIE CHART REQUIRED:
+- Use execute_dynamic_sql_with_graph tool
+- SQL must return exactly 2 columns: category (text) and value (number)
+- Example: SELECT 'Successful' as category, COUNT(*) as value FROM ... UNION ALL SELECT 'Failed' as category, COUNT(*) as value FROM ..."""
+        elif chart_type == 'bar':
+            chart_requirements = """BAR CHART REQUIRED:
+- Use execute_dynamic_sql_with_graph tool  
+- SQL should return category and value columns
+- Limit to reasonable number of bars (≤30)"""
+        elif chart_type == 'line':
+            chart_requirements = """LINE CHART REQUIRED:
+- Use execute_dynamic_sql_with_graph tool
+- SQL should return time/period and value columns
+- Order by time ascending"""
+        else:
+            chart_requirements = "No chart requested."
 
-CONVERSATION HISTORY:
-{history_context}
+        prompt = f"""You are an expert SQL analyst for subscription data. Generate the EXACT tool calls needed.
 
-{improvement_context}
-
-{similar_context}
-
-CURRENT USER QUERY: "{user_query}"
-{month_year_detection}
-{context_guidance}
-{sql_generation_guidance}
-{multi_metric_guidance}
-{date_filtering_guidance}
-{top_guidance}
-{metric_guidance}
-{time_period_guidance}{feedback_instruction}
-{chart_data_guidance}
-{threshold_guidance}
-{date_guidance}
-{chart_guidance}
-{self.db_schema}
+USER INTENT ANALYSIS:
+- Query: "{user_query}"
+- Detail Preference: {detail_preference}
+- Chart Request: {chart_type}
 
 🔥 CRITICAL RULES:
-0. ⚠️ MONTH/YEAR FILTER: If user mentions specific month/year, ALWAYS add WHERE clause for that exact period
-1. ⚠️ CONTEXT: If this is a follow-up query, apply the same analysis type with new parameters
-2. ⚠️ SQL RESULTS: Return actual counts/data, never function names or malformed output
-3. ⚠️ MONTH QUERIES: Use DATE_FORMAT for month comparisons, not raw date math
-4. ⚠️ FOLLOW-UPS: "what about X" means apply previous query logic to X
+1. When user says "show me the ones with..." → ALWAYS show actual records/users, NOT just counts
+2. When user says "how many..." → Show counts/aggregates
+3. For "list", "show", "get" → Show detailed records
+4. For thresholds like "more than 1" → Show the actual users who meet criteria
 
-🎯 REMEMBER: Generate working SQL that returns meaningful data, not function names!
+CURRENT CONTEXT:
+- Current Year: {current_year} (default for month-only queries)
+- History: {history_context}
+- Improvements Needed: {improvement_context}
+- Similar Successful Queries: {similar_context}
+
+DATABASE SCHEMA:
+subscription_contract_v2: merchant_user_id, user_email, user_name, status, subcription_start_date
+subscription_payment_details: subscription_id, status, trans_amount_decimal, created_date
+
+🎯 SQL GENERATION RULES:
+
+FOR DETAIL QUERIES (when user wants to see actual records):
+✅ CORRECT: "show me users with more than 1 subscription"
+```sql
+SELECT DISTINCT c.merchant_user_id, c.user_email, c.user_name, sub_count.total_subscriptions
+FROM subscription_contract_v2 c
+JOIN (
+    SELECT merchant_user_id, COUNT(*) as total_subscriptions
+    FROM subscription_contract_v2 
+    GROUP BY merchant_user_id 
+    HAVING COUNT(*) > 1
+) sub_count ON c.merchant_user_id = sub_count.merchant_user_id
+ORDER BY sub_count.total_subscriptions DESC
+LIMIT 50
+```
+
+❌ WRONG: SELECT COUNT(*) as num_subscribers FROM (...)
+
+FOR COUNT QUERIES (when user asks "how many"):
+✅ CORRECT: "how many users have more than 1 subscription"
+```sql
+SELECT COUNT(*) as num_subscribers 
+FROM (
+    SELECT merchant_user_id 
+    FROM subscription_contract_v2 
+    GROUP BY merchant_user_id 
+    HAVING COUNT(*) > 1
+) as t
+```
+
+FOR TIME SERIES QUERIES:
+✅ CORRECT: "show weekly payment trends"
+```sql
+SELECT DATE_FORMAT(p.created_date, '%Y-W%u') AS payment_week, 
+       SUM(p.trans_amount_decimal) AS total_amount
+FROM subscription_payment_details p
+WHERE p.status = 'ACTIVE'
+  AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+GROUP BY DATE_FORMAT(p.created_date, '%Y-W%u')
+ORDER BY payment_week ASC
+```
+
+✅ CORRECT: "show monthly trends"  
+```sql
+SELECT DATE_FORMAT(p.created_date, '%Y-%m') AS payment_month,
+       SUM(p.trans_amount_decimal) AS total_amount
+FROM subscription_payment_details p
+WHERE p.status = 'ACTIVE'
+  AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+GROUP BY DATE_FORMAT(p.created_date, '%Y-%m')
+ORDER BY payment_month ASC
+```
+
+❌ WRONG: DATE_FORMAT(created_date, '%Y-%W') → inconsistent day names
+
+🎨 CHART REQUIREMENTS:
+{chart_requirements}
+
+📅 DATE FILTERING (Current Year: {current_year}):
+- "april" without year → WHERE DATE_FORMAT(created_date, '%Y-%m') = '{current_year}-04'
+- "this month" → WHERE DATE_FORMAT(created_date, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')
+- "last month" → WHERE DATE_FORMAT(created_date, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m')
+
+🗓️ TIME PERIOD FORMATTING:
+- Daily: DATE_FORMAT(created_date, '%Y-%m-%d') AS day
+- Weekly: DATE_FORMAT(created_date, '%Y-W%u') AS week  (e.g., 2025-W15)
+- Monthly: DATE_FORMAT(created_date, '%Y-%m') AS month (e.g., 2025-04)
+- Quarterly: CONCAT(YEAR(created_date), '-Q', QUARTER(created_date)) AS quarter
+
+❌ WRONG: DATE_FORMAT(created_date, '%Y-%W') → gives day names
+✅ CORRECT: DATE_FORMAT(created_date, '%Y-W%u') → gives week numbers like 2025-W15
+
+🔧 AVAILABLE TOOLS:
+1. execute_dynamic_sql - for data queries without charts
+2. execute_dynamic_sql_with_graph - for data queries with charts
+3. get_subscriptions_in_last_days - basic subscription stats
+4. get_payment_success_rate_in_last_days - payment stats
+5. get_database_status - connection and basic stats
+
+RESPONSE FORMAT:
+Return a JSON array of tool calls like:
+[{{"tool": "execute_dynamic_sql", "parameters": {{"sql_query": "SELECT ..."}}}}]
+
+Query: "{user_query}"
+Generate the appropriate tool call(s):"""
+
+        return prompt
+
+    def _auto_fix_sql_errors(self, sql: str, error: str) -> str:
+        """Enhanced auto-fix for SQL errors with GROUP BY handling."""
+        import re
+        
+        try:
+            error_lower = error.lower()
+            
+            # Fix MySQL GROUP BY errors (ONLY_FULL_GROUP_BY mode)
+            if ('group by' in error_lower and 'not in group by clause' in error_lower) or '1055' in error:
+                logger.info("🔧 Fixing MySQL GROUP BY error - rewriting as subquery")
+                
+                # Extract the threshold from HAVING clause if present
+                threshold_match = re.search(r'HAVING COUNT\(\*\) > (\d+)', sql)
+                threshold = int(threshold_match.group(1)) if threshold_match else 1
+                
+                # Check if this is a user detail query
+                if ('user_email' in sql.lower() or 'user_name' in sql.lower()) and 'merchant_user_id' in sql.lower():
+                    # Rewrite as a proper subquery to avoid GROUP BY issues
+                    sql = f"""
+SELECT DISTINCT c.merchant_user_id, 
+       c.user_email, 
+       c.user_name,
+       sub_count.total_subscriptions
+FROM subscription_contract_v2 c
+JOIN (
+    SELECT merchant_user_id, COUNT(*) as total_subscriptions
+    FROM subscription_contract_v2 
+    GROUP BY merchant_user_id 
+    HAVING COUNT(*) > {threshold}
+) sub_count ON c.merchant_user_id = sub_count.merchant_user_id
+ORDER BY sub_count.total_subscriptions DESC
+LIMIT 50
 """
+                    logger.info(f"🔧 Rewritten as subquery with threshold {threshold} to show user details")
+                    return sql.strip()
+                
+                # For non-user queries, try to fix by adding columns to GROUP BY
+                else:
+                    select_match = re.search(r'SELECT\s+(.*?)\s+FROM', sql, re.IGNORECASE | re.DOTALL)
+                    group_by_match = re.search(r'GROUP BY\s+(.*?)(?:\s+HAVING|\s+ORDER|\s*$)', sql, re.IGNORECASE)
+                    
+                    if select_match and group_by_match:
+                        select_columns = [col.strip() for col in select_match.group(1).split(',')]
+                        # Get base column names (without functions)
+                        base_columns = []
+                        for col in select_columns:
+                            if '(' not in col:  # Skip aggregation functions
+                                base_col = col.split(' as ')[0].strip()
+                                if base_col not in ['*']:
+                                    base_columns.append(base_col)
+                        
+                        if base_columns:
+                            current_group_by = group_by_match.group(1).strip()
+                            # Add missing columns to GROUP BY
+                            all_group_columns = [current_group_by] + [col for col in base_columns if col not in current_group_by]
+                            new_group_by = ', '.join(all_group_columns)
+                            sql = re.sub(r'GROUP BY\s+.*?(?=\s+HAVING|\s+ORDER|\s*$)', 
+                                       f'GROUP BY {new_group_by}', sql, flags=re.IGNORECASE)
+                            logger.info(f"🔧 Updated GROUP BY to include all columns: {new_group_by}")
+            
+            # Fix quote escaping issues
+            elif 'syntax' in error_lower or 'quote' in error_lower or '42000' in error_lower:
+                logger.info("🔧 Applying quote fixes for syntax error")
+                sql = sql.replace("\\'", "'").replace('\\"', '"').replace("''", "'")
+                sql = sql.strip()
+                
+                # Fix orphaned quotes
+                if sql.startswith('"') and sql.count('"') % 2 == 1:
+                    sql = sql[1:]
+                if sql.endswith('"') and sql.count('"') % 2 == 1:
+                    sql = sql[:-1]
+                
+                # Fix date strings
+                sql = re.sub(r'"(\d{4}-\d{2}-\d{2})', r"'\1'", sql)
+                sql = re.sub(r'(\d{4}-\d{2}-\d{2})"', r"'\1'", sql)
+                sql = re.sub(r'"([^"]*)"', r"'\1'", sql)
+            
+            # Fix unknown column errors for status values
+            elif 'unknown column' in error_lower and 'status' in sql.lower():
+                status_values = ['ACTIVE', 'INACTIVE', 'FAILED', 'FAIL', 'INIT', 'CLOSED', 'REJECT']
+                for status in status_values:
+                    pattern = rf'\bstatus\s*(?:=|!=|<>)\s*{status}\b'
+                    replacement = f"status = '{status}'"
+                    sql = re.sub(pattern, replacement, sql, flags=re.IGNORECASE)
+                logger.info("🔧 Fixed status value quoting")
+            
+            # Clean up whitespace
+            sql = re.sub(r'\s+', ' ', sql).strip()
+            logger.info(f"🔧 Auto-fixed SQL: {sql[:150]}...")
+            return sql
+            
+        except Exception as e:
+            logger.warning(f"Auto-fix failed: {e}")
+            return sql
 
     def _get_threshold_guidance(self, threshold_info: Dict, comparison_info: Dict) -> str:
         """Generate specific guidance for threshold handling."""
@@ -1944,118 +2544,6 @@ CURRENT USER QUERY: "{user_query}"
         
         return "\n".join(guidance) + "\n"
 
-    async def _generate_with_complete_retries(self, prompt: str, user_query: str, chart_analysis: Dict, max_retries: int = 3) -> List[Dict]:
-        """Generate AI response with complete enhanced retries and chart-specific handling."""
-        for attempt in range(max_retries):
-            try:
-                response = self.model.generate_content(
-                    prompt,
-                    tools=self.tools,
-                    tool_config={'function_calling_config': {'mode': 'ANY'}}
-                )
-                
-                tool_calls = []
-                if response.candidates and response.candidates[0].content.parts:
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'function_call') and part.function_call:
-                            fc = part.function_call
-                            params = dict(fc.args)
-                            
-                            # Smart chart type injection
-                            if fc.name == 'execute_dynamic_sql_with_graph' and chart_analysis.get('chart_type'):
-                                if 'graph_type' not in params or not params['graph_type']:
-                                    params['graph_type'] = chart_analysis['chart_type']
-                            
-                            tool_calls.append({
-                                'tool': fc.name,
-                                'parameters': params,
-                                'original_query': user_query,
-                                'wants_graph': fc.name == 'execute_dynamic_sql_with_graph',
-                                'chart_analysis': chart_analysis
-                            })
-                
-                if tool_calls:
-                    return tool_calls
-                    
-            except Exception as e:
-                logger.warning(f"Complete AI generation attempt {attempt + 1} failed: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(1)
-                    continue
-        
-        return []
-
-    def _enhance_and_validate_complete_tool_calls(self, tool_calls: List[Dict], user_query: str, 
-                                                chart_analysis: Dict, threshold_info: Dict = None) -> List[Dict]:
-        """Enhanced tool call validation with threshold verification and robust parameter validation."""
-        enhanced_calls = []
-        
-        for call in tool_calls:
-            try:
-                # Validate tool name
-                tool = call.get('tool', '')
-                if not tool or not isinstance(tool, str) or tool.strip() == '':
-                    logger.warning(f"Skipping tool call with empty or invalid tool name: {call}")
-                    continue
-                
-                # Parameter validation
-                params = call.get('parameters', {})
-                valid = True
-                
-                # Validate 'days' parameter
-                if 'days' in params:
-                    try:
-                        days = int(params['days'])
-                        if not (1 <= days <= 365):
-                            logger.warning(f"Skipping tool call {tool}: days out of range ({days})")
-                            valid = False
-                    except Exception:
-                        logger.warning(f"Skipping tool call {tool}: invalid days param {params['days']}")
-                        valid = False
-                
-                # Validate user ID for user-specific tools
-                if tool == 'get_user_payment_history' and not params.get('merchant_user_id'):
-                    logger.warning(f"Skipping tool call {tool}: missing merchant_user_id")
-                    valid = False
-                
-                # Validate SQL for dynamic SQL tools
-                if tool.startswith('execute_dynamic_sql') and not params.get('sql_query'):
-                    logger.warning(f"Skipping tool call {tool}: missing sql_query")
-                    valid = False
-                
-                if not valid:
-                    continue
-                
-                # Enhance SQL for complete schema compliance and threshold accuracy
-                if 'sql_query' in call['parameters']:
-                    original_sql = call['parameters']['sql_query']
-                    enhanced_sql = self._fix_complete_sql_schema_issues(
-                        original_sql, chart_analysis, user_query, threshold_info
-                    )
-                    enhanced_sql = self._fix_sql_quotes(enhanced_sql)
-                    enhanced_sql = self._validate_and_autofix_sql(enhanced_sql)
-                    call['parameters']['sql_query'] = enhanced_sql
-                    
-                    if original_sql != enhanced_sql:
-                        logger.info("🧠 SQL fixed for complete schema compliance, MySQL compatibility, and syntax.")
-                
-                # Ensure graph type is set correctly
-                if call['tool'] == 'execute_dynamic_sql_with_graph':
-                    if chart_analysis.get('chart_type') and 'graph_type' not in call['parameters']:
-                        call['parameters']['graph_type'] = chart_analysis['chart_type']
-                
-                enhanced_calls.append(call)
-                
-            except Exception as e:
-                logger.error(f"Error enhancing complete tool call: {e}")
-                continue  # Skip invalid calls instead of keeping them
-        
-        if not enhanced_calls:
-            logger.warning("All tool calls filtered out, using fallback.")
-            return self._get_complete_smart_fallback_tool_call(user_query, [])
-        
-        return enhanced_calls
-
     def _fix_complete_sql_schema_issues(self, sql_query: str, chart_analysis: Dict, 
                                       user_query: str, threshold_info: Dict = None) -> str:
         """Fix SQL with enhanced threshold handling and schema compliance."""
@@ -2174,62 +2662,6 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
         
         return sql_query
 
-    def _get_complete_smart_fallback_tool_call(self, user_query: str, history: List[str]) -> List[Dict]:
-        """Get complete smart fallback based on query analysis. For ARPU/metric queries, fallback to a simple ARPU SQL."""
-        query_lower = user_query.lower()
-        
-        # If a specific date is present, do not fallback to last N days
-        date_patterns = [
-            r'\d{4}-\d{2}-\d{2}',
-            r'\d{2}/\d{2}/\d{4}',
-            r'\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}',
-        ]
-        for pattern in date_patterns:
-            if re.search(pattern, user_query, re.IGNORECASE):
-                return [{
-                    'tool': 'execute_dynamic_sql',
-                    'parameters': {'sql_query': 'SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = ...'},
-                    'original_query': user_query,
-                    'wants_graph': False
-                }]
-        
-        # ARPU/metric fallback
-        metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
-        if any(k in query_lower for k in metric_keywords):
-            # Fallback to simple ARPU SQL for last 90 days
-            sql = ("SELECT SUM(p.trans_amount_decimal) / COUNT(DISTINCT c.merchant_user_id) AS ARPU "
-                   "FROM subscription_payment_details p "
-                   "JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id "
-                   "WHERE DATE(p.created_date) >= DATE_SUB(CURDATE(), INTERVAL 90 DAY) AND p.status = 'ACTIVE'")
-            return [{
-                'tool': 'execute_dynamic_sql',
-                'parameters': {'sql_query': sql},
-                'original_query': user_query,
-                'wants_graph': False
-            }]
-        
-        if 'subscription' in query_lower and any(word in query_lower for word in ['last', 'recent', 'days']):
-            return [{
-                'tool': 'get_subscriptions_in_last_days',
-                'parameters': {'days': 30},
-                'original_query': user_query,
-                'wants_graph': False
-            }]
-        elif 'payment' in query_lower and 'rate' in query_lower:
-            return [{
-                'tool': 'get_payment_success_rate_in_last_days',
-                'parameters': {'days': 30},
-                'original_query': user_query,
-                'wants_graph': False
-            }]
-        else:
-            return [{
-                'tool': 'get_database_status',
-                'parameters': {},
-                'original_query': user_query,
-                'wants_graph': False
-            }]
-
     def _fix_sql_quotes(self, sql_query: str) -> str:
         """Replace all double-quoted string literals with single quotes for MySQL compatibility."""
         import re
@@ -2278,6 +2710,8 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
     def _fix_sql_date_math(self, sql_query: str, user_query: str = None) -> str:
         """Convert SQLite-style date math to MySQL-compatible syntax. Handles both single and double quotes and all common intervals."""
         import re
+        from datetime import datetime
+        
         # Replace DATE('now', '-N day') or DATE("now", '-N day') with DATE_SUB(CURDATE(), INTERVAL N DAY)
         sql_query = re.sub(r"DATE\(['\"]now['\"],\s*'-?(\d+) day'\)", r"DATE_SUB(CURDATE(), INTERVAL \1 DAY)", sql_query)
         # Replace DATE('now', '-N month') or DATE("now", '-N month') with DATE_SUB(CURDATE(), INTERVAL N MONTH)
@@ -2287,22 +2721,51 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
         # Replace DATE('now') or DATE("now") with CURDATE()
         sql_query = re.sub(r"DATE\(['\"]now['\"]\)", "CURDATE()", sql_query)
 
-        # ENFORCE: If user_query contains a specific month/year, inject WHERE DATE_FORMAT if missing
+        # FIXED: Handle month-only queries to default to current year
         if user_query:
-            match = re.search(r'(january|february|march|april|may|june|july|august|september|october|november|december)\s+20\d{2}', user_query.lower())
-            if match:
-                month_str = match.group(1)
-                year_match = re.search(r'20\d{2}', user_query)
-                if year_match:
-                    year_str = year_match.group(0)
+            # Check for month name without year
+            month_only_match = re.search(r'\b(january|february|march|april|may|june|july|august|september|october|november|december)\b', user_query.lower())
+            year_mentioned = re.search(r'20\d{2}', user_query)
+            
+            if month_only_match and not year_mentioned:
+                # User mentioned month but no year - default to current year
+                month_str = month_only_match.group(1)
+                current_year = datetime.now().year
+                
+                month_map = {
+                    'january': '01', 'february': '02', 'march': '03', 'april': '04', 'may': '05', 'june': '06',
+                    'july': '07', 'august': '08', 'september': '09', 'october': '10', 'november': '11', 'december': '12'
+                }
+                month_num = month_map[month_str]
+                date_filter = f"WHERE DATE_FORMAT(p.created_date, '%Y-%m') = '{current_year}-{month_num}'"
+                
+                # CRITICAL FIX: Only add if not already present AND no existing WHERE with specific date
+                if (date_filter not in sql_query and 
+                    'WHERE DATE(' not in sql_query and 
+                    f"= '{current_year}-{month_num}" not in sql_query):
+                    # Insert before GROUP BY if present, else at end
+                    if 'GROUP BY' in sql_query:
+                        sql_query = sql_query.replace('GROUP BY', f'{date_filter} GROUP BY')
+                    else:
+                        sql_query += f' {date_filter}'
+            
+            elif year_mentioned:
+                # User mentioned both month and year - use the specified year
+                match = re.search(r'(january|february|march|april|may|june|july|august|september|october|november|december)\s+20\d{2}', user_query.lower())
+                if match:
+                    month_str = match.group(1)
+                    year_str = re.search(r'20\d{2}', user_query).group(0)
                     month_map = {
                         'january': '01', 'february': '02', 'march': '03', 'april': '04', 'may': '05', 'june': '06',
                         'july': '07', 'august': '08', 'september': '09', 'october': '10', 'november': '11', 'december': '12'
                     }
                     month_num = month_map[month_str]
-                    date_filter = f"WHERE DATE_FORMAT(created_date, '%Y-%m') = '{year_str}-{month_num}'"
-                    # Only add if not already present
-                    if date_filter not in sql_query:
+                    date_filter = f"WHERE DATE_FORMAT(p.created_date, '%Y-%m') = '{year_str}-{month_num}'"
+                    
+                    # Only add if not already present AND no existing WHERE with specific date
+                    if (date_filter not in sql_query and 
+                        'WHERE DATE(' not in sql_query and 
+                        f"= '{year_str}-{month_num}" not in sql_query):
                         # Insert before GROUP BY if present, else at end
                         if 'GROUP BY' in sql_query:
                             sql_query = sql_query.replace('GROUP BY', f'{date_filter} GROUP BY')
@@ -2344,6 +2807,25 @@ class CompleteEnhancedResultFormatter:
                         new_row['period'] = f"{month_name} {year}"
                 for k, v in new_row.items():
                     output.append(f"{k.replace('_', ' ').capitalize()}: {v}")
+                # --- NEW: Warn if requested fields are missing ---
+                if hasattr(result, 'original_query') and result.original_query:
+                    requested_fields = []
+                    query_lower = result.original_query.lower()
+                    for field in ['email', 'end date', 'end_date', 'subscription_end_date']:
+                        if field in query_lower:
+                            requested_fields.append(field)
+                    for field in requested_fields:
+                        if field not in new_row:
+                            # Try to find a close substitute
+                            substitute = None
+                            if 'subcription_start_date' in new_row and 'end' in field:
+                                substitute = 'subcription_start_date'
+                            elif 'merchant_user_id' in new_row and 'email' in field:
+                                substitute = 'merchant_user_id'
+                            if substitute:
+                                output.append(f"[Note] Field '{field}' not found in schema; showing '{substitute}' instead.")
+                            else:
+                                output.append(f"[Note] Field '{field}' not found in schema and no substitute available.")
             elif result.data and isinstance(result.data, list):
                 # Table output for breakdowns
                 headers = result.data[0].keys()
@@ -2360,6 +2842,24 @@ class CompleteEnhancedResultFormatter:
                             month_name = calendar.month_name[int(month)]
                             new_row['period'] = f"{month_name} {year}"
                     output.append(" | ".join(str(new_row[h]) for h in headers))
+                # --- NEW: Warn if requested fields are missing ---
+                if hasattr(result, 'original_query') and result.original_query:
+                    requested_fields = []
+                    query_lower = result.original_query.lower()
+                    for field in ['email', 'end date', 'end_date', 'subscription_end_date']:
+                        if field in query_lower:
+                            requested_fields.append(field)
+                    for field in requested_fields:
+                        if field not in headers:
+                            substitute = None
+                            if 'subcription_start_date' in headers and 'end' in field:
+                                substitute = 'subcription_start_date'
+                            elif 'merchant_user_id' in headers and 'email' in field:
+                                substitute = 'merchant_user_id'
+                            if substitute:
+                                output.append(f"[Note] Field '{field}' not found in schema; showing '{substitute}' instead.")
+                            else:
+                                output.append(f"[Note] Field '{field}' not found in schema and no substitute available.")
             else:
                 output.append(str(result.data))
             
@@ -2410,7 +2910,7 @@ class CompleteEnhancedResultFormatter:
                     output.append(f"\n--- Query {query_index} Results ---")
                 
                 for i, result in enumerate(query_results):
-                    if len(query_results) > 1:
+                    if len(results_by_query) > 1:
                         output.append(f"\n  -- Result {i+1} --")
                     
                     single_result = self.format_single_result(result)
