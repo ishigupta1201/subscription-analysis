@@ -1568,9 +1568,10 @@ FROM (
     SELECT c.merchant_user_id
     FROM subscription_contract_v2 c
     LEFT JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id
+    WHERE p.status = 'ACTIVE' OR p.status IS NULL
     GROUP BY c.merchant_user_id
     HAVING COUNT(DISTINCT c.subscription_id) > {sub_threshold} 
-       AND COUNT(DISTINCT p.id) > {payment_threshold}
+       AND COUNT(DISTINCT CASE WHEN p.status = 'ACTIVE' THEN p.subscription_id END) > {payment_threshold}
 ) combined_criteria
 """
                 elif len(numbers) == 1:
@@ -1582,9 +1583,10 @@ FROM (
     SELECT c.merchant_user_id
     FROM subscription_contract_v2 c
     LEFT JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id
+    WHERE p.status = 'ACTIVE' OR p.status IS NULL
     GROUP BY c.merchant_user_id
     HAVING COUNT(DISTINCT c.subscription_id) > {threshold} 
-       AND COUNT(DISTINCT p.id) > {threshold}
+       AND COUNT(DISTINCT CASE WHEN p.status = 'ACTIVE' THEN p.subscription_id END) > {threshold}
 ) combined_criteria
 """
                 
@@ -1603,7 +1605,8 @@ FROM (
             # Check for mixed metrics (subscriptions and payments)
             elif ('subscription' in query_lower and 'payment' in query_lower and 
                   len(numbers) >= 1 and 'and' in query_lower and 
-                  not ('who have' in query_lower or 'and who' in query_lower)):
+                  not ('who have' in query_lower or 'and who' in query_lower) and
+                  ('number of' in query_lower or 'count' in query_lower or 'merchant' in query_lower or 'merhcnat' in query_lower)):
                 # This is asking for separate counts: subscriptions vs payments
                 threshold = numbers[0] if len(numbers) == 1 else numbers[0]
                 payment_threshold = numbers[1] if len(numbers) >= 2 else threshold
@@ -1615,8 +1618,20 @@ UNION ALL
 SELECT 'More than {payment_threshold} Payments' as category, COUNT(*) as value  
 FROM (SELECT c.merchant_user_id FROM subscription_contract_v2 c 
       JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id 
-      GROUP BY c.merchant_user_id HAVING COUNT(p.id) > {payment_threshold}) t2
+      WHERE p.status = 'ACTIVE'
+      GROUP BY c.merchant_user_id HAVING COUNT(p.subscription_id) > {payment_threshold}) t2
 """
+                sql = self._fix_sql_quotes(sql)
+                sql = self._validate_and_autofix_sql(sql)
+                sql = self._fix_sql_date_math(sql, query)
+                
+                return [{
+                    'tool': 'execute_dynamic_sql',
+                    'parameters': {'sql_query': sql},
+                    'original_query': query,
+                    'wants_graph': False,
+                    'chart_analysis': {'chart_type': 'none'}
+                }]
             # Standard comparison queries (different thresholds for same metric)
             elif len(numbers) >= 2:
                 sql = f"""
@@ -3770,6 +3785,7 @@ if __name__ == "__main__":
         "Visualize payment data with a bar chart",
         "Create a pie chart breakdown of successful vs failed payments",
         "Show payment success rate for merchants with more than 1 transaction visually",
+        "number of merchants with more than 5 subscriptions and number of merchants with more than 5 payments",
         "Show payment trends over time",
         "Tell me the last date for which data is available",
         "Compare subscribers with more than 1 and more than 2 subscriptions",
@@ -3779,15 +3795,8 @@ if __name__ == "__main__":
         "Revenue between 1 april 2025 and 30 april 2025",
         "Show me database status and recent subscription summary",
         "How many new subscriptions did we get this month?",
-        "Multiple: Get database status; show payment success rates; create pie chart",
         "Show me users with their email addresses and subscription amounts",
-        "List customers by industry type with their renewal amounts",
-        "Find subscriptions that are due this week with customer details",
         "Show me the top 10 customers by total subscription value",
-        "Which industries have the highest revenue per customer?",
-        "Show subscription end dates for customers with auto-renewal enabled",
-        "Get customer contact details for failed payments",
-        "List new vs existing subscriptions by channel",
     ]
 
     def print_example_queries():
