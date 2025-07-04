@@ -157,17 +157,9 @@ class CompleteGraphGenerator:
             if not self._validate_and_prepare_graph_data(graph_data):
                 logger.error("Invalid graph data structure after preparation")
                 return None
-
-            # DEFENSIVE: Ensure graph_type is always a valid string
-            requested_graph_type = graph_data.get('graph_type')
-            if not requested_graph_type or not isinstance(requested_graph_type, str) or requested_graph_type.lower() == 'none':
-                # Try to infer from query
-                if any(word in query.lower() for word in ['line', 'trend', 'over time', 'timeline', 'time series', 'progression']):
-                    requested_graph_type = 'line'
-                else:
-                    requested_graph_type = 'bar'
-                logger.warning(f"[DEFENSIVE] graph_type was missing or invalid, defaulted to '{requested_graph_type}'")
-            requested_graph_type = requested_graph_type.lower()
+            
+            # ENFORCE: Use the graph_type from graph_data (set by tool call override logic)
+            requested_graph_type = graph_data.get('graph_type', '').lower()
             query_lower = query.lower()
             # HANDLE "TRY AGAIN" - retry previous user query if requested
             if query_lower in ['try again', 'retry', 'fix it', 'try that again']:
@@ -316,7 +308,7 @@ class CompleteGraphGenerator:
                             return False
                     
                     elif graph_type == 'line':
-                        # FIXED: Better handling forN line charts
+                        # FIXED: Better handling for line charts
                         if len(columns) >= 2:
                             x_col = columns[0]
                             y_col = columns[1]
@@ -407,7 +399,8 @@ class CompleteGraphGenerator:
         # Check for explicit requests in query
         if any(word in query_lower for word in ['pie chart', 'pie', 'distribution', 'breakdown']):
             return 'pie'
-        elif any(word in query_lower for word in ['line chart', 'line', 'trend', 'over time', 'timeline']):
+        elif any(word in query_lower for word in ['line chart', 'line', 'trend', 'trends', 'over time', 'timeline', 'payment trends']):
+            logger.info(f"[GRAPH] Detected trend/time keywords in query: '{query}' - using line chart")
             return 'line'
         elif any(word in query_lower for word in ['scatter', 'correlation', 'relationship']):
             return 'scatter'
@@ -872,7 +865,7 @@ class CompleteGraphGenerator:
 
 class SimpleAIModel:
     """Simple wrapper for Google AI model."""
-    def __init__(self, model_name="gemini-2.0-flash-lite"):
+    def __init__(self, model_name="gemini-1.5-flash"):
         import google.generativeai as genai
         self.model = genai.GenerativeModel(model_name)
     async def generate_content_async(self, prompt: str):
@@ -888,6 +881,7 @@ class CompleteSmartNLPProcessor:
     
     def __init__(self, config=None):
         self.config = config or {}
+        self.context = {}  # Add this line for context storage
         try:
             import google.generativeai as genai
             api_key = self.config.get('GOOGLE_API_KEY') if self.config else None
@@ -903,59 +897,98 @@ class CompleteSmartNLPProcessor:
         self.chart_keywords = self._get_chart_keywords()
         self.tools = self._get_tools_config()
 
-    async def _generate_with_complete_retries(self, prompt: str, original_query: str, chart_analysis: dict) -> list:
-        """Enhanced generation with better error handling and retries."""
-        max_attempts = 3
-        for attempt in range(max_attempts):
+    async def _generate_with_complete_retries(self, prompt: str, query: str, chart_analysis: Dict, max_retries: int = 3) -> List[Dict]:
+        """Generate AI response with retries and better error handling"""
+        for attempt in range(1, max_retries + 1):
             try:
-                logger.info(f"🧠 Complete AI generation attempt {attempt + 1}")
-                response = await self.ai_model.generate_content_async(prompt)
-                if not response or not hasattr(response, 'text') or not response.text:
-                    logger.warning(f"Complete AI generation attempt {attempt + 1} failed: empty response")
-                    continue
-                response_text = response.text.strip()
-                if not response_text:
-                    logger.warning(f"Complete AI generation attempt {attempt + 1} failed: empty text")
-                    continue
-                logger.info(f"🧠 AI Response: {response_text[:200]}...")
-                json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
+                logger.info(f"🧠 Complete AI generation attempt {attempt}")
+                
+                response = self.model.generate_content(prompt)
+                ai_response = response.text.strip()
+                logger.info(f"🧠 AI Response: {ai_response[:200]}...")
+                
+                # Clean up escape sequences and line breaks in JSON
+                ai_response = ai_response.replace('\\\n', ' ').replace('\\n', ' ').replace('\n', ' ')
+                ai_response = re.sub(r'\\+', '', ai_response)  # Remove escape sequences
+                
+                # Extract JSON from response
+                json_match = re.search(r'```json\s*(.*?)\s*```', ai_response, re.DOTALL)
                 if json_match:
+                    json_str = json_match.group(1).strip()
+                    # Additional cleaning
+                    json_str = re.sub(r'\s+', ' ', json_str)  # Normalize whitespace
                     try:
-                        tool_calls = json.loads(json_match.group())
-                        if tool_calls and isinstance(tool_calls, list):
-                            logger.info(f"✅ Successfully parsed {len(tool_calls)} tool calls")
-                            enhanced_calls = []
-                            for call in tool_calls:
-                                if isinstance(call, dict) and 'tool' in call and 'parameters' in call:
-                                    call['original_query'] = original_query
+                        parsed_json = json.loads(json_str)
+                        
+                        # Handle different AI response formats
+                        if isinstance(parsed_json, dict):
+                            if 'tool_calls' in parsed_json:
+                                # New format: {"tool_calls": [{"type": "function", "function": {"name": "...", "arguments": "..."}}]}
+                                tool_calls = []
+                                for tool_call in parsed_json['tool_calls']:
+                                    if 'function' in tool_call:
+                                        func_data = tool_call['function']
+                                        tool_name = func_data.get('name', 'execute_dynamic_sql')
+                                        
+                                        # Normalize tool names
+                                        tool_name_mapping = {
+                                            'query_database': 'execute_dynamic_sql',
+                                            'execute_sql': 'execute_dynamic_sql',
+                                            'run_sql': 'execute_dynamic_sql',
+                                            'sql_query': 'execute_dynamic_sql',
+                                            'database_query': 'execute_dynamic_sql',
+                                        }
+                                        tool_name = tool_name_mapping.get(tool_name, tool_name)
+                                        
+                                        # Parse arguments (might be a string or dict)
+                                        arguments = func_data.get('arguments', {})
+                                        if isinstance(arguments, str):
+                                            # Arguments as SQL string
+                                            parameters = {'sql_query': arguments}
+                                        else:
+                                            parameters = arguments
+                                        
+                                        tool_calls.append({
+                                            'tool': tool_name,
+                                            'parameters': parameters,
+                                            'original_query': query,
+                                            'wants_graph': tool_name == 'execute_dynamic_sql_with_graph',
+                                            'chart_analysis': chart_analysis or {'chart_type': 'none'}
+                                        })
+                                logger.info("✅ Successfully parsed tool calls")
+                                return tool_calls
+                            else:
+                                # Single tool call as dict
+                                return [parsed_json]
+                        elif isinstance(parsed_json, list):
+                            # Old format: [{"tool": "...", "parameters": {...}}]
+                            tool_calls = []
+                            for call in parsed_json:
+                                if isinstance(call, dict):
+                                    call['original_query'] = query
                                     call['wants_graph'] = call.get('tool') == 'execute_dynamic_sql_with_graph'
                                     call['chart_analysis'] = chart_analysis or {'chart_type': 'none'}
-                                    enhanced_calls.append(call)
-                            if enhanced_calls:
-                                return enhanced_calls
+                                    tool_calls.append(call)
+                            logger.info("✅ Successfully parsed tool calls")
+                            return tool_calls
+                        else:
+                            logger.warning(f"Unexpected JSON format: {type(parsed_json)}")
                     except json.JSONDecodeError as e:
                         logger.warning(f"JSON parse error: {e}")
-                        continue
-                tool_calls = self._extract_tool_calls_from_text(response_text, original_query, chart_analysis)
-                if tool_calls:
-                    return tool_calls
+                else:
+                    logger.warning("No JSON block found in AI response")
+                    
+                if attempt < max_retries:
+                    continue
             except Exception as e:
-                logger.warning(f"Complete AI generation attempt {attempt + 1} failed: {e}")
-                continue
+                logger.error(f"AI generation error: {e}")
+                
         logger.warning("All AI generation attempts failed, using fallback.")
-        return self._get_complete_smart_fallback_tool_call(original_query, [])
+        return self._get_complete_smart_fallback_tool_call(query, [])
 
     def _extract_tool_calls_from_text(self, text: str, query: str, chart_analysis: dict) -> list:
         """Extract tool calls from unstructured AI response."""
         query_lower = query.lower()
-        # Fuzzy matching for graph/chart requests, including common typos
-        fuzzy_graph_keywords = [
-            'chart', 'graph', 'visualize', 'plot', 'show',
-            'grahp', 'grap', 'chrat', 'vusualize', 'plto', 'shoe', 'shwo', 'shwoe', 'shwo me', 'shoe me'
-        ]
-        wants_graph = any(word in query_lower for word in fuzzy_graph_keywords)
-        if wants_graph:
-            logger.info(f"[FUZZY] Detected graph/chart request in query (fuzzy match): '{query}'")
         sql_patterns = [
             r'```sql\s*(SELECT.*?)```',
             r'```\s*(SELECT.*?)```',
@@ -969,6 +1002,7 @@ class CompleteSmartNLPProcessor:
                 sql_query = sql_query.strip().rstrip(';')
                 break
         if sql_query:
+            wants_graph = any(word in query_lower for word in ['chart', 'graph', 'visualize', 'plot'])
             tool_name = 'execute_dynamic_sql_with_graph' if wants_graph else 'execute_dynamic_sql'
             tool_call = {
                 'tool': tool_name,
@@ -977,15 +1011,8 @@ class CompleteSmartNLPProcessor:
                 'wants_graph': wants_graph,
                 'chart_analysis': chart_analysis or {'chart_type': 'none'}
             }
-            if wants_graph:
-                chart_type = chart_analysis.get('chart_type', None)
-                if not chart_type or not isinstance(chart_type, str) or chart_type.lower() == 'none':
-                    if any(word in query_lower for word in ['line', 'trend', 'over time', 'timeline', 'time series', 'progression']):
-                        chart_type = 'line'
-                    else:
-                        chart_type = 'bar'
-                    logger.warning(f"[DEFENSIVE] graph_type was missing or invalid in _extract_tool_calls_from_text, defaulted to '{chart_type}'")
-                tool_call['parameters']['graph_type'] = chart_type
+            if wants_graph and 'graph_type' not in tool_call['parameters']:
+                tool_call['parameters']['graph_type'] = chart_analysis.get('chart_type', 'bar')
             logger.info(f"🔧 Extracted SQL tool call: {tool_name}")
             return [tool_call]
         if 'database_status' in text.lower() or 'get_database_status' in text.lower():
@@ -1015,101 +1042,62 @@ class CompleteSmartNLPProcessor:
         return []
 
     def _get_complete_database_schema(self) -> str:
-        """Get COMPLETE CORRECTED database schema with full column information."""
-        return """
-COMPLETE CORRECTED Database Schema:
+        schema = """
+COMPLETE ACTUAL Database Schema (Updated from Real Database):
 
-Tables:
-1. subscription_contract_v2:
+Table: subscription_contract_v2 (2,748 total records)
+AVAILABLE COLUMNS:
    - subscription_id (bigint, PRIMARY KEY, auto_increment)
-   - merchant_user_id (varchar(255))
-   - frequency (int)
-   - frequency_unit (int)
-   - grace_days (int)
-   - merchant_id (varchar(255), NOT NULL)
-   - payer_account_number (varchar(255))
-   - internal_user_id (varchar(255))
-   - subs_payment_mode (varchar(255))
-   - saved_card_id (bigint)
-   - subcription_start_date (datetime, NOT NULL) -- Note: column name has typo "subcription"
-   - subcription_end_date (datetime, NOT NULL) -- Note: column name has typo "subcription"
-   - status (varchar(255), NOT NULL)
-   - website (varchar(255))
-   - industry_type (varchar(255))
-   - created_date (datetime, DEFAULT CURRENT_TIMESTAMP)
-   - updated_date (datetime, ON UPDATE CURRENT_TIMESTAMP)
-   - retry_count (int, DEFAULT 0)
-   - amount_type (int, DEFAULT 0)
-   - max_amount (float)
+   - merchant_user_id (varchar(255)) -- AVAILABLE: User identifier
    - user_email (varchar(255)) -- AVAILABLE: Customer email addresses
-   - user_mobile (varchar(255))
    - user_name (varchar(255)) -- AVAILABLE: Customer names
-   - order_id (varchar(255))
-   - start_date_flow (int, DEFAULT 1)
-   - channel_id (varchar(20))
-   - service_id (varchar(100))
-   - account_type (varchar(255))
-   - sub_status (varchar(255))
-   - renewal_amount (decimal(16,2))
-   - auto_renewal (tinyint, DEFAULT 0)
-   - auto_retry (tinyint, NOT NULL, DEFAULT 0)
-   - is_communication_manager (tinyint, NOT NULL, DEFAULT 0)
-   - subs_goods_info (varchar(255))
-   - subs_callback_url (varchar(255))
-   - sub_due_date (datetime)
-   - is_new_subscription (tinyint(1), NOT NULL, DEFAULT 0)
-   - metadata (text)
-   - card_info_id (bigint)
-   - link_id (bigint)
-   - plan_id (bigint)
-   - si_hub_details_id (bigint)
-   - token_details_id (bigint)
-   - max_amount_decimal (decimal(16,2))
-
-2. subscription_payment_details:
-   - subcription_payment_details_id (bigint, PRIMARY KEY, auto_increment) -- Note: column name has typo "subcription"
-   - subscription_id (bigint, NOT NULL, FOREIGN KEY to subscription_contract_v2.subscription_id)
-   - acquirement_id (varchar(255))
-   - trans_amount (decimal(16,2))
-   - order_id (varchar(255))
-   - time_out (datetime)
+   - user_mobile (varchar(255)) -- AVAILABLE: Customer phone numbers
+   - subcription_start_date (datetime, NOT NULL) -- TYPO: "subcription" not "subscription"
+   - subcription_end_date (datetime, NOT NULL) -- TYPO: "subcription" not "subscription"
+   - renewal_amount (decimal(16,2)) -- AVAILABLE: Renewal amount
+   - max_amount_decimal (decimal(16,2)) -- AVAILABLE: Maximum amount
+   - industry_type (varchar(255)) -- Industry classification
+   - channel_id (varchar(20)) -- Channel identifier
+   - service_id (varchar(100)) -- Service identifier
+   - account_type (varchar(255)) -- Account type
+   - auto_renewal (tinyint, DEFAULT 0) -- Auto-renewal flag
+   - sub_due_date (datetime) -- AVAILABLE: Due date
+   - is_new_subscription (tinyint(1), NOT NULL, DEFAULT 0) -- New subscription flag
+   - plan_id (bigint) -- AVAILABLE: Plan reference
+   - status (varchar(255), NOT NULL) -- Subscription status
    - created_date (datetime, DEFAULT CURRENT_TIMESTAMP)
-   - updated_date (datetime, ON UPDATE CURRENT_TIMESTAMP)
-   - status (varchar(255)) -- Payment status
-   - payment_type (varchar(255), NOT NULL)
-   - metadata (varchar(255))
-   - payment_time (datetime)
-   - trans_amount_decimal (decimal(16,2))
 
-CRITICAL COMPLETE SCHEMA RULES:
+Table: subscription_payment_details (2,840 total records, 2,748 unique subscription_ids)
+AVAILABLE COLUMNS:
+   - subscription_id (bigint, NOT NULL, FOREIGN KEY)
+   - trans_amount_decimal (decimal(16,2)) -- AVAILABLE: Current transaction amount
+   - status (varchar(255)) -- AVAILABLE: Payment status (ACTIVE, INIT, FAIL, etc.)
+   - created_date (datetime, DEFAULT CURRENT_TIMESTAMP)
+   - payment_time (datetime) -- AVAILABLE: Actual payment time
+
+CRITICAL SCHEMA RULES:
+- TYPOS CONFIRMED: "subcription_start_date", "subcription_end_date" (missing 's')
 - EMAIL IS AVAILABLE: Use c.user_email for customer email addresses
-- END DATE IS AVAILABLE: Use c.subcription_end_date for subscription end dates  
-- NAME IS AVAILABLE: Use c.user_name for customer names
-- PRIMARY KEY: Use subcription_payment_details_id (with typo) for payments table
-- To get merchant_user_id info from payments, you MUST JOIN:
-  FROM subscription_payment_details p 
-  JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id
-  
-- NEVER use merchant_user_id in GROUP BY with subscription_payment_details alone
-- Always use proper JOINs when accessing both tables
+- NAMES ARE AVAILABLE: Use c.user_name for customer names  
+- AMOUNTS ARE AVAILABLE: Use c.renewal_amount, c.max_amount_decimal for subscription amounts
+- PAYMENT AMOUNTS: Use p.trans_amount_decimal for payment amounts
 
-COMPLETE STATUS VALUES:
-- Subscription status: ACTIVE, INACTIVE, CLOSED, REJECT, INIT
-- Payment status: ACTIVE, INIT, FAIL (and possibly others)
-
-COMPLETE THRESHOLD HANDLING:
-- Pay VERY close attention to numbers in queries: "more than 1", "more than 2", "more than 10", etc.
-- ALWAYS use the EXACT threshold number specified by the user
-- For "more than X": use > X in the WHERE clause
-- For "X or more": use >= X in the WHERE clause
-- For "less than X": use < X in the WHERE clause
-
-DATE HANDLING:
-- Always use single quotes for date strings: '2025-04-23'
-- Use DATE() function for date comparisons: DATE(created_date) = '2025-04-23'
-- Never use double quotes around dates
-- Remember column typos: subcription_start_date, subcription_end_date (not subscription_)
+🚨 CRITICAL FIELD SELECTION & NULL HANDLING:
+- FOR SUBSCRIPTION VALUE/AMOUNTS: USE c.renewal_amount OR c.max_amount_decimal
+- FOR PAYMENT REVENUE: USE p.trans_amount_decimal WHERE p.status = 'ACTIVE'
+- FOR CUSTOMER VALUE: COMBINE BOTH subscription + payment amounts
+- MANY user_email/user_name ARE NULL - ALWAYS use COALESCE()
+- For dates with no data - use DATE RANGES (±3 days) not exact dates
 """
+        # Append new critical field usage rules
+        schema += """
+🔥 CRITICAL FIELD USAGE RULES (NEWLY ADDED):
+- FOR REVENUE QUERIES: Use p.trans_amount_decimal WHERE p.status = 'ACTIVE' 
+- FOR SUBSCRIPTION VALUE: Use c.renewal_amount OR c.max_amount_decimal
+- FOR USER DETAILS: Always use COALESCE(c.user_email, 'Not provided') for NULL handling
+- FOR DATE QUERIES: Use DATE ranges (±3 days) if exact date returns no results
+"""
+        return schema
 
     def _get_chart_keywords(self) -> Dict[str, List[str]]:
         """Chart type keywords for better detection."""
@@ -1193,12 +1181,10 @@ DATE HANDLING:
 
     async def parse_query(self, user_query: str, history: List[str], client=None) -> List[Dict]:
         """FIXED MULTITOOL SUPPORT: Parse query and return list of tool calls with proper handling for multiple queries"""
-        # Detect comparison queries and handle as a single query
         query_lower = user_query.lower().strip()
         threshold_info = self._extract_threshold_info(user_query)
         comparison_info = self._extract_comparison_info(user_query)
         is_comparison = False
-        # --- ENHANCED: Also treat time-period comparisons as single query ---
         is_time_period_comparison = comparison_info.get('comparison_type') == 'time_period_comparison' and comparison_info.get('time_periods')
         if (
             (threshold_info['has_threshold'] and threshold_info['numbers'] and
@@ -1207,14 +1193,21 @@ DATE HANDLING:
         ):
             if is_time_period_comparison or (len(threshold_info['numbers']) >= 2):
                 is_comparison = True
-        # --- COMPLEX ANALYTICAL QUERY DETECTION ---
         complex_patterns = [
             'list of customers', 'show me their', 'customers who have', 
-            'users who have', 'find customers', 'get customers'
+            'users who have', 'find customers', 'get customers',
+            'between', 'from', 'to', 'and', # Date range indicators
+            'revenue', 'total', 'sum', 'amount', # Financial queries
         ]
         is_complex_analytical = any(pattern in query_lower for pattern in complex_patterns)
-        # Only split if not a comparison AND not complex analytical query
-        if not is_comparison and not is_complex_analytical:
+        is_date_range_query = any(phrase in query_lower for phrase in [
+            'between', 'from', 'to', 'and', 'range', 'during'
+        ]) and any(date_word in query_lower for date_word in [
+            'april', 'may', 'june', 'july', 'august', 'september', 
+            'october', 'november', 'december', 'january', 'february', 'march',
+            '2024', '2025', 'date'
+        ])
+        if not is_comparison and not is_complex_analytical and not is_date_range_query:
             query_separators = [' and ', ';', '\n']
             individual_queries = [user_query.strip()]
             for separator in query_separators:
@@ -1226,7 +1219,6 @@ DATE HANDLING:
                     else:
                         new_queries.append(query)
                 individual_queries = new_queries
-            # Remove duplicates while preserving order
             seen = set()
             unique_queries = []
             for query in individual_queries:
@@ -1235,95 +1227,22 @@ DATE HANDLING:
                     unique_queries.append(query)
         else:
             unique_queries = [user_query.strip()]
-        
         logger.info(f"🔧 MULTITOOL: Processing {len(unique_queries)} individual queries")
         all_tool_calls = []
-        
-        # --- FEEDBACK-AWARE: Get best_chart_type and actionable_rules from improvement context for this query ---
-        best_chart_type = None
-        improvement_context = None
-        actionable_rules = []
-        if client:
-            try:
-                improvement_context, best_chart_type, actionable_rules = await self._get_complete_improvement_context(user_query, history, client, return_chart_type=True, return_rules=True)
-            except TypeError:
-                improvement_context, best_chart_type = await self._get_complete_improvement_context(user_query, history, client, return_chart_type=True)
-                actionable_rules = []
-        
         for i, query in enumerate(unique_queries, 1):
             logger.info(f"🔧 MULTITOOL: Processing query {i}/{len(unique_queries)}: {query[:50]}...")
             try:
-                # --- FEEDBACK-AWARE LOGIC ---
-                auto_applied = False
-                auto_union = False
-                auto_no_graph = False
-                auto_chart_type = None
-                auto_aggregate_by = None
-                suggestions_result = None
-                
-                # Apply actionable rules to this query
-                for rule in actionable_rules:
-                    if rule['action'] == 'aggregate_by' and rule['trigger'] in query.lower():
-                        auto_aggregate_by = rule['value']
-                        print_section(f"💡 Auto-applying aggregation: {rule['instruction']}")
-                    if rule['action'] == 'chart_type' and (rule['trigger'] in query.lower() or rule['value'] in query.lower()):
-                        auto_chart_type = rule['value']
-                        print_section(f"💡 Auto-applying chart type: {rule['instruction']}")
-                    if rule['action'] == 'no_graph' and (rule['trigger'] in query.lower() or 'graph' in query.lower() or 'chart' in query.lower()):
-                        auto_no_graph = True
-                        print_section(f"💡 Auto-applying: {rule['instruction']}")
-                
-                if client:
-                    try:
-                        suggestions_result = await client.call_tool('get_improvement_suggestions', {
-                            'original_question': query
-                        })
-                        if getattr(suggestions_result, 'success', False) and getattr(suggestions_result, 'data', None) and suggestions_result.data.get('improvements'):
-                            for suggestion in suggestions_result.data['improvements']:
-                                sug = suggestion['user_suggestion'].lower()
-                                if 'do not generate a graph' in sug or 'no graph' in sug or 'no chart' in sug:
-                                    auto_no_graph = True
-                                    auto_applied = True
-                                    print_section(f'💡 Auto-applying past improvement: "{suggestion["user_suggestion"]}"')
-                                if 'use union' in sug or 'same format' in sug or 'consistent format' in sug:
-                                    auto_union = True
-                                    auto_applied = True
-                                    print_section(f'💡 Auto-applying past improvement: "{suggestion["user_suggestion"]}"')
-                                if 'bar chart' in sug:
-                                    auto_chart_type = 'bar'
-                                    auto_applied = True
-                                    print_section(f'💡 Auto-applying past improvement: "{suggestion["user_suggestion"]}"')
-                                if 'pie chart' in sug:
-                                    auto_chart_type = 'pie'
-                                    auto_applied = True
-                                    print_section(f'💡 Auto-applying past improvement: "{suggestion["user_suggestion"]}"')
-                                if 'line chart' in sug or 'line graph' in sug:
-                                    auto_chart_type = 'line'
-                                    auto_applied = True
-                                    print_section(f'💡 Auto-applying past improvement: "{suggestion["user_suggestion"]}"')
-                    except Exception as e:
-                        logger.warning(f"Could not fetch improvement suggestions: {e}")
-                
-                # --- FEEDBACK-AWARE: If best_chart_type from improvement context, enforce it ---
-                if best_chart_type and not auto_chart_type:
-                    auto_chart_type = best_chart_type
-                    logger.info(f"[FEEDBACK] Enforcing chart type from feedback: {auto_chart_type}")
-                # --- END FEEDBACK-AWARE LOGIC ---
-                
-                query_tool_calls = await self._process_single_query(query, history, client, auto_union=auto_union, auto_no_graph=auto_no_graph, auto_chart_type=auto_chart_type, auto_aggregate_by=auto_aggregate_by, force_comparison=is_comparison)
-                
+                query_tool_calls = await self._process_single_query(query, history, client, force_comparison=is_comparison)
                 for call in query_tool_calls:
                     call['query_index'] = i
                     call['total_queries'] = len(unique_queries)
                     call['is_multitool'] = len(unique_queries) > 1
-                
                 all_tool_calls.extend(query_tool_calls)
                 logger.info(f"🔧 MULTITOOL: Query {i} generated {len(query_tool_calls)} tool calls")
-                
             except Exception as e:
                 logger.error(f"❌ MULTITOOL: Error processing query {i}: {e}")
                 error_call = {
-                    'tool': 'get_database_status',  # Safe fallback
+                    'tool': 'get_database_status',
                     'parameters': {},
                     'original_query': query,
                     'wants_graph': False,
@@ -1334,9 +1253,7 @@ DATE HANDLING:
                     'error': str(e)
                 }
                 all_tool_calls.append(error_call)
-        
         logger.info(f"✅ MULTITOOL: Generated total of {len(all_tool_calls)} tool calls for {len(unique_queries)} queries")
-        
         if not all_tool_calls:
             return [{
                 'tool': 'get_database_status',
@@ -1348,7 +1265,6 @@ DATE HANDLING:
                 'total_queries': 1,
                 'is_multitool': False
             }]
-        
         return all_tool_calls
 
     async def _process_single_query(self, query: str, history: List[str], client=None, auto_union=False, auto_no_graph=False, auto_chart_type=None, auto_aggregate_by=None, force_comparison=False, actionable_rules=None) -> List[Dict]:
@@ -1356,11 +1272,79 @@ DATE HANDLING:
         query_lower = query.lower().strip()
         logger.info(f"[DEBUG] _process_single_query received: {query_lower}")
         
-        # HANDLE "TRY AGAIN" - IMPROVED VERSION
+        # HANDLE CONTEXTUAL REFERENCES like "visualize that", "show that as a chart", "show in a pie chart instead", etc.
+        contextual_viz_triggers = [
+            'visualize that', 'show that', 'chart that', 'graph that', 'plot that',
+            'visualize it', 'show it', 'chart it', 'graph it', 'plot it',
+            'make a chart', 'create a graph', 'show as chart', 'show as graph',
+            'show in a', 'display as', 'as a chart', 'as a graph', 'instead'
+        ]
+        
+        # NEW: Check for temporal modification requests that need new SQL
+        temporal_modifiers = ['weekly', 'daily', 'monthly', 'hourly', 'by week', 'by day', 'by month']
+        is_temporal_modification = any(modifier in query_lower for modifier in temporal_modifiers)
+        
+        if any(trigger in query_lower for trigger in contextual_viz_triggers):
+            logger.info(f"[CONTEXT] Detected contextual visualization request: {query}")
+            
+            # If it's a temporal modification, don't reuse old SQL - generate new SQL with proper aggregation
+            if is_temporal_modification:
+                logger.info(f"[CONTEXT] Temporal modification detected: {query_lower}")
+                # Fall through to AI processing to generate new SQL with proper temporal grouping
+                pass
+            else:
+                recent_sql_query = None
+                
+                # First check if client has context
+                if client and hasattr(client, 'context') and client.context.get('last_sql_query'):
+                    recent_sql_query = client.context.get('last_sql_query')
+                    logger.info(f"[CONTEXT] Found SQL in client context: {recent_sql_query[:100]}...")
+                
+                # If not in client context, look for the most recent SQL query result in history
+                if not recent_sql_query:
+                    for line in reversed(history):
+                        if 'FROM subscription_' in line and 'SELECT' in line:
+                            sql_match = re.search(r'(SELECT.*?FROM subscription_[^;]*)', line, re.IGNORECASE | re.DOTALL)
+                            if sql_match:
+                                recent_sql_query = sql_match.group(1)
+                                logger.info(f"[CONTEXT] Found recent SQL in history: {recent_sql_query[:100]}...")
+                                break
+                
+                if recent_sql_query:
+                    chart_type = auto_chart_type or 'bar'
+                    if any(word in recent_sql_query.lower() for word in ['week', 'month', 'date', 'time']):
+                        chart_type = 'line'
+                    elif 'count' in recent_sql_query.lower() and 'group by' in recent_sql_query.lower():
+                        chart_type = 'bar'
+                    
+                    # Override chart type based on user request
+                    if 'pie' in query_lower:
+                        chart_type = 'pie'
+                    elif 'bar' in query_lower:
+                        chart_type = 'bar'
+                    elif 'line' in query_lower:
+                        chart_type = 'line'
+                    
+                    logger.info(f"[CONTEXT] Creating {chart_type} chart from recent SQL")
+                    return [{
+                        'tool': 'execute_dynamic_sql_with_graph',
+                        'parameters': {
+                            'sql_query': recent_sql_query,
+                            'graph_type': chart_type
+                        },
+                        'original_query': query,
+                        'wants_graph': True,
+                        'chart_analysis': {'chart_type': chart_type}
+                    }]
+        
+        # HANDLE "TRY AGAIN" - IMPROVED VERSION WITH FEEDBACK EXTRACTION
         if query_lower in ['try again', 'retry', 'fix it', 'try that again']:
             # Get the most recent user query from history (exclude "try again" and feedback)
             recent_user_queries = []
-            for line in reversed(history):  # Start from most recent
+            recent_feedback = None
+            
+            # Look through history in reverse to find the last query and any feedback
+            for line in reversed(history):
                 if line.startswith('User: '):
                     query_text = line[6:].strip()
                     # Skip retry commands and very short queries
@@ -1368,9 +1352,27 @@ DATE HANDLING:
                         and len(query_text) > 3):
                         recent_user_queries.append(query_text)
                         break  # Take the first (most recent) valid query
+                elif ('How can this be improved?' in line or 'improvement' in line.lower()) and not recent_feedback:
+                    # Extract feedback from the line after "How can this be improved?"
+                    # Look for common chart type feedback patterns
+                    line_lower = line.lower()
+                    if 'line graph' in line_lower or 'line chart' in line_lower:
+                        recent_feedback = 'line'
+                        logger.info("[TRY AGAIN] Found line chart feedback in history")
+                    elif 'bar graph' in line_lower or 'bar chart' in line_lower:
+                        recent_feedback = 'bar'
+                        logger.info("[TRY AGAIN] Found bar chart feedback in history")
+                    elif 'pie chart' in line_lower or 'pie graph' in line_lower:
+                        recent_feedback = 'pie'
+                        logger.info("[TRY AGAIN] Found pie chart feedback in history")
+            
             if recent_user_queries:
                 original_query = recent_user_queries[0]
                 logger.info(f"[TRY AGAIN] Retrying with original query: {original_query}")
+                if recent_feedback:
+                    logger.info(f"[TRY AGAIN] Applying feedback: use {recent_feedback} chart")
+                    auto_chart_type = recent_feedback
+                    logger.info(f"[TRY AGAIN] auto_chart_type set to: {auto_chart_type}")
                 query = original_query
                 query_lower = query.lower().strip()
             else:
@@ -1389,8 +1391,56 @@ DATE HANDLING:
         date_info = self._extract_date_info(query)
         comparison_info = self._extract_comparison_info(query)
         
-        # 1. Handle specific date queries directly
-        if date_info['has_date'] and date_info['dates']:
+        # 1. Handle date range queries FIRST (between X and Y)
+        if 'between' in query_lower and date_info['has_date'] and len(date_info['dates']) >= 2:
+            logger.info("[DEBUG] Path: date range query detected.")
+            try:
+                # Parse the two dates
+                date1_str = date_info['dates'][0]
+                date2_str = date_info['dates'][1]
+                # Convert to proper format
+                if re.match(r'\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}', date1_str, re.IGNORECASE):
+                    date1_obj = datetime.strptime(date1_str, '%d %B %Y')
+                    date1_formatted = date1_obj.strftime('%Y-%m-%d')
+                else:
+                    date1_formatted = date1_str
+                if re.match(r'\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}', date2_str, re.IGNORECASE):
+                    date2_obj = datetime.strptime(date2_str, '%d %B %Y')
+                    date2_formatted = date2_obj.strftime('%Y-%m-%d')
+                else:
+                    date2_formatted = date2_str
+                # Detect if this is a revenue/payment query vs subscription query
+                if any(word in query_lower for word in ['revenue', 'payment', 'amount', 'total', 'money', 'earnings']):
+                    # Revenue query for date range
+                    sql = f"""
+SELECT SUM(p.trans_amount_decimal) as total_revenue, COUNT(*) as num_payments
+FROM subscription_payment_details p
+WHERE DATE(p.created_date) BETWEEN '{date1_formatted}' AND '{date2_formatted}' 
+AND p.status = 'ACTIVE'
+"""
+                else:
+                    # Subscription count query for date range (default)
+                    sql = f"""
+SELECT COUNT(*) as num_subscriptions 
+FROM subscription_contract_v2 
+WHERE DATE(subcription_start_date) BETWEEN '{date1_formatted}' AND '{date2_formatted}'
+"""
+                sql = self._fix_sql_quotes(sql)
+                sql = self._validate_and_autofix_sql(sql)
+                sql = self._fix_sql_date_math(sql, query)
+                sql = self._fix_field_selection_issues(sql, query)
+                return [{
+                    'tool': 'execute_dynamic_sql',
+                    'parameters': {'sql_query': sql},
+                    'original_query': query,
+                    'wants_graph': False,
+                    'chart_analysis': {'chart_type': 'none'}
+                }]
+            except Exception as e:
+                logger.warning(f"Error parsing date range: {e}")
+                # Fall through to single date processing
+        # 2. Handle specific single date queries (only if not a range)
+        elif date_info['has_date'] and date_info['dates']:
             logger.info("[DEBUG] Path: specific date query detected.")
             date_str = date_info['dates'][0]
             try:
@@ -1402,12 +1452,24 @@ DATE HANDLING:
                     date_str = date_obj.strftime('%Y-%m-%d')
             except Exception:
                 pass
-                    
+            # ENHANCED: Detect if this is a revenue/payment query vs subscription query
+            if any(word in query_lower for word in ['revenue', 'payment', 'amount', 'total', 'money', 'earnings']):
+                logger.info(f"[DEBUG] Revenue query detected for date: {date_str}")
+                # Revenue query for specific date
+                sql = f"""
+SELECT SUM(p.trans_amount_decimal) as total_revenue, COUNT(*) as num_payments
+FROM subscription_payment_details p
+WHERE DATE(p.created_date) BETWEEN DATE_SUB('{date_str}', INTERVAL 3 DAY) AND DATE_ADD('{date_str}', INTERVAL 3 DAY)
+AND p.status = 'ACTIVE'
+"""
+            else:
+                logger.info(f"[DEBUG] Subscription count query detected for date: {date_str}")
+                # Subscription count query (default)
             sql = f"SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '{date_str}'"
             sql = self._fix_sql_quotes(sql)
             sql = self._validate_and_autofix_sql(sql)
             sql = self._fix_sql_date_math(sql, query)
-            
+            sql = self._fix_field_selection_issues(sql, query)
             return [{
                 'tool': 'execute_dynamic_sql',
                 'parameters': {'sql_query': sql},
@@ -1447,7 +1509,53 @@ WHERE p.status = 'ACTIVE'
         # 2. Handle comparison queries with UNION ALL
         if force_comparison or (threshold_info['has_threshold'] and threshold_info['numbers'] and (('compare' in query_lower or 'vs' in query_lower or 'versus' in query_lower or 'and' in query_lower))):
             numbers = threshold_info['numbers']
-            if len(numbers) >= 2:
+            
+            # ENHANCED: Check for complex combined conditions (subscription AND payment)
+            if ('subscription' in query_lower and 'payment' in query_lower and 'and' in query_lower and 'who have' in query_lower):
+                # Complex query: subscribers with X subscriptions AND Y payments
+                if len(numbers) >= 2:
+                    sub_threshold = numbers[0]
+                    payment_threshold = numbers[1]
+                    sql = f"""
+SELECT COUNT(*) as num_users_meeting_both_criteria
+FROM (
+    SELECT c.merchant_user_id
+    FROM subscription_contract_v2 c
+    LEFT JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id
+    GROUP BY c.merchant_user_id
+    HAVING COUNT(DISTINCT c.subscription_id) > {sub_threshold} 
+       AND COUNT(DISTINCT p.id) > {payment_threshold}
+) combined_criteria
+"""
+                elif len(numbers) == 1:
+                    # Same threshold for both
+                    threshold = numbers[0]
+                    sql = f"""
+SELECT COUNT(*) as num_users_meeting_both_criteria
+FROM (
+    SELECT c.merchant_user_id
+    FROM subscription_contract_v2 c
+    LEFT JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id
+    GROUP BY c.merchant_user_id
+    HAVING COUNT(DISTINCT c.subscription_id) > {threshold} 
+       AND COUNT(DISTINCT p.id) > {threshold}
+) combined_criteria
+"""
+                
+                sql = self._fix_sql_quotes(sql)
+                sql = self._validate_and_autofix_sql(sql)
+                sql = self._fix_sql_date_math(sql, query)
+                
+                return [{
+                    'tool': 'execute_dynamic_sql',
+                    'parameters': {'sql_query': sql},
+                    'original_query': query,
+                    'wants_graph': False,
+                    'chart_analysis': {'chart_type': 'none'}
+                }]
+            
+            # Standard comparison queries (different thresholds for same metric)
+            elif len(numbers) >= 2:
                 sql = f"""
 SELECT 'More than {numbers[0]} Subscriptions' as category, COUNT(*) as value 
 FROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > {numbers[0]}) t1
@@ -1592,7 +1700,9 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
             if auto_chart_type:
                 for call in tool_calls:
                     if call['tool'] == 'execute_dynamic_sql_with_graph':
+                        prev_type = call['parameters'].get('graph_type', 'not_set')
                         call['parameters']['graph_type'] = auto_chart_type
+                        logger.info(f"[AUTO-CHART-TYPE] Overriding graph_type from '{prev_type}' to '{auto_chart_type}' due to auto_chart_type setting")
             
             # --- ENFORCE CHART TYPE OVERRIDE BASED ON USER QUERY OR FEEDBACK ---
             # Detect explicit chart type requests in the query
@@ -1865,77 +1975,20 @@ GROUP BY CASE WHEN status = 'ACTIVE' THEN 'Successful' ELSE 'Failed' END
     def _enhance_and_validate_complete_tool_calls(self, tool_calls: List[Dict], 
                                                  query: str, chart_analysis: Dict, 
                                                  threshold_info: Dict) -> List[Dict]:
-        """Enhanced validation with proper original_query handling."""
+        """Enhanced validation with field usage checking"""
         enhanced_calls = []
-        
         for call in tool_calls:
-            try:
-                # Ensure original_query is always present
-                if 'original_query' not in call:
-                    call['original_query'] = query
-                
-                # Ensure wants_graph is present
-                if 'wants_graph' not in call:
-                    call['wants_graph'] = call.get('tool') == 'execute_dynamic_sql_with_graph'
-                
-                # Ensure chart_analysis is present
-                if 'chart_analysis' not in call:
-                    call['chart_analysis'] = chart_analysis or {'chart_type': 'none'}
-                
-                # Validate tool and parameters
-                if 'tool' not in call or 'parameters' not in call:
-                    logger.warning(f"Invalid tool call structure: {call}")
-                    continue
-                
-                # Enhanced SQL validation for dynamic SQL tools
-                if call['tool'] in ['execute_dynamic_sql', 'execute_dynamic_sql_with_graph']:
-                    if 'sql_query' in call['parameters']:
-                        sql = call['parameters']['sql_query']
-                        
-                        # Apply enhanced SQL fixes
-                        sql = self._fix_sql_quotes(sql)
-                        sql = self._validate_and_autofix_sql(sql)
-                        
-                        # Apply date fixes with user query context
-                        sql = self._fix_sql_date_math(sql, query)
-                        
-                        call['parameters']['sql_query'] = sql
-                        
-                        # Set default graph type if missing
-                        if call['tool'] == 'execute_dynamic_sql_with_graph':
-                            chart_type = call['parameters'].get('graph_type', chart_analysis.get('chart_type', None))
-                            if not chart_type or not isinstance(chart_type, str) or chart_type.lower() == 'none':
-                                if any(word in query.lower() for word in ['line', 'trend', 'over time', 'timeline', 'time series', 'progression']):
-                                    chart_type = 'line'
-                                else:
-                                    chart_type = 'bar'
-                                logger.warning(f"[DEFENSIVE] graph_type was missing or invalid in _enhance_and_validate_complete_tool_calls, defaulted to '{chart_type}'")
-                            call['parameters']['graph_type'] = chart_type
-                
-                enhanced_calls.append(call)
-                
-            except Exception as e:
-                logger.warning(f"Error enhancing tool call: {e}")
-                # Create a safe fallback tool call
-                fallback_call = {
-                    'tool': 'get_database_status',
-                    'parameters': {},
-                    'original_query': query,
-                    'wants_graph': False,
-                    'chart_analysis': {'chart_type': 'none'}
-                }
-                enhanced_calls.append(fallback_call)
-        
-        if not enhanced_calls:
-            # Return fallback if no valid calls
-            return [{
-                'tool': 'get_database_status',
-                'parameters': {},
-                'original_query': query,
-                'wants_graph': False,
-                'chart_analysis': {'chart_type': 'none'}
-            }]
-        
+            if 'sql_query' in call.get('parameters', {}):
+                sql = call['parameters']['sql_query']
+                # Apply all SQL fixes
+                sql = self._fix_sql_quotes(sql)
+                sql = self._validate_and_autofix_sql(sql)
+                sql = self._fix_sql_date_math(sql, query)
+                sql = self._fix_field_selection_issues(sql, query)
+                sql = self._validate_field_usage(sql, query)  # Add this critical line
+                sql = self._fix_column_name_typos(sql)  # Add new method
+                call['parameters']['sql_query'] = sql
+            enhanced_calls.append(call)
         return enhanced_calls
 
     def _get_complete_smart_fallback_tool_call(self, query: str, history: List[str]) -> List[Dict]:
@@ -2004,18 +2057,17 @@ LIMIT 20
                                         improvement_context: str, similar_context: str, 
                                         chart_analysis: Dict, threshold_info: Dict, 
                                         date_info: Dict, comparison_info: Dict, actionable_rules=None) -> str:
-        """Create enhanced prompt with better user intent detection - FIXED VERSION."""
+        """Create enhanced prompt with better user intent detection and contextual understanding."""
         from datetime import datetime
         
         current_year = datetime.now().year
         current_month = datetime.now().strftime('%B')
         
-        # CRITICAL: Analyze user intent for details vs counts
         user_query_lower = user_query.lower()
         wants_details = any(phrase in user_query_lower for phrase in [
             'show me the ones', 'list the users', 'who are the', 'get user details',
             'show user', 'list user', 'user info', 'details', 'names', 'emails',
-            'show them', 'list them', 'the actual', 'specific users'
+            'show them', 'list them', 'the actual', 'specific users', 'top', 'customers'
         ])
         
         wants_count_only = any(phrase in user_query_lower for phrase in [
@@ -2024,7 +2076,6 @@ LIMIT 20
         
         detail_preference = "SHOW ACTUAL USER/RECORD DETAILS" if wants_details else "COUNT OR AGGREGATE" if wants_count_only else "PREFER DETAILS UNLESS ASKING FOR COUNTS"
         
-        # Chart requirements handling
         chart_type = chart_analysis.get('chart_type', 'none')
         if chart_type == 'pie':
             chart_requirements = """PIE CHART REQUIRED:
@@ -2044,115 +2095,117 @@ LIMIT 20
         else:
             chart_requirements = "No chart requested."
 
-        prompt = f"""You are an expert SQL analyst for subscription data. Generate the EXACT tool calls needed.
+        prompt = f"""You are an expert SQL analyst for subscription data. Generate VALID JSON tool calls.
 
-USER INTENT ANALYSIS:
-- Query: "{user_query}"
-- Detail Preference: {detail_preference}
-- Chart Request: {chart_type}
+🚨 CRITICAL COLUMN NAMES (EXACT SPELLING REQUIRED):
+- subcription_start_date (NOT subscription_start_date) - TYPO IS CONFIRMED
+- subcription_end_date (NOT subscription_end_date) - TYPO IS CONFIRMED
+- Always use table aliases: subscription_contract_v2 c, subscription_payment_details p
 
 🔥 CRITICAL RULES:
-1. When user says "show me the ones with..." → ALWAYS show actual records/users, NOT just counts
-2. When user says "how many..." → Show counts/aggregates
-3. For "list", "show", "get" → Show detailed records
-4. For thresholds like "more than 1" → Show the actual users who meet criteria
+1. ONLY use LEFT JOIN when you need payment data (p.trans_amount_decimal) - do NOT join unnecessarily
+2. For user details: ALWAYS use COALESCE(c.user_email, 'Email not provided'), COALESCE(c.user_name, 'Name not provided')
+3. For subscription value: Use c.renewal_amount OR c.max_amount_decimal (NOT payment amounts)
+4. For revenue: Use p.trans_amount_decimal WHERE p.status = 'ACTIVE' (requires JOIN)
+5. NEVER use line breaks or escape sequences in JSON strings - use single line SQL
+6. For "top customers": Show merchant_user_id, email, name, and calculated value
+7. For ORDER BY with COALESCE: Use the full COALESCE expression, not the alias
+8. For value queries: Start with less restrictive filters - if user asks for "top customers", show ALL customers ordered by value
+9. Only add restrictive filters (> 0) if specifically asked for "customers with subscriptions" or "paying customers"
 
-CURRENT CONTEXT:
-- Current Year: {current_year} (default for month-only queries)
-- History: {history_context}
-- Improvements Needed: {improvement_context}
-- Similar Successful Queries: {similar_context}
+🔧 AVAILABLE TOOLS (USE EXACT NAMES):
+- execute_dynamic_sql: for data queries without charts
+- execute_dynamic_sql_with_graph: for data queries with charts
+- get_subscriptions_in_last_days: basic subscription stats
+- get_payment_success_rate_in_last_days: payment stats
+- get_database_status: connection and basic stats
 
-DATABASE SCHEMA:
-subscription_contract_v2: merchant_user_id, user_email, user_name, status, subcription_start_date
-subscription_payment_details: subscription_id, status, trans_amount_decimal, created_date
-
-🎯 SQL GENERATION RULES:
-
-FOR DETAIL QUERIES (when user wants to see actual records):
-✅ CORRECT: "show me users with more than 1 subscription"
-```sql
-SELECT DISTINCT c.merchant_user_id, c.user_email, c.user_name, sub_count.total_subscriptions
-FROM subscription_contract_v2 c
-JOIN (
-    SELECT merchant_user_id, COUNT(*) as total_subscriptions
-    FROM subscription_contract_v2 
-    GROUP BY merchant_user_id 
-    HAVING COUNT(*) > 1
-) sub_count ON c.merchant_user_id = sub_count.merchant_user_id
-ORDER BY sub_count.total_subscriptions DESC
-LIMIT 50
+📋 REQUIRED JSON FORMAT:
+```json
+[
+  {{
+    "tool": "execute_dynamic_sql",
+    "parameters": {{
+      "sql_query": "SELECT ... (single line SQL)"
+    }}
+  }}
+]
 ```
 
-❌ WRONG: SELECT COUNT(*) as num_subscribers FROM (...)
+USER INTENT: {detail_preference}
+CHART: {chart_requirements}
 
-FOR COUNT QUERIES (when user asks "how many"):
-✅ CORRECT: "how many users have more than 1 subscription"
-```sql
-SELECT COUNT(*) as num_subscribers 
-FROM (
-    SELECT merchant_user_id 
-    FROM subscription_contract_v2 
-    GROUP BY merchant_user_id 
-    HAVING COUNT(*) > 1
-) as t
+DATABASE SCHEMA (MySQL):
+subscription_contract_v2 c: merchant_user_id, user_email, user_name, subcription_start_date, subcription_end_date, renewal_amount, max_amount_decimal, auto_renewal, status
+subscription_payment_details p: subscription_id, trans_amount_decimal, status, created_date
+
+🔧 MYSQL COMPATIBILITY RULES:
+- Use DATE_FORMAT(CURRENT_DATE, '%Y-%m-01') instead of DATE_TRUNC('month', CURRENT_DATE)
+- Use LAST_DAY(CURRENT_DATE) for end of month
+- Use DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY) for date ranges
+- Use CURRENT_DATE not CURRENT_DATE()
+- JOIN: Use c.subscription_id = p.subscription_id (NOT c.merchant_user_id = p.subscription_id)
+
+EXAMPLE CORRECT QUERIES:
+
+✅ Top customers by subscription value (less restrictive):
+```json
+[{{"tool": "execute_dynamic_sql", "parameters": {{"sql_query": "SELECT c.merchant_user_id, COALESCE(c.user_email, 'Email not provided') as email, COALESCE(c.user_name, 'Name not provided') as name, COALESCE(c.renewal_amount, c.max_amount_decimal, 0) as subscription_value FROM subscription_contract_v2 c ORDER BY COALESCE(c.renewal_amount, c.max_amount_decimal, 0) DESC LIMIT 10"}}}}]
 ```
 
-FOR TIME SERIES QUERIES:
-✅ CORRECT: "show weekly payment trends"
-```sql
-SELECT DATE_FORMAT(p.created_date, '%Y-W%u') AS payment_week, 
-       SUM(p.trans_amount_decimal) AS total_amount
-FROM subscription_payment_details p
-WHERE p.status = 'ACTIVE'
-  AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
-GROUP BY DATE_FORMAT(p.created_date, '%Y-W%u')
-ORDER BY payment_week ASC
+✅ Auto-renewal subscriptions:
+```json
+[{{"tool": "execute_dynamic_sql", "parameters": {{"sql_query": "SELECT COALESCE(c.user_email, 'Email not provided') as email, COALESCE(c.user_name, 'Name not provided') as name, c.subcription_end_date FROM subscription_contract_v2 c WHERE c.auto_renewal = 1 AND c.subcription_end_date IS NOT NULL ORDER BY c.subcription_end_date LIMIT 50"}}}}]
 ```
 
-✅ CORRECT: "show monthly trends"  
-```sql
-SELECT DATE_FORMAT(p.created_date, '%Y-%m') AS payment_month,
-       SUM(p.trans_amount_decimal) AS total_amount
-FROM subscription_payment_details p
-WHERE p.status = 'ACTIVE'
-  AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-GROUP BY DATE_FORMAT(p.created_date, '%Y-%m')
-ORDER BY payment_month ASC
+✅ This month subscriptions (MySQL):
+```json
+[{{"tool": "execute_dynamic_sql", "parameters": {{"sql_query": "SELECT COUNT(*) as new_subscriptions FROM subscription_contract_v2 c WHERE c.subcription_start_date BETWEEN DATE_FORMAT(CURRENT_DATE, '%Y-%m-01') AND LAST_DAY(CURRENT_DATE)"}}}}]
 ```
 
-❌ WRONG: DATE_FORMAT(created_date, '%Y-%W') → inconsistent day names
+✅ Payment trends weekly (MySQL):
+```json
+[{{"tool": "execute_dynamic_sql_with_graph", "parameters": {{"sql_query": "SELECT CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) AS week_period, SUM(p.trans_amount_decimal) AS value FROM subscription_payment_details p WHERE p.status = 'ACTIVE' AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL 12 WEEK) GROUP BY YEAR(p.created_date), WEEK(p.created_date) ORDER BY YEAR(p.created_date), WEEK(p.created_date)", "graph_type": "line"}}}}]
+```
 
-🎨 CHART REQUIREMENTS:
-{chart_requirements}
+✅ Weekly revenue from May (MySQL):
+```json
+[{{"tool": "execute_dynamic_sql_with_graph", "parameters": {{"sql_query": "SELECT CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) AS week_period, SUM(p.trans_amount_decimal) AS value FROM subscription_payment_details p WHERE p.status = 'ACTIVE' AND DATE_FORMAT(p.created_date, '%Y-%m') >= '2025-05' GROUP BY YEAR(p.created_date), WEEK(p.created_date) ORDER BY YEAR(p.created_date), WEEK(p.created_date)", "graph_type": "line"}}}}]
+```
 
-📅 DATE FILTERING (Current Year: {current_year}):
-- "april" without year → WHERE DATE_FORMAT(created_date, '%Y-%m') = '{current_year}-04'
-- "this month" → WHERE DATE_FORMAT(created_date, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')
-- "last month" → WHERE DATE_FORMAT(created_date, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m')
+✅ Sample customer data:
+```json
+[{{"tool": "execute_dynamic_sql", "parameters": {{"sql_query": "SELECT c.merchant_user_id, COALESCE(c.user_email, 'Email not provided') as email, COALESCE(c.user_name, 'Name not provided') as name, c.renewal_amount, c.max_amount_decimal FROM subscription_contract_v2 c LIMIT 10"}}}}]
+```
 
-🗓️ TIME PERIOD FORMATTING:
-- Daily: DATE_FORMAT(created_date, '%Y-%m-%d') AS day
-- Weekly: DATE_FORMAT(created_date, '%Y-W%u') AS week  (e.g., 2025-W15)
-- Monthly: DATE_FORMAT(created_date, '%Y-%m') AS month (e.g., 2025-04)
-- Quarterly: CONCAT(YEAR(created_date), '-Q', QUARTER(created_date)) AS quarter
+✅ Data exploration:
+```json
+[{{"tool": "execute_dynamic_sql", "parameters": {{"sql_query": "SELECT COUNT(*) as total_subscriptions, MIN(subcription_start_date) as earliest_date, MAX(subcription_start_date) as latest_date FROM subscription_contract_v2"}}}}]
+```
 
-❌ WRONG: DATE_FORMAT(created_date, '%Y-%W') → gives day names
-✅ CORRECT: DATE_FORMAT(created_date, '%Y-W%u') → gives week numbers like 2025-W15
-
-🔧 AVAILABLE TOOLS:
-1. execute_dynamic_sql - for data queries without charts
-2. execute_dynamic_sql_with_graph - for data queries with charts
-3. get_subscriptions_in_last_days - basic subscription stats
-4. get_payment_success_rate_in_last_days - payment stats
-5. get_database_status - connection and basic stats
-
-RESPONSE FORMAT:
-Return a JSON array of tool calls like:
-[{{"tool": "execute_dynamic_sql", "parameters": {{"sql_query": "SELECT ..."}}}}]
+❌ WRONG: Using subscription_start_date (missing 's')
+❌ WRONG: Not using COALESCE for user_email/user_name
+❌ WRONG: Using INNER JOIN (loses records with no payments)
+❌ WRONG: Using tool names other than the exact ones listed above
+❌ WRONG: Using PostgreSQL functions like DATE_TRUNC in MySQL
+❌ WRONG: Using c.merchant_user_id = p.subscription_id (wrong JOIN condition)
 
 Query: "{user_query}"
 Generate the appropriate tool call(s):"""
+
+        # Append critical fixes
+        prompt += """
+🔥 CRITICAL FIXES FOR COMMON ISSUES:
+
+1. If date query returns no results: Use DATE ranges (±3 days)
+   CORRECT: DATE(created_date) BETWEEN DATE_SUB('2025-04-24', INTERVAL 3 DAY) AND DATE_ADD('2025-04-24', INTERVAL 3 DAY)
+   WRONG: DATE(created_date) = '2025-04-24'
+
+2. For revenue queries: Use p.trans_amount_decimal WHERE p.status = 'ACTIVE'
+3. For subscription value: Use c.renewal_amount OR c.max_amount_decimal  
+4. Always use COALESCE for user_email and user_name (many are NULL)
+5. NEVER use line breaks in JSON - write SQL as single line
+"""
 
         return prompt
 
@@ -2453,22 +2506,31 @@ LIMIT 50
         """Extract complete recent feedback from conversation history."""
         try:
             # Look for feedback in last few turns
-            for line in reversed(history[-4:]):
-                if 'pie chart' in line.lower():
+            for line in reversed(history[-6:]):  # Increased search range
+                line_lower = line.lower()
+                # Check for specific chart type feedback
+                if 'use pie chart' in line_lower or 'pie chart instead' in line_lower:
                     return "User specifically requested PIE CHART visualization"
-                elif 'bar chart' in line.lower():
+                elif 'use bar chart' in line_lower or 'bar chart instead' in line_lower:
                     return "User specifically requested BAR CHART visualization"
-                elif 'line chart' in line.lower() or 'line graph' in line.lower():
+                elif ('use line chart' in line_lower or 'line chart instead' in line_lower or 
+                      'use line graph' in line_lower or 'line graph instead' in line_lower):
                     return "User specifically requested LINE CHART visualization"
-                elif 'improve' in line.lower() and ('rate' in line.lower() or 'success' in line.lower()):
+                elif 'pie chart' in line_lower:
+                    return "User specifically requested PIE CHART visualization"
+                elif 'bar chart' in line_lower:
+                    return "User specifically requested BAR CHART visualization"
+                elif 'line chart' in line_lower or 'line graph' in line_lower:
+                    return "User specifically requested LINE CHART visualization"
+                elif 'improve' in line_lower and ('rate' in line_lower or 'success' in line_lower):
                     return "User wants success/failure rate analysis"
-                elif 'try again' in line.lower():
+                elif 'try again' in line_lower:
                     return "User wants to retry with previous feedback incorporated"
-                elif 'error' in line.lower() or 'wrong' in line.lower():
+                elif 'error' in line_lower or 'wrong' in line_lower:
                     return "Previous query had errors - user wants corrected version"
-                elif 'merchant' in line.lower() and 'transaction' in line.lower():
+                elif 'merchant' in line_lower and 'transaction' in line_lower:
                     return "User asking about merchant transaction analysis"
-                elif 'threshold' in line.lower() or 'number' in line.lower():
+                elif 'threshold' in line_lower or 'number' in line_lower:
                     return "User wants specific threshold/number analysis"
             
             return ""
@@ -2734,6 +2796,10 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
             logger.warning(f"SQL auto-fixed for syntax: {sql_query}")
             # Only log, do not print to user
         
+        # Fix payment status values to match schema
+        sql_query = re.sub(r"status\s*=\s*'success(ful)?'", "status = 'ACTIVE'", sql_query, flags=re.IGNORECASE)
+        sql_query = re.sub(r"status\s*!=\s*'success(ful)?'", "status != 'ACTIVE'", sql_query, flags=re.IGNORECASE)
+        
         return sql_query
 
     def _fix_sql_date_math(self, sql_query: str, user_query: str = None) -> str:
@@ -2772,11 +2838,17 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
                 if (date_filter not in sql_query and 
                     'WHERE DATE(' not in sql_query and 
                     f"= '{current_year}-{month_num}" not in sql_query):
-                    # Insert before GROUP BY if present, else at end
-                    if 'GROUP BY' in sql_query:
-                        sql_query = sql_query.replace('GROUP BY', f'{date_filter} GROUP BY')
+                    
+                    # FIXED: Properly insert date filter without creating duplicate WHERE clauses
+                    if 'WHERE' in sql_query:
+                        # Add to existing WHERE clause with AND
+                        sql_query = re.sub(r'WHERE\s+', f'WHERE {date_filter} AND ', sql_query, count=1)
                     else:
-                        sql_query += f' {date_filter}'
+                        # Add new WHERE clause
+                        if 'GROUP BY' in sql_query:
+                            sql_query = sql_query.replace('GROUP BY', f'WHERE {date_filter} GROUP BY')
+                        else:
+                            sql_query += f' WHERE {date_filter}'
             
             elif year_mentioned:
                 # User mentioned both month and year - use the specified year
@@ -2795,11 +2867,17 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
                     if (date_filter not in sql_query and 
                         'WHERE DATE(' not in sql_query and 
                         f"= '{year_str}-{month_num}" not in sql_query):
-                        # Insert before GROUP BY if present, else at end
-                        if 'GROUP BY' in sql_query:
-                            sql_query = sql_query.replace('GROUP BY', f'{date_filter} GROUP BY')
+                        
+                        # FIXED: Properly insert date filter without creating duplicate WHERE clauses
+                        if 'WHERE' in sql_query:
+                            # Add to existing WHERE clause with AND
+                            sql_query = re.sub(r'WHERE\s+', f'WHERE {date_filter} AND ', sql_query, count=1)
                         else:
-                            sql_query += f' {date_filter}'
+                            # Add new WHERE clause
+                            if 'GROUP BY' in sql_query:
+                                sql_query = sql_query.replace('GROUP BY', f'WHERE {date_filter} GROUP BY')
+                            else:
+                                sql_query += f' WHERE {date_filter}'
         
         return sql_query
 
@@ -2813,6 +2891,52 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
             sql_query += '"'
         return sql_query
 
+    def _fix_field_selection_issues(self, sql_query: str, user_query: str) -> str:
+        user_query_lower = user_query.lower()
+        # Fix: User asks for subscription value but SQL uses payment amounts
+        if 'subscription' in user_query_lower and 'value' in user_query_lower:
+            if 'p.trans_amount_decimal' in sql_query:
+                sql_query = sql_query.replace(
+                    'p.trans_amount_decimal', 
+                    'COALESCE(c.renewal_amount, c.max_amount_decimal, 0)'
+                )
+        # Add NULL handling
+        if 'c.user_email' in sql_query and 'COALESCE' not in sql_query:
+            sql_query = sql_query.replace('c.user_email', 'COALESCE(c.user_email, "Not provided")')
+        return sql_query
+
+    def _validate_field_usage(self, sql_query: str, user_query: str) -> str:
+        """Validate and fix common field usage mistakes"""
+        user_lower = user_query.lower()
+        # Fix: Revenue query using subscription amounts
+        if any(word in user_lower for word in ['revenue', 'money earned', 'payment total']):
+            if 'c.renewal_amount' in sql_query and 'p.trans_amount_decimal' not in sql_query:
+                logger.warning("🔧 Revenue query should use payment amounts, not subscription amounts")
+        # Fix: Subscription value query using payment amounts  
+        if any(phrase in user_lower for phrase in ['subscription value', 'subscription amount', 'subscription cost']):
+            if 'p.trans_amount_decimal' in sql_query and 'c.renewal_amount' not in sql_query:
+                logger.warning("🔧 Subscription value query should use subscription amounts, not payment amounts")
+        # Add NULL handling if missing
+        if 'c.user_email' in sql_query and 'COALESCE' not in sql_query:
+            sql_query = sql_query.replace('c.user_email', 'COALESCE(c.user_email, "Email not provided")')
+        if 'c.user_name' in sql_query and 'COALESCE' not in sql_query:
+            sql_query = sql_query.replace('c.user_name', 'COALESCE(c.user_name, "Name not provided")')
+        return sql_query
+
+    def _fix_column_name_typos(self, sql_query: str) -> str:
+        """Fix common column name typos that cause SQL failures"""
+        # Fix the most common typo: subscription_start_date -> subcription_start_date
+        sql_query = sql_query.replace('subscription_start_date', 'subcription_start_date')
+        sql_query = sql_query.replace('subscription_end_date', 'subcription_end_date')
+        
+        # Ensure proper table aliases and JOINs
+        if 'FROM subscription_contract_v2' in sql_query and ' c' not in sql_query:
+            sql_query = sql_query.replace('FROM subscription_contract_v2', 'FROM subscription_contract_v2 c')
+        if 'FROM subscription_payment_details' in sql_query and ' p' not in sql_query:
+            sql_query = sql_query.replace('FROM subscription_payment_details', 'FROM subscription_payment_details p')
+            
+        return sql_query
+
 class CompleteEnhancedResultFormatter:
     """COMPLETE enhanced result formatter with smart insights and better presentation."""
     
@@ -2820,143 +2944,148 @@ class CompleteEnhancedResultFormatter:
         self.graph_generator = CompleteGraphGenerator()
     
     def format_single_result(self, result, show_details=False, show_graph=True):
-        try:
-            output = []
-            # Main result
-            if result.data and isinstance(result.data, list) and len(result.data) == 1:
-                row = result.data[0]
-                # --- POST-PROCESSING: Convert period like '2025-04' to 'April 2025' ---
-                new_row = dict(row)
-                if 'period' in row and isinstance(row['period'], str):
-                    period_val = row['period']
-                    match = re.match(r'^(20\d{2})-(0[1-9]|1[0-2])$', period_val)
-                    if match:
-                        year, month = match.groups()
-                        month_name = calendar.month_name[int(month)]
-                        new_row['period'] = f"{month_name} {year}"
-                for k, v in new_row.items():
-                    output.append(f"{k.replace('_', ' ').capitalize()}: {v}")
-                # --- NEW: Warn if requested fields are missing ---
-                if hasattr(result, 'original_query') and result.original_query:
-                    requested_fields = []
-                    query_lower = result.original_query.lower()
-                    for field in ['email', 'end date', 'end_date', 'subscription_end_date']:
-                        if field in query_lower:
-                            requested_fields.append(field)
-                    for field in requested_fields:
-                        if field not in new_row:
-                            # Try to find a close substitute
-                            substitute = None
-                            if 'subcription_start_date' in new_row and 'end' in field:
-                                substitute = 'subcription_start_date'
-                            elif 'merchant_user_id' in new_row and 'email' in field:
-                                substitute = 'merchant_user_id'
-                            if substitute:
-                                output.append(f"[Note] Field '{field}' not found in schema; showing '{substitute}' instead.")
-                            else:
-                                output.append(f"[Note] Field '{field}' not found in schema and no substitute available.")
-            elif result.data and isinstance(result.data, list):
-                # Table output for breakdowns
-                headers = result.data[0].keys()
-                output.append(" | ".join(headers))
-                output.append("-" * (3 * len(headers)))
-                for row in result.data:
-                    # --- POST-PROCESSING: Convert period like '2025-04' to 'April 2025' ---
-                    new_row = dict(row)
-                    if 'period' in row and isinstance(row['period'], str):
-                        period_val = row['period']
-                        match = re.match(r'^(20\d{2})-(0[1-9]|1[0-2])$', period_val)
-                        if match:
-                            year, month = match.groups()
-                            month_name = calendar.month_name[int(month)]
-                            new_row['period'] = f"{month_name} {year}"
-                    output.append(" | ".join(str(new_row[h]) for h in headers))
-                # --- NEW: Warn if requested fields are missing ---
-                if hasattr(result, 'original_query') and result.original_query:
-                    requested_fields = []
-                    query_lower = result.original_query.lower()
-                    for field in ['email', 'end date', 'end_date', 'subscription_end_date']:
-                        if field in query_lower:
-                            requested_fields.append(field)
-                    for field in requested_fields:
-                        if field not in headers:
-                            substitute = None
-                            if 'subcription_start_date' in headers and 'end' in field:
-                                substitute = 'subcription_start_date'
-                            elif 'merchant_user_id' in headers and 'email' in field:
-                                substitute = 'merchant_user_id'
-                            if substitute:
-                                output.append(f"[Note] Field '{field}' not found in schema; showing '{substitute}' instead.")
-                            else:
-                                output.append(f"[Note] Field '{field}' not found in schema and no substitute available.")
+        """Enhanced result formatting with better NULL handling and validation"""
+        if not result or not isinstance(result, dict):
+            return {"error": "No data available"}
+            
+        formatted_row = {}
+        for k, v in result.items():
+            if v is None or v == '':
+                if 'email' in k.lower():
+                    formatted_row[k] = 'Email not provided'
+                elif 'name' in k.lower():
+                    formatted_row[k] = 'Name not provided'  
+                elif any(word in k.lower() for word in ['amount', 'revenue', 'value', 'total']):
+                    formatted_row[k] = '0.00'
+                else:
+                    formatted_row[k] = 'N/A'
             else:
-                output.append(str(result.data))
-            
-            # Only show graph info if show_graph is True
-            if show_graph and getattr(result, 'graph_generated', False):
-                output.append(f"\n[Graph generated: {getattr(result, 'graph_filepath', '[see file]')}]")
-            
-            # Show technical details if requested
-            if show_details:
-                if getattr(result, 'generated_sql', None):
-                    output.append(f"\n🔍 Generated SQL:\n{result.generated_sql}")
-                if getattr(result, 'error', None):
-                    output.append(f"\n❌ Error: {result.error}")
-                if getattr(result, 'message', None):
-                    output.append(f"\n📝 {result.message}")
-            
-            return "\n".join(output)
-        except Exception as e:
-            return f"❌ Error formatting result: {e}"
+                # Format currency amounts - but NOT count values
+                if (any(word in k.lower() for word in ['amount', 'revenue', 'total']) and 
+                    not any(word in k.lower() for word in ['count', 'num', 'number', 'qty', 'quantity']) and
+                    isinstance(v, (int, float))):
+                    try:
+                        formatted_row[k] = f"{float(v):,.2f}"
+                    except:
+                        formatted_row[k] = str(v)
+                # Format count values without dollar signs
+                elif any(word in k.lower() for word in ['count', 'num', 'number', 'qty', 'quantity']) and isinstance(v, (int, float)):
+                    try:
+                        formatted_row[k] = f"{int(v):,}"
+                    except:
+                        formatted_row[k] = str(v)
+                # Format 'value' field - check if it's actually a count based on context
+                elif 'value' in k.lower() and isinstance(v, (int, float)):
+                    # If the value is a whole number and likely a count, don't add dollar sign
+                    if float(v).is_integer() and float(v) < 10000:  # Heuristic for count vs currency
+                        formatted_row[k] = f"{int(v):,}"
+                    else: 
+                        formatted_row[k] = f"{float(v):,.2f}"
+                else:
+                    formatted_row[k] = str(v)
+        return formatted_row
     
-    def format_multi_result(self, results: List[QueryResult], query: str) -> str:
-        """FIXED: Format multiple complete results with MULTITOOL support. Filters out irrelevant/failed results."""
-        try:
-            if not results:
-                return "❌ No results to display"
-            
-            output = [f"🎯 MULTITOOL COMPLETE RESULTS FOR: '{query}'", "=" * 80]
-            
-            # Filter out irrelevant/failed/None results
-            relevant_tools = {'execute_dynamic_sql', 'execute_dynamic_sql_with_graph', 'get_database_status'}
-            filtered_results = [r for r in results if r and getattr(r, 'success', False) and r.data is not None and r.tool_used in relevant_tools]
-            
-            if not filtered_results:
-                return "❌ No successful or relevant results to display. Please try rephrasing your query."
-            
-            # Group results by query if they have query_index
-            results_by_query = {}
-            for result in filtered_results:
-                query_index = getattr(result, 'query_index', 1)
-                if query_index not in results_by_query:
-                    results_by_query[query_index] = []
-                results_by_query[query_index].append(result)
-            
-            # Display results grouped by query
-            for query_index in sorted(results_by_query.keys()):
-                query_results = results_by_query[query_index]
-                if len(results_by_query) > 1:
-                    output.append(f"\n--- Query {query_index} Results ---")
+    def format_result(self, result, show_details=False, show_graph=True):
+        """Enhanced result formatting with empty result handling"""
+        if not result or (isinstance(result, list) and len(result) == 0):
+            return """
+======
+RESULT
+======
+No data found. This could be due to:
+- Invalid date ranges or filters
+- No records matching the criteria
+- Database connection issues
+
+Try:
+- Using broader date ranges
+- Checking for typos in your query
+- Simplifying your request
+------------------------------------------------------------
+"""
+        
+        # Handle None result
+        if result is None:
+            return """
+======
+RESULT
+======
+Query executed but returned no data.
+This could indicate:
+- Empty result set
+- SQL syntax errors
+- Invalid column names or table references
+
+Please check your query and try again.
+------------------------------------------------------------
+"""
+        
+        # Continue with existing formatting for valid results
+        if isinstance(result, list):
+            if len(result) == 1 and isinstance(result[0], dict):
+                # Single row result
+                formatted = self.format_single_result(result[0], show_details, show_graph)
+                if "error" in formatted:
+                    return f"""
+======
+RESULT
+======
+{formatted["error"]}
+------------------------------------------------------------
+"""
                 
-                for i, result in enumerate(query_results):
-                    if len(results_by_query) > 1:
-                        output.append(f"\n  -- Result {i+1} --")
-                    
-                    single_result = self.format_single_result(result)
-                    if len(results_by_query) > 1:
-                        single_result = '\n'.join(f"  {line}" for line in single_result.split('\n'))
-                    output.append(single_result)
-            
-            # Summary
-            total_success = len(filtered_results)
-            total_results = len(results)
-            output.append(f"\n📊 MULTITOOL Summary: {total_success}/{total_results} successful and relevant results")
-            output.append(f"🔗 Processed {len(results_by_query)} individual queries")
-            
-            return "\n".join(output)
-        except Exception as e:
-            logger.error(f"Error formatting MULTITOOL results: {e}")
-            return f"❌ Error formatting MULTITOOL results: {str(e)}"
+                output = "\n======\nRESULT\n======\n"
+                for k, v in formatted.items():
+                    output += f"{k}: {v}\n"
+                output += "------------------------------------------------------------\n"
+                return output
+            else:
+                # Multiple rows - use table format
+                if not result:
+                    return self.format_result([], show_details, show_graph)
+                
+                # Format as table
+                formatted_rows = [self.format_single_result(row, show_details, show_graph) for row in result if row]
+                if not formatted_rows:
+                    return self.format_result([], show_details, show_graph)
+                
+                headers = list(formatted_rows[0].keys())
+                
+                output = "\n======\nRESULT\n======\n"
+                output += " | ".join(headers) + "\n"
+                output += "------" + "-" * (len(" | ".join(headers)) - 6) + "\n"
+                
+                for row in formatted_rows:
+                    values = [str(row.get(h, 'N/A')) for h in headers]
+                    output += " | ".join(values) + "\n"
+                
+                output += "------------------------------------------------------------\n"
+                return output
+        
+        # Handle other result types
+        return f"""
+======
+RESULT
+======
+{str(result)}
+------------------------------------------------------------
+"""
+
+    def format_multi_result(self, results, query):
+        """Format multiple query results."""
+        if not results:
+            return "No results found."
+        
+        formatted_outputs = []
+        for i, result in enumerate(results, 1):
+            if hasattr(result, 'data') and result.data:
+                formatted_output = f"Result {i}:\n"
+                formatted_output += self.format_result(result.data)
+            else:
+                formatted_output = f"Result {i}: No data available"
+            formatted_outputs.append(formatted_output)
+        
+        return "\n\n".join(formatted_outputs)
 
 # Complete Enhanced Universal Client with all fixes
 class CompleteEnhancedUniversalClient:
@@ -3110,17 +3239,26 @@ class CompleteEnhancedUniversalClient:
                     'title': self._generate_complete_smart_title(original_query),
                     'description': f"Generated from: {original_query}"
                 }
+                
                 # ENFORCE: Always set graph_type in graph_data to the overridden value
-                enforced_type = parameters.get('graph_type', 'bar')
-                # DEFENSIVE: Ensure enforced_type is valid
-                if not enforced_type or not isinstance(enforced_type, str) or enforced_type.lower() == 'none':
-                    if any(word in original_query.lower() for word in ['line', 'trend', 'over time', 'timeline', 'time series', 'progression']):
+                enforced_type = parameters.get('graph_type', 'auto')
+                
+                # If no graph_type specified, let the AI decide based on query content
+                if enforced_type == 'auto':
+                    # Smart detection based on query keywords
+                    query_lower = original_query.lower()
+                    if any(word in query_lower for word in ['trend', 'trends', 'over time', 'timeline', 'payment trends']):
                         enforced_type = 'line'
+                        logger.info(f"[SMART-DETECT] Detected trend query, using line chart for: {original_query}")
+                    elif any(word in query_lower for word in ['pie', 'distribution', 'breakdown']):
+                        enforced_type = 'pie'
+                        logger.info(f"[SMART-DETECT] Detected distribution query, using pie chart")
                     else:
-                        enforced_type = 'bar'
-                    logger.warning(f"[DEFENSIVE] graph_type was missing or invalid in _handle_complete_smart_sql_with_graph, defaulted to '{enforced_type}'")
+                        enforced_type = 'bar'  # Default fallback
+                        logger.info(f"[SMART-DETECT] Using default bar chart")
+                
                 graph_data['graph_type'] = enforced_type
-                logger.info(f"[ENFORCE] Setting graph_data['graph_type'] = '{enforced_type}' before generate_graph")
+                logger.info(f"[ENFORCE] Setting graph_data['graph_type'] = '{enforced_type}' (from params: {parameters.get('graph_type', 'not_set')}) for query: {original_query[:50]}...")
                 
                 graph_filepath = self.graph_generator.generate_graph(
                     graph_data, original_query
@@ -3189,6 +3327,12 @@ class CompleteEnhancedUniversalClient:
                         result.query_index = call.get('query_index', 1)
                         result.total_queries = call.get('total_queries', len(parsed_calls))
                         result.is_multitool = call.get('is_multitool', True)
+                        # Store SQL queries in context for "visualize that" functionality
+                        if call['tool'] in ['execute_dynamic_sql', 'execute_dynamic_sql_with_graph']:
+                            sql_query = call['parameters'].get('sql_query')
+                            if sql_query:
+                                self.context['last_sql_query'] = sql_query
+                                logger.info(f"[CONTEXT] Stored SQL query: {sql_query[:100]}...")
                         results.append(result)
                     except Exception as e:
                         logger.error(f"Error calling complete tool {call['tool']}: {e}")
@@ -3227,6 +3371,12 @@ class CompleteEnhancedUniversalClient:
                 result.query_index = 1
                 result.total_queries = 1
                 result.is_multitool = False
+                # Store SQL queries in context for "visualize that" functionality
+                if call['tool'] in ['execute_dynamic_sql', 'execute_dynamic_sql_with_graph']:
+                    sql_query = call['parameters'].get('sql_query')
+                    if sql_query:
+                        self.context['last_sql_query'] = sql_query
+                        logger.info(f"[CONTEXT] Stored SQL query: {sql_query[:100]}...")
                 
                 # Post-process for metric queries: if user asked for ARPU/metric and got a breakdown, retry with explicit prompt
                 metric_keywords = ['arpu', 'average revenue per user', 'average revenue', 'mean revenue', 'arppu', 'arpau', 'total revenue', 'sum', 'average', 'mean']
@@ -3249,10 +3399,15 @@ class CompleteEnhancedUniversalClient:
             )
 
     def manage_history(self, query: str, response: str):
-        """Complete enhanced history management with smart filtering."""
+        """Complete enhanced history management with smart filtering and SQL tracking."""
         try:
-            self.history.extend([f"User: {query}", f"Assistant: {response[:200]}..."])  # Truncate long responses
-            self.history = self.history[-self.max_history_length:]  # Keep configurable amount
+            sql_match = re.search(r'(SELECT.*?FROM subscription_[^;]*)', response, re.IGNORECASE | re.DOTALL)
+            if sql_match:
+                sql_query = sql_match.group(1)
+                self.context['last_sql_query'] = sql_query
+                logger.info(f"[HISTORY] Stored SQL query for context: {sql_query[:100]}...")
+            self.history.extend([f"User: {query}", f"Assistant: {response[:200]}..."])
+            self.history = self.history[-self.max_history_length:]
         except Exception as e:
             logger.warning(f"Error managing complete history: {e}")
 
@@ -3335,7 +3490,8 @@ async def complete_enhanced_interactive_mode():
                         if isinstance(result, list):
                             output = client.formatter.format_multi_result(result, query)
                         else:
-                            output = client.formatter.format_single_result(result)
+                            # Use format_result for QueryResult objects, format_single_result is for individual data rows
+                            output = client.formatter.format_result(result.data if hasattr(result, 'data') else result, show_details=args.show_details)
                         
                         print(f"\n{output}")
                         
@@ -3511,9 +3667,20 @@ if __name__ == "__main__":
         "Tell me the last date for which data is available",
         "Compare subscribers with more than 1 and more than 2 subscriptions",
         "Number of subscriptions on 24 april 2025",
+        "Revenue for 24 april 2025",
+        "Number of subscriptions between 1 may 2025 and 31 may 2025",
+        "Revenue between 1 april 2025 and 30 april 2025",
         "Show me database status and recent subscription summary",
         "How many new subscriptions did we get this month?",
         "Multiple: Get database status; show payment success rates; create pie chart",
+        "Show me users with their email addresses and subscription amounts",
+        "List customers by industry type with their renewal amounts",
+        "Find subscriptions that are due this week with customer details",
+        "Show me the top 10 customers by total subscription value",
+        "Which industries have the highest revenue per customer?",
+        "Show subscription end dates for customers with auto-renewal enabled",
+        "Get customer contact details for failed payments",
+        "List new vs existing subscriptions by channel",
     ]
 
     def print_example_queries():
@@ -3618,8 +3785,8 @@ if __name__ == "__main__":
                                         feedback_given = True
                                 print_separator()
                     else:
-                        print_header("RESULT")
-                        output = client.formatter.format_single_result(result, show_details=args.show_details)
+                        # Use format_result for QueryResult objects, format_single_result is for individual data rows
+                        output = client.formatter.format_result(result.data if hasattr(result, 'data') else result, show_details=args.show_details)
                         print(f"{output}")
                         print_separator()
                         

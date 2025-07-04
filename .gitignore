@@ -154,8 +154,8 @@ Temporary Items
 
 # Project specific
 api_server.log
-query_memory.json
-query_vectors.npy
+complete_query_memory.json
+complete_query_vectors.npy
 
 # Ignore generated graphs
 /generated_graphs/

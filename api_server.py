@@ -721,8 +721,17 @@ def complete_execute_dynamic_sql(sql_query: str) -> Dict:
             if re.search(pattern, sql_upper):
                 return {"error": f"SQL contains dangerous keyword '{keyword}' - not allowed"}
         
-        # Apply initial fixes
+        # Apply initial fixes including column name typos
         cleaned_sql = _fix_complete_sql_issues(cleaned_sql)
+        # Apply column name fixes
+        cleaned_sql = cleaned_sql.replace('subscription_start_date', 'subcription_start_date')
+        cleaned_sql = cleaned_sql.replace('subscription_end_date', 'subcription_end_date')
+        
+        # Apply proactive MySQL compatibility fixes
+        cleaned_sql = _fix_mysql_compatibility(cleaned_sql)
+        
+        # Apply proactive fixes for common issues
+        cleaned_sql = _auto_fix_sql_errors(cleaned_sql, "proactive_fix")
         
         logger.info(f"🔍 Executing enhanced dynamic SQL: {cleaned_sql[:100]}...")
         
@@ -751,7 +760,11 @@ def complete_execute_dynamic_sql(sql_query: str) -> Dict:
                     return {"error": f"SQL execution failed after {max_sql_retries} enhanced attempts: {str(e)}"}
         
         if not results:
-            return {"data": [], "message": "Query executed successfully but returned no data"}
+            return {
+                "data": [], 
+                "message": "Query executed successfully but returned no data. This could be due to:\n- Date ranges with no matching records\n- Filters that are too restrictive\n- Empty or test database\n- Column name or table issues\n\nTry:\n- 'Show me sample customer data' to see what's available\n- 'How many total subscriptions are there?' to check data volume\n- Using broader criteria or simpler queries",
+                "sql_executed": cleaned_sql
+            }
         
         return {
             "data": results,
@@ -762,6 +775,32 @@ def complete_execute_dynamic_sql(sql_query: str) -> Dict:
     except Exception as e:
         logger.error(f"Error in enhanced execute_dynamic_sql: {e}")
         return {"error": f"Enhanced dynamic SQL execution failed: {str(e)}"}
+
+def _fix_mysql_compatibility(sql: str) -> str:
+    """Fix MySQL compatibility issues proactively."""
+    try:
+        # Fix PostgreSQL DATE_TRUNC to MySQL equivalent
+        sql = re.sub(r"DATE_TRUNC\s*\(\s*'month'\s*,\s*CURRENT_DATE\s*\)", 
+                   "DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')", sql)
+        sql = re.sub(r"DATE_TRUNC\s*\(\s*'day'\s*,\s*CURRENT_DATE\s*\)", 
+                   "CURRENT_DATE", sql)
+        sql = re.sub(r"DATE_TRUNC\s*\(\s*'year'\s*,\s*CURRENT_DATE\s*\)", 
+                   "DATE_FORMAT(CURRENT_DATE, '%Y-01-01')", sql)
+        
+        # Fix BETWEEN with date ranges for "this month" queries
+        if 'BETWEEN DATE_FORMAT(CURRENT_DATE' in sql and 'AND CURRENT_DATE' in sql:
+            # Replace with proper month range
+            sql = re.sub(r"BETWEEN DATE_FORMAT\(CURRENT_DATE, '%Y-%m-01'\) AND CURRENT_DATE", 
+                       "BETWEEN DATE_FORMAT(CURRENT_DATE, '%Y-%m-01') AND LAST_DAY(CURRENT_DATE)", sql)
+        
+        # Fix common MySQL date functions
+        sql = sql.replace('CURRENT_DATE()', 'CURRENT_DATE')
+        sql = sql.replace('NOW()', 'CURRENT_TIMESTAMP')
+        
+        return sql
+    except Exception as e:
+        logger.warning(f"MySQL compatibility fix failed: {e}")
+        return sql
 
 def _fix_complete_sql_issues(sql: str) -> str:
     """Fix common SQL issues with complete handling."""
@@ -785,7 +824,7 @@ def _fix_complete_sql_issues(sql: str) -> str:
             sql = sql[1:]  # Remove starting quote
         if sql.endswith('"') and not sql.startswith('"'):
             sql = sql[:-1]  # Remove ending quote
-        
+            
         # Fix status value issues - ensure they're properly quoted
         status_values = ['ACTIVE', 'INACTIVE', 'FAILED', 'FAIL', 'INIT', 'CLOSED', 'REJECT']
         for status in status_values:
@@ -805,10 +844,6 @@ def _fix_complete_sql_issues(sql: str) -> str:
                                 'FROM subscription_payment_details p JOIN subscription_contract_v2 c ON p.subscription_id = c.subscription_id')
                 sql = sql.replace('GROUP BY merchant_user_id', 'GROUP BY c.merchant_user_id')
         
-        # --- AUTOMATIC COLUMN NAME FIXES ---
-        sql = sql.replace('subscription_start_date', 'subcription_start_date')
-        sql = sql.replace('subscription_end_date', 'subcription_end_date')
-        
         # Clean up whitespace
         sql = re.sub(r'\s+', ' ', sql).strip()
         
@@ -821,28 +856,162 @@ def _fix_complete_sql_issues(sql: str) -> str:
         return sql
 
 def _auto_fix_sql_errors(sql: str, error: str) -> str:
-    """Enhanced auto-fix for SQL errors with comprehensive GROUP BY handling."""
-    import re
+    """Enhanced auto-fix for SQL errors with comprehensive pattern matching."""
     try:
         error_lower = error.lower()
-        # ... existing logic ...
-        # --- AUTOMATIC COLUMN NAME FIXES ---
-        sql = sql.replace('subscription_start_date', 'subcription_start_date')
-        sql = sql.replace('subscription_end_date', 'subcription_end_date')
-        # ... rest of the function unchanged ...
+        logger.info(f"🔧 Applying auto-fixes for error: {error[:100]}...")
+        
+        # Fix column name typos (most common issue)
+        if "unknown column" in error_lower or "doesn't exist" in error_lower:
+            logger.info("🔧 Fixing column name issues")
+            # Fix subscription_start_date -> subcription_start_date (missing 's')
+            sql = sql.replace('subscription_start_date', 'subcription_start_date')
+            sql = sql.replace('subscription_end_date', 'subcription_end_date')
+            
+            # Fix table aliases if missing
+            if 'FROM subscription_contract_v2' in sql and ' c' not in sql:
+                sql = sql.replace('FROM subscription_contract_v2', 'FROM subscription_contract_v2 c')
+            if 'FROM subscription_payment_details' in sql and ' p' not in sql:
+                sql = sql.replace('FROM subscription_payment_details', 'FROM subscription_payment_details p')
+        
+        # Fix GROUP BY and aggregation issues
+        elif "isn't in group by" in error_lower or "group by" in error_lower:
+            logger.info("🔧 Fixing GROUP BY aggregation issues")
+            # Find all SELECT columns that aren't aggregated
+            select_match = re.search(r'SELECT\s+(.*?)\s+FROM', sql, re.IGNORECASE | re.DOTALL)
+            if select_match:
+                select_clause = select_match.group(1)
+                # Split by comma and identify non-aggregated columns
+                columns = [col.strip() for col in select_clause.split(',')]
+                non_agg_columns = []
+                for col in columns:
+                    # Check if column is not an aggregate function
+                    if not re.search(r'(COUNT|SUM|AVG|MIN|MAX|GROUP_CONCAT)\s*\(', col, re.IGNORECASE):
+                        # Extract column name (remove aliases)
+                        col_name = re.sub(r'\s+as\s+\w+', '', col, flags=re.IGNORECASE).strip()
+                        if col_name and col_name not in non_agg_columns:
+                            non_agg_columns.append(col_name)
+                
+                if non_agg_columns:
+                    # Add GROUP BY if missing
+                    if 'GROUP BY' not in sql.upper():
+                        sql = sql + f" GROUP BY {', '.join(non_agg_columns)}"
+                    else:
+                        # Update existing GROUP BY
+                        group_by_pattern = r'GROUP\s+BY\s+([^ORDER|LIMIT|HAVING|$]+)'
+                        new_group_by = f"GROUP BY {', '.join(non_agg_columns)}"
+                        sql = re.sub(group_by_pattern, new_group_by, sql, flags=re.IGNORECASE)
+                        logger.info(f"🔧 Fixed GROUP BY with columns: {', '.join(non_agg_columns)}")
+        
+        # Fix quote escaping issues
+        elif 'syntax' in error_lower or 'quote' in error_lower or '42000' in error_lower:
+            logger.info("🔧 Applying quote fixes")
+            # Remove escaped quotes
+            sql = sql.replace("\\'", "'").replace('\\"', '"').replace("''", "'")
+            sql = sql.strip()
+            
+            # Fix orphaned quotes
+            if sql.startswith('"') and sql.count('"') % 2 == 1:
+                sql = sql[1:]
+            if sql.endswith('"') and sql.count('"') % 2 == 1:
+                sql = sql[:-1]
+            
+            # Fix date strings specifically
+            sql = re.sub(r'"(\d{4}-\d{2}-\d{2})', r"'\1'", sql)
+            sql = re.sub(r'(\d{4}-\d{2}-\d{2})"', r"'\1'", sql)
+            
+            # Fix general string literals
+            sql = re.sub(r'"([^"]*)"', r"'\1'", sql)
+        
+        # Fix date-related errors and MySQL function compatibility
+        elif 'date' in error_lower or 'created_date' in sql.lower() or 'DATE_TRUNC' in sql or 'does not exist' in error_lower:
+            logger.info("🔧 Fixing date-related errors and MySQL compatibility")
+            
+            # Fix PostgreSQL DATE_TRUNC to MySQL equivalent
+            if 'DATE_TRUNC' in sql:
+                # Replace DATE_TRUNC('month', CURRENT_DATE) with MySQL equivalent
+                sql = re.sub(r"DATE_TRUNC\s*\(\s*'month'\s*,\s*CURRENT_DATE\s*\)", 
+                           "DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')", sql)
+                sql = re.sub(r"DATE_TRUNC\s*\(\s*'day'\s*,\s*CURRENT_DATE\s*\)", 
+                           "CURRENT_DATE", sql)
+                sql = re.sub(r"DATE_TRUNC\s*\(\s*'year'\s*,\s*CURRENT_DATE\s*\)", 
+                           "DATE_FORMAT(CURRENT_DATE, '%Y-01-01')", sql)
+                logger.info("🔧 Fixed DATE_TRUNC to MySQL equivalent")
+            
+            # Fix date comparison patterns
+            sql = re.sub(r'DATE\s*\(\s*created_date\s*\)\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', 
+                        r"DATE(created_date) = '\1'", sql)
+            sql = re.sub(r'created_date\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', 
+                        r"DATE(created_date) = '\1'", sql)
+        
+        # Fix status value errors
+        elif 'unknown column' in error_lower and 'status' in sql.lower():
+            logger.info("🔧 Fixing status value quoting")
+            status_values = ['ACTIVE', 'INACTIVE', 'FAILED', 'FAIL', 'INIT', 'CLOSED', 'REJECT']
+            for status in status_values:
+                # Fix unquoted status values
+                pattern = rf'\bstatus\s*(?:=|!=|<>)\s*{status}\b'
+                replacement = f"status = '{status}'"
+                sql = re.sub(pattern, replacement, sql, flags=re.IGNORECASE)
+        
+        # Fix ORDER BY with aliases - replace alias with actual expression
+        if 'ORDER BY subscription_value' in sql and 'COALESCE(' in sql:
+            # Find the COALESCE expression for subscription_value
+            coalesce_match = re.search(r'COALESCE\([^)]+\) as subscription_value', sql, re.IGNORECASE)
+            if coalesce_match:
+                coalesce_expr = coalesce_match.group(0).replace(' as subscription_value', '').replace(' AS subscription_value', '')
+                sql = sql.replace('ORDER BY subscription_value', f'ORDER BY {coalesce_expr}')
+                logger.info(f"🔧 Fixed ORDER BY alias with expression: {coalesce_expr}")
+        
+        # Fix incorrect JOIN conditions
+        if 'c.merchant_user_id = p.subscription_id' in sql:
+            sql = sql.replace('c.merchant_user_id = p.subscription_id', 'c.subscription_id = p.subscription_id')
+            logger.info("🔧 Fixed JOIN condition: merchant_user_id -> subscription_id")
+        
+        # Remove unnecessary JOINs when not using payment data
+        if 'LEFT JOIN subscription_payment_details p' in sql and 'p.' not in sql.replace('LEFT JOIN subscription_payment_details p', ''):
+            sql = sql.replace('LEFT JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id', '')
+            sql = sql.replace('LEFT JOIN subscription_payment_details p ON c.merchant_user_id = p.subscription_id', '')
+            sql = sql.replace('LEFT JOIN subscription_payment_details p', '')
+            logger.info("🔧 Removed unnecessary JOIN")
+        
+        # Clean up whitespace and return
         sql = re.sub(r'\s+', ' ', sql).strip()
-        logger.info(f"🔧 Enhanced auto-fix complete: {sql[:150]}...")
+        logger.info(f"🔧 Auto-fix complete: {sql[:150]}...")
         return sql
+        
     except Exception as e:
-        logger.warning(f"Enhanced auto-fix failed: {e}")
+        logger.warning(f"Auto-fix failed: {e}")
         return sql
 
-def _fix_sql_function_spacing(sql_query: str) -> str:
-    """Fix spaces between function names and parentheses."""
-    functions = ['MIN', 'MAX', 'COUNT', 'SUM', 'AVG', 'DATE_FORMAT', 'YEARWEEK']
-    for func in functions:
-        sql_query = re.sub(rf'\b{func}\s+\(', f'{func}(', sql_query, flags=re.IGNORECASE)
-    return sql_query
+def _fix_select_columns_for_group_by(self, select_columns: str) -> str:
+    """Fix SELECT columns for GROUP BY compatibility by adding aggregation functions."""
+    try:
+        columns = [col.strip() for col in select_columns.split(',')]
+        fixed_columns = []
+        
+        for col in columns:
+            col_lower = col.lower()
+            
+            # Skip if already an aggregation function
+            if any(func in col_lower for func in ['count(', 'sum(', 'max(', 'min(', 'avg(']):
+                fixed_columns.append(col)
+            # Keep merchant_user_id as-is (it's in GROUP BY)
+            elif 'merchant_user_id' in col_lower:
+                fixed_columns.append(col)
+            # Add MAX() to other columns to make them GROUP BY compatible
+            else:
+                # Remove table aliases for cleaner output
+                clean_col = col.replace('c.', '').strip()
+                fixed_columns.append(f'MAX({col}) as {clean_col}')
+        
+        result = ', '.join(fixed_columns)
+        logger.info(f"🔧 Fixed SELECT columns: {result}")
+        return result
+        
+    except Exception as e:
+        logger.warning(f"Error fixing SELECT columns: {e}")
+        return select_columns
 
 # ===== COMPLETE ENHANCED GRAPH GENERATION =====
 
@@ -1149,10 +1318,8 @@ class CompleteEnhancedGraphAnalyzer:
             return []
 
 def complete_generate_graph_data(data: List[Dict], graph_type: str = None, custom_config: Dict = None) -> Dict:
+    """FIXED: COMPLETE enhanced graph data generation with smart pie chart support and proper data conversion."""
     try:
-        # Defensive: ensure graph_type is a string and not None
-        if not graph_type or not isinstance(graph_type, str):
-            graph_type = 'pie'
         if not data or not isinstance(data, list) or len(data) == 0:
             return {"error": "No data provided for complete graph generation"}
         
@@ -1219,7 +1386,7 @@ def complete_generate_graph_data(data: List[Dict], graph_type: str = None, custo
         
         # Build complete enhanced final response
         graph_data = {
-            "graph_type": selected_graph.get('type', 'pie') or 'pie',
+            "graph_type": selected_graph.get('type', 'pie'),
             "title": custom_config.get('title') if custom_config else selected_graph.get('title', 'Complete Data Visualization'),
             "description": custom_config.get('description') if custom_config else selected_graph.get('description', ''),
             "data_summary": {
@@ -1247,10 +1414,9 @@ def complete_generate_graph_data(data: List[Dict], graph_type: str = None, custo
         return {"error": f"Critical complete graph generation failure: {str(e)}"}
 
 def _prepare_complete_graph_data(data: List[Dict], graph_config: Dict) -> Dict:
+    """FIXED: Prepare complete graph data with proper format conversion for all chart types."""
     try:
         graph_type = graph_config.get('type', 'pie')
-        if not graph_type or not isinstance(graph_type, str):
-            graph_type = 'pie'
         columns = list(data[0].keys()) if data else []
         
         logger.info(f"📊 Preparing {graph_type} chart data with columns: {columns}")
@@ -1919,6 +2085,13 @@ def execute_complete_tool(request: ToolRequest):
             gc.collect()
         except Exception:
             pass
+
+def _fix_sql_function_spacing(sql_query: str) -> str:
+    """Fix spaces between function names and parentheses."""
+    functions = ['MIN', 'MAX', 'COUNT', 'SUM', 'AVG', 'DATE_FORMAT', 'YEARWEEK']
+    for func in functions:
+        sql_query = re.sub(rf'\b{func}\s+\(', f'{func}(', sql_query, flags=re.IGNORECASE)
+    return sql_query
 
 if __name__ == "__main__":
     # Validate environment variables
