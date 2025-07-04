@@ -897,11 +897,25 @@ def _auto_fix_sql_errors(sql: str, error: str) -> str:
                     if 'GROUP BY' not in sql.upper():
                         sql = sql + f" GROUP BY {', '.join(non_agg_columns)}"
                     else:
-                        # Update existing GROUP BY
-                        group_by_pattern = r'GROUP\s+BY\s+([^ORDER|LIMIT|HAVING|$]+)'
-                        new_group_by = f"GROUP BY {', '.join(non_agg_columns)}"
-                        sql = re.sub(group_by_pattern, new_group_by, sql, flags=re.IGNORECASE)
-                        logger.info(f"🔧 Fixed GROUP BY with columns: {', '.join(non_agg_columns)}")
+                        # FIXED: For weekly SQL, fix the GROUP BY to include CONCAT expression
+                        if 'CONCAT(YEAR(' in sql and 'WEEK(' in sql:
+                            # This is weekly aggregation SQL - fix GROUP BY to include CONCAT expression
+                            concat_match = re.search(r'CONCAT\(YEAR\([^)]+\),\s*[^,]+,\s*LPAD\(WEEK\([^)]+\),\s*[^)]+\)\)', sql)
+                            if concat_match:
+                                concat_expr = concat_match.group(0)
+                                # Replace GROUP BY YEAR(...), WEEK(...) with GROUP BY CONCAT(...)
+                                group_by_pattern = r'GROUP\s+BY\s+YEAR\([^)]+\),\s*WEEK\([^)]+\)'
+                                new_group_by = f"GROUP BY {concat_expr}"
+                                sql = re.sub(group_by_pattern, new_group_by, sql, flags=re.IGNORECASE)
+                                logger.info(f"🔧 Fixed weekly GROUP BY with CONCAT expression: {concat_expr}")
+                            else:
+                                logger.info(f"🔧 Preserving weekly GROUP BY structure - no CONCAT found")
+                        else:
+                            # Update existing GROUP BY for non-weekly queries
+                            group_by_pattern = r'GROUP\s+BY\s+([^ORDER|LIMIT|HAVING|$]+)'
+                            new_group_by = f"GROUP BY {', '.join(non_agg_columns)}"
+                            sql = re.sub(group_by_pattern, new_group_by, sql, flags=re.IGNORECASE)
+                            logger.info(f"🔧 Fixed GROUP BY with columns: {', '.join(non_agg_columns)}")
         
         # Fix quote escaping issues
         elif 'syntax' in error_lower or 'quote' in error_lower or '42000' in error_lower:

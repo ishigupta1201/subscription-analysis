@@ -1277,7 +1277,9 @@ CRITICAL SCHEMA RULES:
             'visualize that', 'show that', 'chart that', 'graph that', 'plot that',
             'visualize it', 'show it', 'chart it', 'graph it', 'plot it',
             'make a chart', 'create a graph', 'show as chart', 'show as graph',
-            'show in a', 'display as', 'as a chart', 'as a graph', 'instead'
+            'show in a', 'display as', 'as a chart', 'as a graph', 'instead',
+            'make graph for the same', 'graph for the same', 'chart for the same',
+            'visualize the same', 'graph the same', 'chart the same'
         ]
         
         # NEW: Check for temporal modification requests that need new SQL
@@ -1290,6 +1292,23 @@ CRITICAL SCHEMA RULES:
             # If it's a temporal modification, don't reuse old SQL - generate new SQL with proper aggregation
             if is_temporal_modification:
                 logger.info(f"[CONTEXT] Temporal modification detected: {query_lower}")
+                
+                # Get previous SQL context to understand what data to transform
+                recent_sql_query = None
+                if client and hasattr(client, 'context') and client.context.get('last_sql_query'):
+                    recent_sql_query = client.context.get('last_sql_query')
+                    logger.info(f"[CONTEXT] Found previous SQL for temporal modification: {recent_sql_query[:100]}...")
+                
+                # Store the previous context for the AI prompt
+                if recent_sql_query:
+                    # Determine if this was a trends/chart query
+                    was_chart_query = 'SUM(' in recent_sql_query and ('time_period' in recent_sql_query or 'period' in recent_sql_query)
+                    chart_instruction = " and generate a LINE CHART" if was_chart_query else ""
+                    
+                    temporal_context = f"TEMPORAL MODIFICATION REQUEST - Transform this previous payment trends query to {query_lower}{chart_instruction}:\nPREVIOUS SQL: {recent_sql_query}\nGENERATE: Weekly aggregated payment totals (week_period, total_value) using execute_dynamic_sql_with_graph"
+                    history.append(temporal_context)
+                    logger.info(f"[CONTEXT] Added temporal context to history for AI processing")
+                
                 # Fall through to AI processing to generate new SQL with proper temporal grouping
                 pass
             else:
@@ -1300,15 +1319,42 @@ CRITICAL SCHEMA RULES:
                     recent_sql_query = client.context.get('last_sql_query')
                     logger.info(f"[CONTEXT] Found SQL in client context: {recent_sql_query[:100]}...")
                 
-                # If not in client context, look for the most recent SQL query result in history
+                # If not in client context, look for the most recent SUCCESSFUL SQL query result in history
                 if not recent_sql_query:
+                    # First pass: Look specifically for comparison/category queries (UNION patterns) in stored queries
                     for line in reversed(history):
-                        if 'FROM subscription_' in line and 'SELECT' in line:
-                            sql_match = re.search(r'(SELECT.*?FROM subscription_[^;]*)', line, re.IGNORECASE | re.DOTALL)
-                            if sql_match:
-                                recent_sql_query = sql_match.group(1)
-                                logger.info(f"[CONTEXT] Found recent SQL in history: {recent_sql_query[:100]}...")
+                        if 'Stored SQL query:' in line:
+                            potential_sql = line.split('Stored SQL query:')[1].strip()
+                            # Prioritize comparison queries with UNION or category patterns
+                            if any(pattern in potential_sql.upper() for pattern in ['UNION', 'CATEGORY', 'MORE THAN']):
+                                recent_sql_query = potential_sql
+                                logger.info(f"[CONTEXT] Found comparison SQL in stored queries: {recent_sql_query[:50]}...")
                                 break
+                    
+                    # Second pass: Look for UNION patterns in any line (not just stored queries)
+                    if not recent_sql_query:
+                        for line in reversed(history):
+                            if 'UNION ALL' in line.upper() and 'SELECT' in line.upper():
+                                sql_match = re.search(r'(SELECT.*?UNION ALL.*?SELECT[^;]*)', line, re.IGNORECASE | re.DOTALL)
+                                if sql_match:
+                                    recent_sql_query = sql_match.group(1)
+                                    logger.info(f"[CONTEXT] Found UNION SQL in history: {recent_sql_query[:50]}...")
+                                    break
+                    
+                    # Third pass: If no comparison query found, look for other non-weekly queries
+                    if not recent_sql_query:
+                        for line in reversed(history):
+                            if 'FROM subscription_' in line and 'SELECT' in line:
+                                sql_match = re.search(r'(SELECT.*?FROM subscription_[^;]*)', line, re.IGNORECASE | re.DOTALL)
+                                if sql_match:
+                                    potential_sql = sql_match.group(1)
+                                    # Skip weekly SQL in favor of other queries
+                                    if ('CONCAT(YEAR(' in potential_sql and 'WEEK(' in potential_sql):
+                                        logger.info(f"[CONTEXT] Skipping weekly SQL: {potential_sql[:50]}...")
+                                        continue
+                                    recent_sql_query = potential_sql
+                                    logger.info(f"[CONTEXT] Found non-weekly SQL in history: {recent_sql_query[:50]}...")
+                                    break
                 
                 if recent_sql_query:
                     chart_type = auto_chart_type or 'bar'
@@ -1465,7 +1511,7 @@ AND p.status = 'ACTIVE'
             else:
                 logger.info(f"[DEBUG] Subscription count query detected for date: {date_str}")
                 # Subscription count query (default)
-            sql = f"SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '{date_str}'"
+                sql = f"SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '{date_str}'"
             sql = self._fix_sql_quotes(sql)
             sql = self._validate_and_autofix_sql(sql)
             sql = self._fix_sql_date_math(sql, query)
@@ -1511,7 +1557,7 @@ WHERE p.status = 'ACTIVE'
             numbers = threshold_info['numbers']
             
             # ENHANCED: Check for complex combined conditions (subscription AND payment)
-            if ('subscription' in query_lower and 'payment' in query_lower and 'and' in query_lower and 'who have' in query_lower):
+            if ('subscription' in query_lower and 'payment' in query_lower and 'and' in query_lower and ('who have' in query_lower or 'and who' in query_lower)):
                 # Complex query: subscribers with X subscriptions AND Y payments
                 if len(numbers) >= 2:
                     sub_threshold = numbers[0]
@@ -1554,6 +1600,23 @@ FROM (
                     'chart_analysis': {'chart_type': 'none'}
                 }]
             
+            # Check for mixed metrics (subscriptions and payments)
+            elif ('subscription' in query_lower and 'payment' in query_lower and 
+                  len(numbers) >= 1 and 'and' in query_lower and 
+                  not ('who have' in query_lower or 'and who' in query_lower)):
+                # This is asking for separate counts: subscriptions vs payments
+                threshold = numbers[0] if len(numbers) == 1 else numbers[0]
+                payment_threshold = numbers[1] if len(numbers) >= 2 else threshold
+                
+                sql = f"""
+SELECT 'More than {threshold} Subscriptions' as category, COUNT(*) as value 
+FROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > {threshold}) t1
+UNION ALL
+SELECT 'More than {payment_threshold} Payments' as category, COUNT(*) as value  
+FROM (SELECT c.merchant_user_id FROM subscription_contract_v2 c 
+      JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id 
+      GROUP BY c.merchant_user_id HAVING COUNT(p.id) > {payment_threshold}) t2
+"""
             # Standard comparison queries (different thresholds for same metric)
             elif len(numbers) >= 2:
                 sql = f"""
@@ -2165,12 +2228,12 @@ EXAMPLE CORRECT QUERIES:
 
 ✅ Payment trends weekly (MySQL):
 ```json
-[{{"tool": "execute_dynamic_sql_with_graph", "parameters": {{"sql_query": "SELECT CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) AS week_period, SUM(p.trans_amount_decimal) AS value FROM subscription_payment_details p WHERE p.status = 'ACTIVE' AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL 12 WEEK) GROUP BY YEAR(p.created_date), WEEK(p.created_date) ORDER BY YEAR(p.created_date), WEEK(p.created_date)", "graph_type": "line"}}}}]
+[{{"tool": "execute_dynamic_sql_with_graph", "parameters": {{"sql_query": "SELECT CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) AS week_period, SUM(p.trans_amount_decimal) AS value FROM subscription_payment_details p WHERE p.status = 'ACTIVE' AND p.created_date >= DATE_SUB(CURDATE(), INTERVAL 12 WEEK) GROUP BY CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) ORDER BY week_period", "graph_type": "line"}}}}]
 ```
 
 ✅ Weekly revenue from May (MySQL):
 ```json
-[{{"tool": "execute_dynamic_sql_with_graph", "parameters": {{"sql_query": "SELECT CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) AS week_period, SUM(p.trans_amount_decimal) AS value FROM subscription_payment_details p WHERE p.status = 'ACTIVE' AND DATE_FORMAT(p.created_date, '%Y-%m') >= '2025-05' GROUP BY YEAR(p.created_date), WEEK(p.created_date) ORDER BY YEAR(p.created_date), WEEK(p.created_date)", "graph_type": "line"}}}}]
+[{{"tool": "execute_dynamic_sql_with_graph", "parameters": {{"sql_query": "SELECT CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) AS week_period, SUM(p.trans_amount_decimal) AS value FROM subscription_payment_details p WHERE p.status = 'ACTIVE' AND DATE_FORMAT(p.created_date, '%Y-%m') >= '2025-05' GROUP BY CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) ORDER BY week_period", "graph_type": "line"}}}}]
 ```
 
 ✅ Sample customer data:
@@ -2205,6 +2268,14 @@ Generate the appropriate tool call(s):"""
 3. For subscription value: Use c.renewal_amount OR c.max_amount_decimal  
 4. Always use COALESCE for user_email and user_name (many are NULL)
 5. NEVER use line breaks in JSON - write SQL as single line
+
+🕐 TEMPORAL MODIFICATION GUIDANCE:
+- If user says "weekly instead" and previous query was payment trends: Generate weekly payment totals with LINE CHART
+- If user says "monthly instead" and previous query was subscription trends: Generate monthly subscription totals
+- For weekly payment trends: SELECT CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) AS week_period, SUM(p.trans_amount_decimal) AS value FROM subscription_payment_details p WHERE p.status = 'ACTIVE' GROUP BY CONCAT(YEAR(p.created_date), '-W', LPAD(WEEK(p.created_date), 2, '0')) ORDER BY week_period
+- For monthly payment trends: SELECT DATE_FORMAT(p.created_date, '%Y-%m') AS month_period, SUM(p.trans_amount_decimal) AS value FROM subscription_payment_details p WHERE p.status = 'ACTIVE' GROUP BY DATE_FORMAT(p.created_date, '%Y-%m') ORDER BY month_period
+- ALWAYS preserve the core metric (SUM for trends) and add graph capability when transforming trends
+- DO NOT add user details (email, name) for trend queries - keep aggregated totals only
 """
 
         return prompt
@@ -2767,6 +2838,30 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
         import re
         fixed = False
         
+        # 0. CRITICAL FIX: Fix malformed weekly GROUP BY clauses
+        if 'WEEK(' in sql_query and 'GROUP BY' in sql_query:
+            # Fix malformed GROUP BY where two patterns got merged incorrectly
+            malformed_pattern = r'GROUP BY CONCAT\([^)]+\)[A-Z]*\([^)]+\), [A-Z]*\([^)]+\)'
+            if re.search(malformed_pattern, sql_query):
+                logger.info("🔧 Fixing malformed weekly GROUP BY clause")
+                # Use the CONCAT expression for weekly aggregation
+                concat_match = re.search(r'CONCAT\(YEAR\([^)]+\),\s*[^,]+,\s*LPAD\(WEEK\([^)]+\),\s*[^)]+\)\)', sql_query)
+                if concat_match:
+                    concat_expr = concat_match.group(0)
+                    sql_query = re.sub(
+                        malformed_pattern,
+                        f"GROUP BY {concat_expr}",
+                        sql_query
+                    )
+                else:
+                    # Fallback to old pattern if CONCAT not found
+                    sql_query = re.sub(
+                        malformed_pattern,
+                        "GROUP BY YEAR(p.created_date), WEEK(p.created_date)",
+                        sql_query
+                    )
+                fixed = True
+        
         # 1. Balance parentheses
         open_parens = sql_query.count('(')
         close_parens = sql_query.count(')')
@@ -2835,9 +2930,15 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
                 date_filter = f"WHERE DATE_FORMAT(p.created_date, '%Y-%m') = '{current_year}-{month_num}'"
                 
                 # CRITICAL FIX: Only add if not already present AND no existing WHERE with specific date
+                # ALSO: Don't modify weekly/temporal aggregation SQL that already has proper date filtering
+                # ALSO: Don't modify revenue queries that already have DATE_SUB filters
                 if (date_filter not in sql_query and 
                     'WHERE DATE(' not in sql_query and 
-                    f"= '{current_year}-{month_num}" not in sql_query):
+                    f"= '{current_year}-{month_num}" not in sql_query and
+                    'WEEK(' not in sql_query and  # Don't modify weekly SQL
+                    'DATE_FORMAT(p.created_date, \'%Y-%m\')' not in sql_query and  # Don't modify if already has month filter
+                    'DATE_SUB(' not in sql_query and  # Don't modify revenue queries with DATE_SUB
+                    'DATE_ADD(' not in sql_query):  # Don't modify revenue queries with DATE_ADD
                     
                     # FIXED: Properly insert date filter without creating duplicate WHERE clauses
                     if 'WHERE' in sql_query:
@@ -2864,9 +2965,15 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
                     date_filter = f"WHERE DATE_FORMAT(p.created_date, '%Y-%m') = '{year_str}-{month_num}'"
                     
                     # Only add if not already present AND no existing WHERE with specific date
+                    # ALSO: Don't modify weekly/temporal aggregation SQL that already has proper date filtering
+                    # ALSO: Don't modify revenue queries that already have DATE_SUB filters
                     if (date_filter not in sql_query and 
                         'WHERE DATE(' not in sql_query and 
-                        f"= '{year_str}-{month_num}" not in sql_query):
+                        f"= '{year_str}-{month_num}" not in sql_query and
+                        'WEEK(' not in sql_query and  # Don't modify weekly SQL
+                        'DATE_FORMAT(p.created_date, \'%Y-%m\')' not in sql_query and  # Don't modify if already has month filter
+                        'DATE_SUB(' not in sql_query and  # Don't modify revenue queries with DATE_SUB
+                        'DATE_ADD(' not in sql_query):  # Don't modify revenue queries with DATE_ADD
                         
                         # FIXED: Properly insert date filter without creating duplicate WHERE clauses
                         if 'WHERE' in sql_query:
