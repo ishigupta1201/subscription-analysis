@@ -161,18 +161,6 @@ class CompleteGraphGenerator:
             # ENFORCE: Use the graph_type from graph_data (set by tool call override logic)
             requested_graph_type = graph_data.get('graph_type', '').lower()
             query_lower = query.lower()
-            # HANDLE "TRY AGAIN" - retry previous user query if requested
-            if query_lower in ['try again', 'retry', 'fix it', 'try that again']:
-                # Get the most recent user query from history (exclude 'try again')
-                recent_user_queries = [line[6:] for line in history if line.startswith('User: ') and 
-                                    not any(retry_word in line.lower() for retry_word in ['try again', 'retry', 'fix it'])]
-                if recent_user_queries:
-                    original_query = recent_user_queries[-1]  # Most recent actual query
-                    logger.info(f"[TRY AGAIN] Retrying with original query: {original_query}")
-                    query = original_query
-                    query_lower = query.lower().strip()
-                else:
-                    logger.warning("[TRY AGAIN] No previous query found in history")
             logger.info(f"[GRAPH] Received graph_type: '{requested_graph_type}' from tool call. Query: {query}")
             
             # Only use requested_graph_type if valid, else fallback to smart detection
@@ -896,6 +884,8 @@ class CompleteSmartNLPProcessor:
         self.db_schema = self._get_complete_database_schema()
         self.chart_keywords = self._get_chart_keywords()
         self.tools = self._get_tools_config()
+        self.last_feedback = None
+        self.last_feedback_query = None
 
     async def _generate_with_complete_retries(self, prompt: str, query: str, chart_analysis: Dict, max_retries: int = 3) -> List[Dict]:
         """Generate AI response with retries and better error handling"""
@@ -1193,6 +1183,13 @@ CRITICAL SCHEMA RULES:
         ):
             if is_time_period_comparison or (len(threshold_info['numbers']) >= 2):
                 is_comparison = True
+        # Check for business summary queries that should be split
+        business_summary_patterns = [
+            'business health summary', 'business summary', 'give me a summary',
+            'what was', 'how many', 'what is', 'tell me'
+        ]
+        is_business_summary = any(pattern in query_lower for pattern in business_summary_patterns) and (query_lower.count(',') >= 2 or 'what was' in query_lower and 'how many' in query_lower)
+        
         complex_patterns = [
             'list of customers', 'show me their', 'customers who have', 
             'users who have', 'find customers', 'get customers',
@@ -1207,6 +1204,11 @@ CRITICAL SCHEMA RULES:
             'october', 'november', 'december', 'january', 'february', 'march',
             '2024', '2025', 'date'
         ])
+        
+        # Override complex_analytical for business summary queries
+        if is_business_summary:
+            is_complex_analytical = False
+            
         if not is_comparison and not is_complex_analytical and not is_date_range_query:
             query_separators = [' and ', ';', '\n']
             individual_queries = [user_query.strip()]
@@ -1225,6 +1227,48 @@ CRITICAL SCHEMA RULES:
                 if query.lower() not in seen:
                     seen.add(query.lower())
                     unique_queries.append(query)
+        elif is_business_summary:
+            # Special handling for business summary queries - split by commas and clean up
+            query_parts = [part.strip() for part in user_query.split(',') if part.strip()]
+            # Remove the summary header and clean up each part
+            cleaned_queries = []
+            for part in query_parts:
+                # Skip the summary header
+                if any(header in part.lower() for header in ['business health summary', 'business summary', 'give me a summary']):
+                    continue
+                # Clean up the part
+                part = part.strip()
+                if part.startswith(':'):
+                    part = part[1:].strip()
+                # Remove leading "and" if present
+                if part.lower().startswith('and '):
+                    part = part[4:].strip()
+                if part:
+                    cleaned_queries.append(part)
+            
+            # If we still don't have enough parts, try splitting by "and" as well
+            if len(cleaned_queries) < 3 and ' and ' in user_query:
+                # Split by "and" and clean up
+                and_parts = [part.strip() for part in user_query.split(' and ') if part.strip()]
+                cleaned_and_queries = []
+                for part in and_parts:
+                    # Skip the summary header
+                    if any(header in part.lower() for header in ['business health summary', 'business summary', 'give me a summary']):
+                        continue
+                    # Clean up the part
+                    part = part.strip()
+                    if part.startswith(':'):
+                        part = part[1:].strip()
+                    if part:
+                        cleaned_and_queries.append(part)
+                
+                # Use the method that gives us more parts
+                if len(cleaned_and_queries) > len(cleaned_queries):
+                    unique_queries = cleaned_and_queries
+                else:
+                    unique_queries = cleaned_queries
+            else:
+                unique_queries = cleaned_queries
         else:
             unique_queries = [user_query.strip()]
         logger.info(f"🔧 MULTITOOL: Processing {len(unique_queries)} individual queries")
@@ -1402,15 +1446,30 @@ CRITICAL SCHEMA RULES:
                     # Extract feedback from the line after "How can this be improved?"
                     # Look for common chart type feedback patterns
                     line_lower = line.lower()
-                    if 'line graph' in line_lower or 'line chart' in line_lower:
-                        recent_feedback = 'line'
-                        logger.info("[TRY AGAIN] Found line chart feedback in history")
-                    elif 'bar graph' in line_lower or 'bar chart' in line_lower:
-                        recent_feedback = 'bar'
-                        logger.info("[TRY AGAIN] Found bar chart feedback in history")
-                    elif 'pie chart' in line_lower or 'pie graph' in line_lower:
+                    
+                    # IMPROVED: More comprehensive chart type detection from feedback
+                    if any(phrase in line_lower for phrase in ['use pie chart', 'pie chart instead', 'try pie chart', 'pie chart would be better', 'pie chart please']):
                         recent_feedback = 'pie'
                         logger.info("[TRY AGAIN] Found pie chart feedback in history")
+                    elif any(phrase in line_lower for phrase in ['use bar chart', 'bar chart instead', 'try bar chart', 'bar chart would be better', 'bar chart please']):
+                        recent_feedback = 'bar'
+                        logger.info("[TRY AGAIN] Found bar chart feedback in history")
+                    elif any(phrase in line_lower for phrase in ['use line chart', 'line chart instead', 'try line chart', 'line chart would be better', 'line chart please', 'use line graph', 'line graph instead', 'try line graph']):
+                        recent_feedback = 'line'
+                        logger.info("[TRY AGAIN] Found line chart feedback in history")
+                    elif any(phrase in line_lower for phrase in ['use scatter', 'scatter plot', 'scatter chart']):
+                        recent_feedback = 'scatter'
+                        logger.info("[TRY AGAIN] Found scatter plot feedback in history")
+                    # Fallback to simple pattern matching if no specific phrases found
+                    elif 'pie chart' in line_lower or 'pie graph' in line_lower:
+                        recent_feedback = 'pie'
+                        logger.info("[TRY AGAIN] Found pie chart feedback in history (fallback)")
+                    elif 'bar chart' in line_lower or 'bar graph' in line_lower:
+                        recent_feedback = 'bar'
+                        logger.info("[TRY AGAIN] Found bar chart feedback in history (fallback)")
+                    elif 'line chart' in line_lower or 'line graph' in line_lower:
+                        recent_feedback = 'line'
+                        logger.info("[TRY AGAIN] Found line chart feedback in history (fallback)")
             
             if recent_user_queries:
                 original_query = recent_user_queries[0]
@@ -1568,9 +1627,10 @@ FROM (
     SELECT c.merchant_user_id
     FROM subscription_contract_v2 c
     LEFT JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id
+    WHERE p.status = 'ACTIVE' OR p.status IS NULL
     GROUP BY c.merchant_user_id
     HAVING COUNT(DISTINCT c.subscription_id) > {sub_threshold} 
-       AND COUNT(DISTINCT p.id) > {payment_threshold}
+       AND COUNT(DISTINCT CASE WHEN p.status = 'ACTIVE' THEN p.subscription_id END) > {payment_threshold}
 ) combined_criteria
 """
                 elif len(numbers) == 1:
@@ -1582,9 +1642,10 @@ FROM (
     SELECT c.merchant_user_id
     FROM subscription_contract_v2 c
     LEFT JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id
+    WHERE p.status = 'ACTIVE' OR p.status IS NULL
     GROUP BY c.merchant_user_id
     HAVING COUNT(DISTINCT c.subscription_id) > {threshold} 
-       AND COUNT(DISTINCT p.id) > {threshold}
+       AND COUNT(DISTINCT CASE WHEN p.status = 'ACTIVE' THEN p.subscription_id END) > {threshold}
 ) combined_criteria
 """
                 
@@ -1603,7 +1664,8 @@ FROM (
             # Check for mixed metrics (subscriptions and payments)
             elif ('subscription' in query_lower and 'payment' in query_lower and 
                   len(numbers) >= 1 and 'and' in query_lower and 
-                  not ('who have' in query_lower or 'and who' in query_lower)):
+                  not ('who have' in query_lower or 'and who' in query_lower) and
+                  ('number of' in query_lower or 'count' in query_lower or 'merchant' in query_lower or 'merhcnat' in query_lower)):
                 # This is asking for separate counts: subscriptions vs payments
                 threshold = numbers[0] if len(numbers) == 1 else numbers[0]
                 payment_threshold = numbers[1] if len(numbers) >= 2 else threshold
@@ -1615,8 +1677,20 @@ UNION ALL
 SELECT 'More than {payment_threshold} Payments' as category, COUNT(*) as value  
 FROM (SELECT c.merchant_user_id FROM subscription_contract_v2 c 
       JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id 
-      GROUP BY c.merchant_user_id HAVING COUNT(p.id) > {payment_threshold}) t2
+      WHERE p.status = 'ACTIVE'
+      GROUP BY c.merchant_user_id HAVING COUNT(p.subscription_id) > {payment_threshold}) t2
 """
+                sql = self._fix_sql_quotes(sql)
+                sql = self._validate_and_autofix_sql(sql)
+                sql = self._fix_sql_date_math(sql, query)
+                
+                return [{
+                    'tool': 'execute_dynamic_sql',
+                    'parameters': {'sql_query': sql},
+                    'original_query': query,
+                    'wants_graph': False,
+                    'chart_analysis': {'chart_type': 'none'}
+                }]
             # Standard comparison queries (different thresholds for same metric)
             elif len(numbers) >= 2:
                 sql = f"""
@@ -1630,6 +1704,22 @@ FROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_us
                 sql = self._validate_and_autofix_sql(sql)
                 sql = self._fix_sql_date_math(sql, query)
                 
+                # PATCH: Check feedback history for bar chart or graph suggestion
+                bar_chart_feedback = False
+                for line in reversed(history[-8:]):
+                    line_lower = line.lower()
+                    if any(kw in line_lower for kw in ['bar chart', 'bar graph', 'graph for the same', 'generate a graph', 'showcasing both the numbers']):
+                        bar_chart_feedback = True
+                        break
+                if bar_chart_feedback:
+                    return [{
+                        'tool': 'execute_dynamic_sql_with_graph',
+                        'parameters': {'sql_query': sql, 'graph_type': 'bar'},
+                        'original_query': query,
+                        'wants_graph': True,
+                        'chart_analysis': {'chart_type': 'bar'}
+                    }]
+                # Default: table only
                 return [{
                     'tool': 'execute_dynamic_sql',
                     'parameters': {'sql_query': sql},
@@ -2158,7 +2248,28 @@ LIMIT 20
         else:
             chart_requirements = "No chart requested."
 
-        prompt = f"""You are an expert SQL analyst for subscription data. Generate VALID JSON tool calls.
+        # Add improvement context prominently at the top if available
+        improvement_header = ""
+        force_graph_tool = ""
+        
+        if improvement_context and improvement_context.strip():
+            improvement_header = f"""
+🚨 CRITICAL USER FEEDBACK AND IMPROVEMENT REQUESTS:
+{improvement_context}
+
+⚠️ PAY ATTENTION: The user has provided specific feedback about what they want changed. 
+You MUST incorporate this feedback in your response.
+"""
+            
+            # Check if user requested a chart/graph in feedback
+            improvement_lower = improvement_context.lower()
+            if any(phrase in improvement_lower for phrase in ['bar chart', 'pie chart', 'line chart', 'graph', 'chart', 'visualize', 'generate a bar', 'generate a pie', 'generate a line']):
+                force_graph_tool = """
+🚨 CHART REQUESTED: User has specifically requested a chart/graph visualization.
+You MUST use execute_dynamic_sql_with_graph tool, NOT execute_dynamic_sql.
+"""
+
+        prompt = f"""{improvement_header}{force_graph_tool}You are an expert SQL analyst for subscription data. Generate VALID JSON tool calls.
 
 🚨 CRITICAL COLUMN NAMES (EXACT SPELLING REQUIRED):
 - subcription_start_date (NOT subscription_start_date) - TYPO IS CONFIRMED
@@ -2579,20 +2690,27 @@ LIMIT 50
             # Look for feedback in last few turns
             for line in reversed(history[-6:]):  # Increased search range
                 line_lower = line.lower()
-                # Check for specific chart type feedback
-                if 'use pie chart' in line_lower or 'pie chart instead' in line_lower:
+                
+                # IMPROVED: More comprehensive chart type feedback detection
+                # Check for specific improvement suggestions first
+                if any(phrase in line_lower for phrase in ['use pie chart', 'pie chart instead', 'try pie chart', 'pie chart would be better', 'pie chart please']):
                     return "User specifically requested PIE CHART visualization"
-                elif 'use bar chart' in line_lower or 'bar chart instead' in line_lower:
+                elif any(phrase in line_lower for phrase in ['use bar chart', 'bar chart instead', 'try bar chart', 'bar chart would be better', 'bar chart please']):
                     return "User specifically requested BAR CHART visualization"
-                elif ('use line chart' in line_lower or 'line chart instead' in line_lower or 
-                      'use line graph' in line_lower or 'line graph instead' in line_lower):
+                elif any(phrase in line_lower for phrase in ['use line chart', 'line chart instead', 'try line chart', 'line chart would be better', 'line chart please', 'use line graph', 'line graph instead', 'try line graph']):
                     return "User specifically requested LINE CHART visualization"
-                elif 'pie chart' in line_lower:
+                elif any(phrase in line_lower for phrase in ['use scatter', 'scatter plot', 'scatter chart']):
+                    return "User specifically requested SCATTER PLOT visualization"
+                
+                # Fallback to simple pattern matching
+                elif 'pie chart' in line_lower or 'pie graph' in line_lower:
                     return "User specifically requested PIE CHART visualization"
-                elif 'bar chart' in line_lower:
+                elif 'bar chart' in line_lower or 'bar graph' in line_lower:
                     return "User specifically requested BAR CHART visualization"
                 elif 'line chart' in line_lower or 'line graph' in line_lower:
                     return "User specifically requested LINE CHART visualization"
+                elif 'scatter' in line_lower:
+                    return "User specifically requested SCATTER PLOT visualization"
                 elif 'improve' in line_lower and ('rate' in line_lower or 'success' in line_lower):
                     return "User wants success/failure rate analysis"
                 elif 'try again' in line_lower:
@@ -2605,7 +2723,8 @@ LIMIT 50
                     return "User wants specific threshold/number analysis"
             
             return ""
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Could not extract recent feedback: {e}")
             return ""
 
     def _analyze_complete_chart_requirements(self, user_query: str, history: List[str]) -> Dict:
@@ -3044,6 +3163,10 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
             
         return sql_query
 
+    def record_feedback(self, query, feedback):
+        self.last_feedback = feedback
+        self.last_feedback_query = query
+
 class CompleteEnhancedResultFormatter:
     """COMPLETE enhanced result formatter with smart insights and better presentation."""
     
@@ -3093,8 +3216,61 @@ class CompleteEnhancedResultFormatter:
         return formatted_row
     
     def format_result(self, result, show_details=False, show_graph=True):
-        """Enhanced result formatting with empty result handling"""
-        if not result or (isinstance(result, list) and len(result) == 0):
+        """Enhanced result formatting with empty result handling and debug output"""
+        print("[DEBUG] Raw result passed to formatter:", repr(result))  # Add debug output
+        if result is None:
+            return """
+======
+RESULT
+======
+Query executed but returned no data.
+This could indicate:
+- Empty result set
+- SQL syntax errors
+- Invalid column names or table references
+
+Please check your query and try again.
+------------------------------------------------------------
+"""
+        # If result is a list with at least one dict, show all as table if more than 1 row
+        if isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict):
+            if len(result) == 1:
+                formatted = self.format_single_result(result[0], show_details, show_graph)
+                if "error" in formatted:
+                    return f"""
+======
+RESULT
+======
+{formatted["error"]}
+------------------------------------------------------------
+"""
+                output = "\n======\nRESULT\n======\n"
+                for k, v in formatted.items():
+                    output += f"{k}: {v}\n"
+                # If this is a success/failure breakdown, add rates
+                if len(result) == 2 and all('category' in row and 'value' in row for row in result):
+                    cats = {row['category'].lower(): row['value'] for row in result}
+                    total = sum(cats.values())
+                    if total > 0 and any(cat in cats for cat in ['success', 'failure', 'failed']):
+                        success = cats.get('success', 0)
+                        failure = cats.get('failure', cats.get('failed', 0))
+                        output += f"Success Rate: {success / total * 100:.1f}%\n"
+                        output += f"Failure Rate: {failure / total * 100:.1f}%\n"
+                output += "------------------------------------------------------------\n"
+                return output
+            else:
+                # Table format for multiple rows
+                headers = list(result[0].keys())
+                output = "\n======\nRESULT\n======\n"
+                output += " | ".join(headers) + "\n"
+                output += "------" + "-" * (len(" | ".join(headers)) - 6) + "\n"
+                for row in result:
+                    values = [str(row.get(h, 'N/A')) for h in headers]
+                    output += " | ".join(values) + "\n"
+                output += "------------------------------------------------------------\n"
+                return output
+        # If result is a list but empty, show no data
+        if isinstance(result, list) and len(result) == 0:
             return """
 ======
 RESULT
@@ -3110,65 +3286,6 @@ Try:
 - Simplifying your request
 ------------------------------------------------------------
 """
-        
-        # Handle None result
-        if result is None:
-            return """
-======
-RESULT
-======
-Query executed but returned no data.
-This could indicate:
-- Empty result set
-- SQL syntax errors
-- Invalid column names or table references
-
-Please check your query and try again.
-------------------------------------------------------------
-"""
-        
-        # Continue with existing formatting for valid results
-        if isinstance(result, list):
-            if len(result) == 1 and isinstance(result[0], dict):
-                # Single row result
-                formatted = self.format_single_result(result[0], show_details, show_graph)
-                if "error" in formatted:
-                    return f"""
-======
-RESULT
-======
-{formatted["error"]}
-------------------------------------------------------------
-"""
-                
-                output = "\n======\nRESULT\n======\n"
-                for k, v in formatted.items():
-                    output += f"{k}: {v}\n"
-                output += "------------------------------------------------------------\n"
-                return output
-            else:
-                # Multiple rows - use table format
-                if not result:
-                    return self.format_result([], show_details, show_graph)
-                
-                # Format as table
-                formatted_rows = [self.format_single_result(row, show_details, show_graph) for row in result if row]
-                if not formatted_rows:
-                    return self.format_result([], show_details, show_graph)
-                
-                headers = list(formatted_rows[0].keys())
-                
-                output = "\n======\nRESULT\n======\n"
-                output += " | ".join(headers) + "\n"
-                output += "------" + "-" * (len(" | ".join(headers)) - 6) + "\n"
-                
-                for row in formatted_rows:
-                    values = [str(row.get(h, 'N/A')) for h in headers]
-                    output += " | ".join(values) + "\n"
-                
-                output += "------------------------------------------------------------\n"
-                return output
-        
         # Handle other result types
         return f"""
 ======
@@ -3274,8 +3391,8 @@ class CompleteEnhancedUniversalClient:
                             error=f"HTTP {response.status}: {error_text}",
                             tool_used=tool_name
                         )
-                    
                     result_data = await response.json()
+                    print("[DEBUG] Raw API response:", result_data)  # Add debug output
                     return QueryResult(
                         success=result_data.get('success', False),
                         data=result_data.get('data'),
@@ -3616,25 +3733,46 @@ async def complete_enhanced_interactive_mode():
                                     print(f"📝 Result {i} was generated using COMPLETE AI with semantic learning!")
                                     print("Your feedback helps the system learn and improve over time.")
                                     
+                                    last_query = query
+                                    last_result = individual_result
+                                    last_history = list(client.history) if hasattr(client, 'history') else []
                                     while True:
                                         try:
                                             feedback_input = input(f"Was Result {i} helpful? (y/n/skip): ").lower().strip()
                                             if feedback_input in ['y', 'yes']:
-                                                await client.submit_feedback(individual_result, True)
+                                                await client.submit_feedback(last_result, True)
                                                 print("🧠 Positive feedback recorded in semantic learning system!")
                                                 print_section('💡 Your feedback will be used to improve future answers to similar queries.')
                                                 break
                                             elif feedback_input in ['n', 'no']:
                                                 improvement = input("How can this be improved? (e.g., 'use pie chart instead', 'fix SQL error'): ").strip()
                                                 if improvement.lower() not in ['skip', 's', '']:
-                                                    await client.submit_feedback(individual_result, False, improvement)
+                                                    await client.submit_feedback(last_result, False, improvement)
                                                     print("🧠 Negative feedback and improvement recorded - the system will learn!")
                                                     print_section('💡 Your feedback will be used to improve future answers to similar queries.')
+                                                    # PATCH: Inject feedback into history for immediate retry
+                                                    last_history.append(f"How can this be improved? {improvement}")
                                                 else:
-                                                    await client.submit_feedback(individual_result, False)
+                                                    await client.submit_feedback(last_result, False)
                                                     print("🧠 Negative feedback recorded!")
                                                     print_section('💡 Your feedback will be used to improve future answers to similar queries.')
-                                                break
+                                                    # PATCH: Still inject a generic feedback line for retry
+                                                    last_history.append("How can this be improved? (no details)")
+                                                # PATCH: Re-run the last query after negative feedback
+                                                print(f"\n🔄 Regenerating answer for Result {i} based on your feedback...\n")
+                                                last_result = await client.query(last_query, history=last_history)
+                                                # For multitool, get the i-th result again if possible
+                                                if isinstance(last_result, list) and len(last_result) >= i:
+                                                    new_individual_result = last_result[i-1]
+                                                else:
+                                                    new_individual_result = last_result if hasattr(last_result, 'data') else last_result
+                                                if hasattr(new_individual_result, 'data'):
+                                                    output = client.formatter.format_result(new_individual_result.data, show_details=args.show_details)
+                                                else:
+                                                    output = client.formatter.format_result(new_individual_result, show_details=args.show_details)
+                                                print(f"\n{output}")
+                                                last_result = new_individual_result
+                                                continue  # Ask for feedback again
                                             elif feedback_input in ['s', 'skip', '']:
                                                 break
                                             else:
@@ -3651,31 +3789,51 @@ async def complete_enhanced_interactive_mode():
                                 print("📝 This answer was generated using COMPLETE AI with semantic learning!")
                                 print("Your feedback helps the system learn and improve over time.")
                                 
+                                last_query = query
+                                last_result = result
+                                last_history = list(client.history) if hasattr(client, 'history') else []
                                 while True:
                                     try:
                                         feedback_input = input("Was this helpful? (y/n/skip): ").lower().strip()
                                         if feedback_input in ['y', 'yes']:
-                                            await client.submit_feedback(result, True)
+                                            await client.submit_feedback(last_result, True)
                                             print("🧠 Positive feedback recorded in semantic learning system!")
                                             print_section('💡 Your feedback will be used to improve future answers to similar queries.')
                                             break
                                         elif feedback_input in ['n', 'no']:
                                             improvement = input("How can this be improved? (e.g., 'use pie chart instead', 'fix SQL error'): ").strip()
                                             if improvement.lower() not in ['skip', 's', '']:
-                                                await client.submit_feedback(result, False, improvement)
+                                                await client.submit_feedback(last_result, False, improvement)
                                                 print("🧠 Negative feedback and improvement recorded - the system will learn!")
                                                 print_section('💡 Your feedback will be used to improve future answers to similar queries.')
+                                                # PATCH: Inject feedback into history for immediate retry
+                                                last_history.append(f"How can this be improved? {improvement}")
                                             else:
-                                                await client.submit_feedback(result, False)
+                                                await client.submit_feedback(last_result, False)
                                                 print("🧠 Negative feedback recorded!")
                                                 print_section('💡 Your feedback will be used to improve future answers to similar queries.')
-                                            break
+                                                # PATCH: Still inject a generic feedback line for retry
+                                                last_history.append("How can this be improved? (no details)")
+                                            # PATCH: Re-run the last query after negative feedback
+                                            print("\n🔄 Regenerating answer based on your feedback...\n")
+                                            last_result = await client.query(last_query, history=last_history)
+                                            if hasattr(last_result, 'data'):
+                                                output = client.formatter.format_result(last_result.data, show_details=args.show_details)
+                                            else:
+                                                output = client.formatter.format_result(last_result, show_details=args.show_details)
+                                            print(f"\n{output}")
+                                            continue  # Ask for feedback again
                                         elif feedback_input in ['s', 'skip', '']:
                                             break
                                         else:
                                             print("Please enter 'y', 'n', or 'skip'.")
                                     except (KeyboardInterrupt, EOFError):
                                         break
+                                # If feedback was negative, loop will repeat and regenerate improved answer
+                                if feedback_input in ['n', 'no']:
+                                    continue
+                                else:
+                                    break
                     except Exception as format_error:
                         logger.error(f"Error formatting COMPLETE output: {format_error}")
                         print(f"❌ Error displaying COMPLETE results: {format_error}")
@@ -3770,6 +3928,7 @@ if __name__ == "__main__":
         "Visualize payment data with a bar chart",
         "Create a pie chart breakdown of successful vs failed payments",
         "Show payment success rate for merchants with more than 1 transaction visually",
+        "number of merchants with more than 5 subscriptions and number of merchants with more than 5 payments",
         "Show payment trends over time",
         "Tell me the last date for which data is available",
         "Compare subscribers with more than 1 and more than 2 subscriptions",
@@ -3779,15 +3938,8 @@ if __name__ == "__main__":
         "Revenue between 1 april 2025 and 30 april 2025",
         "Show me database status and recent subscription summary",
         "How many new subscriptions did we get this month?",
-        "Multiple: Get database status; show payment success rates; create pie chart",
         "Show me users with their email addresses and subscription amounts",
-        "List customers by industry type with their renewal amounts",
-        "Find subscriptions that are due this week with customer details",
         "Show me the top 10 customers by total subscription value",
-        "Which industries have the highest revenue per customer?",
-        "Show subscription end dates for customers with auto-renewal enabled",
-        "Get customer contact details for failed payments",
-        "List new vs existing subscriptions by channel",
     ]
 
     def print_example_queries():
@@ -3817,11 +3969,9 @@ if __name__ == "__main__":
                             break
                         if not user_query:
                             continue
-                    
                     # Always reload improvement suggestions before each query for immediate feedback effect
                     if hasattr(client.nlp, '_last_best_chart_type'):
                         del client.nlp._last_best_chart_type
-                    
                     # Context-aware query resolution
                     resolved_query = user_query
                     if 'that day' in user_query.lower() and 'last_date' in client.context:
@@ -3830,74 +3980,9 @@ if __name__ == "__main__":
                         resolved_query = user_query.lower().replace('that merchant', client.context['last_merchant'])
                     if 'that count' in user_query.lower() and 'last_count' in client.context:
                         resolved_query = user_query.lower().replace('that count', str(client.context['last_count']))
-                    
-                    # Process query (handles both single and multitool automatically)
-                    result = await client.query(resolved_query)
-                    print_separator()
-                    
-                    # Format and display results
-                    if isinstance(result, list):
-                        print_header(f"MULTITOOL RESULTS FOR: '{resolved_query}'")
-                        output = client.formatter.format_multi_result(result, resolved_query)
-                        print(f"{output}")
-                        print_separator()
-                        
-                        # Update context with key results from all queries
-                        for individual_result in result:
-                            if individual_result.data and isinstance(individual_result.data, list) and len(individual_result.data) > 0:
-                                row = individual_result.data[0]
-                                if isinstance(row, dict):
-                                    for k, v in row.items():
-                                        if 'date' in k.lower():
-                                            client.context['last_date'] = str(v)
-                                        if 'merchant' in k.lower():
-                                            client.context['last_merchant'] = str(v)
-                                        if 'count' in k.lower() or 'num' in k.lower():
-                                            client.context['last_count'] = v
-                        
-                        # Feedback for multitool results
-                        for i, individual_result in enumerate(result, 1):
-                            if (getattr(individual_result, 'is_dynamic', False) and 
-                                getattr(individual_result, 'success', False) and 
-                                getattr(individual_result, 'data', None) is not None):
-                                
-                                print_feedback_prompt(f"\n📝 Feedback for Query {i} (generated by AI):")
-                                print_feedback_prompt("Your feedback helps the system learn and improve over time.")
-                                feedback_given = False
-                                
-                                while not feedback_given:
-                                    try:
-                                        feedback_input = input(f"{MAGENTA}Was Query {i} helpful? (y/n/skip): {RESET}").lower().strip()
-                                        if feedback_input in ['y', 'yes']:
-                                            await client.submit_feedback(individual_result, True)
-                                            print_success("🧠 Positive feedback recorded in semantic learning system!")
-                                            print_section('💡 Your feedback will be used to improve future answers to similar queries.')
-                                            feedback_given = True
-                                        elif feedback_input in ['n', 'no']:
-                                            improvement = input(f"{MAGENTA}How can this be improved? (e.g., 'use bar chart instead', 'fix SQL error'): {RESET}").strip()
-                                            if improvement.lower() not in ['skip', 's', '']:
-                                                await client.submit_feedback(individual_result, False, improvement)
-                                                print_success("🧠 Negative feedback and improvement recorded - the system will learn!")
-                                                print_section('💡 Your feedback will be used to improve future answers to similar queries.')
-                                            else:
-                                                await client.submit_feedback(individual_result, False)
-                                                print_success("🧠 Negative feedback recorded!")
-                                                print_section('💡 Your feedback will be used to improve future answers to similar queries.')
-                                            feedback_given = True
-                                        elif feedback_input in ['s', 'skip', '']:
-                                            feedback_given = True
-                                        else:
-                                            print_warning("Please enter 'y', 'n', or 'skip'.")
-                                    except (KeyboardInterrupt, EOFError):
-                                        feedback_given = True
-                                print_separator()
-                    else:
-                        # Use format_result for QueryResult objects, format_single_result is for individual data rows
-                        output = client.formatter.format_result(result.data if hasattr(result, 'data') else result, show_details=args.show_details)
-                        print(f"{output}")
-                        print_separator()
-                        
-                        # Update context with key results
+
+                    # --- RECURSIVE FEEDBACK LOOP START ---
+                    def update_context_from_result(result):
                         if result.data and isinstance(result.data, list) and len(result.data) > 0:
                             row = result.data[0]
                             if isinstance(row, dict):
@@ -3908,43 +3993,102 @@ if __name__ == "__main__":
                                         client.context['last_merchant'] = str(v)
                                     if 'count' in k.lower() or 'num' in k.lower():
                                         client.context['last_count'] = v
-                        
-                        # Feedback for single result
-                        if True:
-                            print_feedback_prompt("\n📝 This answer was generated using COMPLETE AI with semantic learning!")
-                            print_feedback_prompt("Your feedback helps the system learn and improve over time.")
-                            
-                            while True:
-                                try:
-                                    feedback_input = input(f"{MAGENTA}Was this helpful? (y/n/skip): {RESET}").lower().strip()
-                                    if feedback_input in ['y', 'yes']:
-                                        await client.submit_feedback(result, True)
-                                        print("🧠 Positive feedback recorded in semantic learning system!")
-                                        print_section('💡 Your feedback will be used to improve future answers to similar queries.')
-                                        break
-                                    elif feedback_input in ['n', 'no']:
-                                        improvement = input(f"{MAGENTA}How can this be improved? (e.g., 'use pie chart instead', 'fix SQL error'): {RESET}").strip()
-                                        if improvement.lower() not in ['skip', 's', '']:
+
+                    async def handle_query_with_feedback(query):
+                        feedback = None
+                        improvement = None
+                        current_query = query
+                        while True:
+                            # If improvement suggestion exists, append it to the query
+                            query_to_run = current_query
+                            if improvement:
+                                query_to_run = f"{current_query} ({improvement})"
+                            result = await client.query(query_to_run)
+                            print_separator()
+                            # Format and display results
+                            if isinstance(result, list):
+                                print_header(f"MULTITOOL RESULTS FOR: '{query_to_run}'")
+                                output = client.formatter.format_multi_result(result, query_to_run)
+                                print(f"{output}")
+                                print_separator()
+                                for individual_result in result:
+                                    update_context_from_result(individual_result)
+                                # Feedback for multitool results (recursive)
+                                all_satisfied = True
+                                for i, individual_result in enumerate(result, 1):
+                                    if (getattr(individual_result, 'is_dynamic', False) and 
+                                        getattr(individual_result, 'success', False) and 
+                                        getattr(individual_result, 'data', None) is not None):
+                                        print_feedback_prompt(f"\n📝 Feedback for Query {i} (generated by AI):")
+                                        print_feedback_prompt("Your feedback helps the system learn and improve over time.")
+                                        while True:
+                                            try:
+                                                feedback_input = input(f"{MAGENTA}Was Query {i} helpful? (y/n/skip): {RESET}").lower().strip()
+                                                if feedback_input in ['y', 'yes', 's', 'skip', '']:
+                                                    if feedback_input in ['y', 'yes']:
+                                                        await client.submit_feedback(individual_result, True)
+                                                        print_success("🧠 Positive feedback recorded in semantic learning system!")
+                                                        print_section('💡 Your feedback will be used to improve future answers to similar queries.')
+                                                    all_satisfied = all_satisfied and True
+                                                    improvement = None  # Reset improvement on positive/skip
+                                                    break
+                                                elif feedback_input in ['n', 'no']:
+                                                    improvement = input(f"{MAGENTA}How can this be improved? (e.g., 'use bar chart instead', 'fix SQL error'): {RESET}").strip()
+                                                    await client.submit_feedback(individual_result, False, improvement)
+                                                    print_success("🧠 Negative feedback and improvement recorded - the system will learn!")
+                                                    print_section('💡 Your feedback will be used to improve future answers to similar queries.')
+                                                    all_satisfied = False
+                                                    break
+                                                else:
+                                                    print_warning("Please enter 'y', 'n', or 'skip'.")
+                                            except (KeyboardInterrupt, EOFError):
+                                                all_satisfied = True
+                                                break
+                                if all_satisfied:
+                                    break
+                                else:
+                                    print_section("Regenerating improved answer(s) based on your feedback...")
+                                    continue  # Regenerate improved answer(s)
+                            else:
+                                output = client.formatter.format_result(result.data if hasattr(result, 'data') else result, show_details=args.show_details)
+                                print(f"{output}")
+                                print_separator()
+                                update_context_from_result(result)
+                                print_feedback_prompt("\n📝 This answer was generated using COMPLETE AI with semantic learning!")
+                                print_feedback_prompt("Your feedback helps the system learn and improve over time.")
+                                while True:
+                                    try:
+                                        feedback_input = input(f"{MAGENTA}Was this helpful? (y/n/skip): {RESET}").lower().strip()
+                                        if feedback_input in ['y', 'yes', 's', 'skip', '']:
+                                            if feedback_input in ['y', 'yes']:
+                                                await client.submit_feedback(result, True)
+                                                print("🧠 Positive feedback recorded in semantic learning system!")
+                                                print_section('💡 Your feedback will be used to improve future answers to similar queries.')
+                                            improvement = None  # Reset improvement on positive/skip
+                                            break
+                                        elif feedback_input in ['n', 'no']:
+                                            improvement = input(f"{MAGENTA}How can this be improved? (e.g., 'use pie chart instead', 'fix SQL error'): {RESET}").strip()
                                             await client.submit_feedback(result, False, improvement)
                                             print("🧠 Negative feedback and improvement recorded - the system will learn!")
                                             print_section('💡 Your feedback will be used to improve future answers to similar queries.')
+                                            print_section("Regenerating improved answer based on your feedback...")
+                                            break  # Regenerate improved answer
                                         else:
-                                            await client.submit_feedback(result, False)
-                                            print("🧠 Negative feedback recorded!")
-                                            print_section('💡 Your feedback will be used to improve future answers to similar queries.')
+                                            print("Please enter 'y', 'n', or 'skip'.")
+                                    except (KeyboardInterrupt, EOFError):
                                         break
-                                    elif feedback_input in ['s', 'skip', '']:
-                                        break
-                                    else:
-                                        print("Please enter 'y', 'n', or 'skip'.")
-                                except (KeyboardInterrupt, EOFError):
+                                # If feedback was negative, loop will repeat and regenerate improved answer
+                                if feedback_input in ['n', 'no']:
+                                    continue
+                                else:
                                     break
-                    
-                    client.manage_history(user_query, output)
+                        client.manage_history(query_to_run, output)
+                    # --- RECURSIVE FEEDBACK LOOP END ---
+
+                    await handle_query_with_feedback(resolved_query)
                 except Exception as e:
                     print_error(f"❌ Error running query: {e}")
                     logger.error(f"Query error: {e}", exc_info=True)
-                
                 args.query = None  # After first run, always prompt interactively
 
     # Run interactive mode or single query
