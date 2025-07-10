@@ -4303,7 +4303,12 @@ if __name__ == "__main__":
         "Revenue between 1 april 2025 and 30 april 2025",
         "Show me database status and recent subscription summary",
         "How many new subscriptions did we get this month?",
+<<<<<<< HEAD
         "Show me a pie chart of payment success rates and show me a bar chart of the top 5 merchants by total payment revenue",
+=======
+        "Show me users with their email addresses and subscription amounts",
+        "Show me the top 10 customers by total subscription value",
+>>>>>>> upstream/main
     ]
 
     def print_example_queries():
