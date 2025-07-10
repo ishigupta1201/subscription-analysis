@@ -861,6 +861,9 @@ def _auto_fix_sql_errors(sql: str, error: str) -> str:
         error_lower = error.lower()
         logger.info(f"🔧 Applying auto-fixes for error: {error[:100]}...")
         
+        # Fix duplicate WHERE keywords
+        sql = re.sub(r'WHERE\s+WHERE', 'WHERE', sql, flags=re.IGNORECASE)
+        
         # Fix column name typos (most common issue)
         if "unknown column" in error_lower or "doesn't exist" in error_lower:
             logger.info("🔧 Fixing column name issues")
