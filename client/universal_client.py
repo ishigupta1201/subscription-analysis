@@ -257,11 +257,13 @@ class CompleteGraphGenerator:
                                 category_col = col
                             elif col_lower in ['values', 'value', 'count', 'amount', 'total', 'num']:
                                 value_col = col
+                        
                         # Fallback to first two columns if no exact match
                         if not category_col and len(columns) >= 1:
                             category_col = columns[0]
                         if not value_col and len(columns) >= 2:
                             value_col = columns[1]
+                        
                         # Prepare bar chart data
                         categories = []
                         values = []
@@ -279,16 +281,36 @@ class CompleteGraphGenerator:
                                         values.append(float(num_val))
                                     except (ValueError, TypeError):
                                         values.append(0)
+                        
                         # If not found, try to use 'categories'/'values' keys directly if present
                         if not categories and not values:
                             if 'categories' in graph_data and 'values' in graph_data:
                                 categories = graph_data['categories']
                                 values = graph_data['values']
+                        
                         # If not found, try to use 'category'/'value' keys directly if present
                         if not categories and not values:
                             if 'category' in graph_data and 'value' in graph_data:
                                 categories = graph_data['category']
                                 values = graph_data['value']
+                        
+                        # CRITICAL FIX: If we have data but no categories/values extracted, try to extract from raw data
+                        if not categories and not values and raw_data:
+                            # Look for any string column as category and any numeric column as value
+                            for row in raw_data:
+                                category_found = None
+                                value_found = None
+                                
+                                for col, val in row.items():
+                                    if isinstance(val, str) and category_found is None:
+                                        category_found = val
+                                    elif isinstance(val, (int, float)) and value_found is None:
+                                        value_found = val
+                                
+                                if category_found is not None and value_found is not None:
+                                    categories.append(str(category_found))
+                                    values.append(float(value_found))
+                        
                         if categories and values and len(categories) == len(values):
                             graph_data['x_values'] = categories
                             graph_data['y_values'] = values
@@ -299,6 +321,8 @@ class CompleteGraphGenerator:
                             return True
                         else:
                             logger.error(f"[BAR] Data preparation failed: categories={len(categories)}, values={len(values)}")
+                            logger.error(f"[BAR] Available columns: {columns}")
+                            logger.error(f"[BAR] Raw data sample: {raw_data[:2] if raw_data else 'No data'}")
                             return False
                     
                     elif graph_type == 'line':
@@ -623,8 +647,54 @@ class CompleteGraphGenerator:
                 logger.info(f"[BAR] Successfully created bar chart with {len(categories)} categories")
                 return True
             
+            # ENHANCED: Handle raw data format (list of dicts with category/value)
+            elif 'data' in graph_data and isinstance(graph_data['data'], list):
+                raw_data = graph_data['data']
+                if raw_data and isinstance(raw_data[0], dict):
+                    # Extract category and value from raw data
+                    categories = []
+                    values = []
+                    
+                    for row in raw_data:
+                        if 'category' in row and 'value' in row:
+                            categories.append(str(row['category']))
+                            try:
+                                values.append(float(row['value']))
+                            except (ValueError, TypeError):
+                                values.append(0)
+                    
+                    if categories and values and len(categories) == len(values):
+                        # Limit to reasonable number
+                        if len(categories) > 30:
+                            categories = categories[:30]
+                            values = values[:30]
+                            logger.info("[BAR] Limited to 30 categories for readability")
+                        
+                        bars = ax.bar(range(len(categories)), values, color='steelblue', alpha=0.8, edgecolor='darkblue')
+                        ax.set_xlabel(graph_data.get('x_label', 'Categories'), fontsize=12)
+                        ax.set_ylabel(graph_data.get('y_label', 'Values'), fontsize=12)
+                        ax.set_xticks(range(len(categories)))
+                        ax.set_xticklabels([str(cat)[:15] for cat in categories], rotation=45, ha='right')
+                        
+                        # Add value labels if not too many
+                        if len(categories) <= 15:
+                            max_val = max(values) if values else 1
+                            for i, (bar, value) in enumerate(zip(bars, values)):
+                                height = bar.get_height()
+                                ax.text(bar.get_x() + bar.get_width()/2., height + max_val * 0.01,
+                                       f'{value:.0f}' if isinstance(value, float) else str(value),
+                                       ha='center', va='bottom', fontsize=8)
+                        
+                        ax.grid(True, alpha=0.3, axis='y')
+                        logger.info(f"[BAR] Successfully created bar chart from raw data with {len(categories)} categories")
+                        return True
+                    else:
+                        logger.error(f"[BAR] Failed to extract category/value from raw data: {raw_data[:2]}")
+                        return False
+            
             else:
-                logger.error("[BAR] Missing required data: need either (x_values, y_values) or (categories, values)")
+                logger.error("[BAR] Missing required data: need either (x_values, y_values) or (categories, values) or raw data")
+                logger.error(f"[BAR] Available keys in graph_data: {list(graph_data.keys())}")
                 return False
             
         except Exception as e:
@@ -1646,6 +1716,66 @@ CRITICAL SCHEMA RULES:
         date_info = self._extract_date_info(query)
         comparison_info = self._extract_comparison_info(query)
         
+        # NEW: Direct handlers for common queries to bypass AI truncation issues
+        if any(phrase in query_lower for phrase in ['total number of active', 'count active', 'active subscriptions', 'active subs']):
+            logger.info("[DIRECT] Handling active subscriptions count query")
+            sql = "SELECT COUNT(*) AS total_active_subscriptions FROM subscription_contract_v2 WHERE status = 'ACTIVE'"
+            return [{
+                'tool': 'execute_dynamic_sql',
+                'parameters': {'sql_query': sql},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        
+        if any(phrase in query_lower for phrase in ['total revenue', 'revenue collected', 'active revenue', 'payment revenue']):
+            logger.info("[DIRECT] Handling total revenue query")
+            sql = "SELECT SUM(p.trans_amount_decimal) AS total_revenue FROM subscription_payment_details p WHERE p.status = 'ACTIVE'"
+            return [{
+                'tool': 'execute_dynamic_sql',
+                'parameters': {'sql_query': sql},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        
+        if any(phrase in query_lower for phrase in ['average amount', 'avg amount', 'mean amount', 'average payment', 'avg payment']):
+            logger.info("[DIRECT] Handling average payment amount query")
+            sql = "SELECT AVG(p.trans_amount_decimal) AS average_payment_amount FROM subscription_payment_details p WHERE p.status = 'ACTIVE'"
+            return [{
+                'tool': 'execute_dynamic_sql',
+                'parameters': {'sql_query': sql},
+                'original_query': query,
+                'wants_graph': False,
+                'chart_analysis': {'chart_type': 'none'}
+            }]
+        
+        # NEW: Direct handler for comparison queries with graphs
+        if any(word in query_lower for word in ['compare', 'comparison']) and 'more than' in query_lower and 'subscriptions' in query_lower and 'payments' in query_lower:
+            logger.info("[DIRECT] Handling comparison query with graph")
+            # Extract the threshold number
+            import re
+            threshold_match = re.search(r'more than (\d+)', query_lower)
+            threshold = int(threshold_match.group(1)) if threshold_match else 5
+            
+            sql = f"""
+SELECT 'More than {threshold} Subscriptions' as category, COUNT(*) as value 
+FROM (SELECT merchant_user_id FROM subscription_contract_v2 GROUP BY merchant_user_id HAVING COUNT(*) > {threshold}) t1
+UNION ALL
+SELECT 'More than {threshold} Payments' as category, COUNT(*) as value  
+FROM (SELECT c.merchant_user_id FROM subscription_contract_v2 c 
+      JOIN subscription_payment_details p ON c.subscription_id = p.subscription_id 
+      WHERE p.status = 'ACTIVE'
+      GROUP BY c.merchant_user_id HAVING COUNT(p.subscription_id) > {threshold}) t2
+"""
+            return [{
+                'tool': 'execute_dynamic_sql_with_graph',
+                'parameters': {'sql_query': sql, 'graph_type': 'bar'},
+                'original_query': query,
+                'wants_graph': True,
+                'chart_analysis': {'chart_type': 'bar'}
+            }]
+        
         # 1. Handle date range queries FIRST (between X and Y)
         if 'between' in query_lower and date_info['has_date'] and len(date_info['dates']) >= 2:
             logger.info("[DEBUG] Path: date range query detected.")
@@ -1719,7 +1849,7 @@ AND p.status = 'ACTIVE'
 """
             else:
                 logger.info(f"[DEBUG] Subscription count query detected for date: {date_str}")
-                # Subscription count query (default)
+                # Subscription count query (default) - FIXED: Use correct column name
                 sql = f"SELECT COUNT(*) as num_subscriptions FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '{date_str}'"
             sql = self._fix_sql_quotes(sql)
             sql = self._validate_and_autofix_sql(sql)
@@ -3321,6 +3451,46 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
             logger.warning("SQL ends with a string literal; possible missing clause or context.")
             # Only log, do not print to user
         
+        # 4. FIXED: Handle truncated SQL queries that end with incomplete WHERE clauses
+        if sql_query.strip().endswith("'") and "WHERE" in sql_query:
+            # Check if the SQL ends with an incomplete WHERE condition
+            if "status = 'ACTI" in sql_query:
+                sql_query = sql_query.replace("status = 'ACTI'", "status = 'ACTIVE'")
+                fixed = True
+            elif "status = 'SUCC" in sql_query:
+                sql_query = sql_query.replace("status = 'SUCC'", "status = 'SUCCESS'")
+                fixed = True
+            elif "status = 'FAIL" in sql_query:
+                sql_query = sql_query.replace("status = 'FAIL'", "status = 'FAILED'")
+                fixed = True
+            elif "status = 'PEND" in sql_query:
+                sql_query = sql_query.replace("status = 'PEND'", "status = 'PENDING'")
+                fixed = True
+        
+        # 5. FIXED: Handle SQL that ends with incomplete string literals (like 'ACTIVE...)
+        if sql_query.strip().endswith("'") and "WHERE" in sql_query:
+            # Look for patterns where the SQL ends with an incomplete status value
+            if sql_query.strip().endswith("'ACTIVE'"):
+                # This is already correct, but let's make sure it's properly closed
+                pass
+            elif "status = 'ACTIVE" in sql_query and not sql_query.strip().endswith("'ACTIVE'"):
+                # The SQL got truncated, complete it
+                if sql_query.strip().endswith("'ACTIV"):
+                    sql_query = sql_query.replace("'ACTIV'", "'ACTIVE'")
+                    fixed = True
+                elif sql_query.strip().endswith("'ACTI"):
+                    sql_query = sql_query.replace("'ACTI'", "'ACTIVE'")
+                    fixed = True
+                elif sql_query.strip().endswith("'ACT"):
+                    sql_query = sql_query.replace("'ACT'", "'ACTIVE'")
+                    fixed = True
+                elif sql_query.strip().endswith("'AC"):
+                    sql_query = sql_query.replace("'AC'", "'ACTIVE'")
+                    fixed = True
+                elif sql_query.strip().endswith("'A"):
+                    sql_query = sql_query.replace("'A'", "'ACTIVE'")
+                    fixed = True
+        
         # 4. Ensure all quotes are closed
         sql_query = self._ensure_closed_quotes(sql_query)
         
@@ -3455,6 +3625,40 @@ GROUP BY CASE WHEN total_transactions > {threshold} THEN 'More than {threshold} 
         # If odd number of double quotes, append one
         if sql_query.count('"') % 2 != 0:
             sql_query += '"'
+        
+        # FIXED: Handle truncated SQL queries that end with incomplete string literals
+        # Check if SQL ends with an incomplete string literal like 'ACTI...'
+        if sql_query.strip().endswith("'") and not sql_query.strip().endswith("'as value"):
+            # Look for the last complete string literal
+            last_quote_pos = sql_query.rfind("'")
+            if last_quote_pos > 0:
+                # Check if the string before the last quote looks incomplete
+                before_last_quote = sql_query[:last_quote_pos]
+                if before_last_quote.endswith("'") and len(before_last_quote) > 1:
+                    # This might be a truncated string, try to complete common patterns
+                    if before_last_quote.endswith("'ACTI"):
+                        sql_query = sql_query.replace("'ACTI'", "'ACTIVE'")
+                    elif before_last_quote.endswith("'SUCC"):
+                        sql_query = sql_query.replace("'SUCC'", "'SUCCESS'")
+                    elif before_last_quote.endswith("'FAIL"):
+                        sql_query = sql_query.replace("'FAIL'", "'FAILED'")
+                    elif before_last_quote.endswith("'PEND"):
+                        sql_query = sql_query.replace("'PEND'", "'PENDING'")
+            
+            # ENHANCED: Also check for any SQL that ends with an incomplete status value
+            if "status = 'ACTIVE" in sql_query and not sql_query.strip().endswith("'ACTIVE'"):
+                # The SQL got truncated, try to complete it
+                if sql_query.strip().endswith("'ACTIV"):
+                    sql_query = sql_query.replace("'ACTIV'", "'ACTIVE'")
+                elif sql_query.strip().endswith("'ACTI"):
+                    sql_query = sql_query.replace("'ACTI'", "'ACTIVE'")
+                elif sql_query.strip().endswith("'ACT"):
+                    sql_query = sql_query.replace("'ACT'", "'ACTIVE'")
+                elif sql_query.strip().endswith("'AC"):
+                    sql_query = sql_query.replace("'AC'", "'ACTIVE'")
+                elif sql_query.strip().endswith("'A"):
+                    sql_query = sql_query.replace("'A'", "'ACTIVE'")
+        
         return sql_query
 
     def _fix_field_selection_issues(self, sql_query: str, user_query: str) -> str:
@@ -4303,12 +4507,7 @@ if __name__ == "__main__":
         "Revenue between 1 april 2025 and 30 april 2025",
         "Show me database status and recent subscription summary",
         "How many new subscriptions did we get this month?",
-<<<<<<< HEAD
         "Show me a pie chart of payment success rates and show me a bar chart of the top 5 merchants by total payment revenue",
-=======
-        "Show me users with their email addresses and subscription amounts",
-        "Show me the top 10 customers by total subscription value",
->>>>>>> upstream/main
     ]
 
     def print_example_queries():
@@ -4363,10 +4562,10 @@ if __name__ == "__main__":
                                     if 'count' in k.lower() or 'num' in k.lower():
                                         client.context['last_count'] = v
 
-                    async def handle_query_with_feedback(query):
+                    async def handle_query_with_feedback(user_query):
                         feedback = None
                         improvement = None
-                        current_query = query
+                        current_query = user_query
                         while True:
                             # If improvement suggestion exists, append it to the query
                             query_to_run = current_query
@@ -4463,3 +4662,92 @@ if __name__ == "__main__":
     # Run interactive mode or single query
     import asyncio
     asyncio.run(run_query_loop())
+
+def ai_generate_sql_in_chunks(ai_model, user_query):
+    # Step 1: Ask for SELECT and FROM
+    prompt1 = f"Generate the SELECT and FROM clauses for: {user_query}"
+    select_from = ai_model.generate_content(prompt1).text.strip()
+    
+    # Step 2: Ask for WHERE clause
+    prompt2 = f"Now generate the WHERE clause for: {user_query}"
+    where = ai_model.generate_content(prompt2).text.strip()
+    
+    # Step 3: Ask for GROUP BY, ORDER BY, etc.
+    prompt3 = f"Now generate any GROUP BY, ORDER BY, or LIMIT clauses for: {user_query}"
+    group_order = ai_model.generate_content(prompt3).text.strip()
+    
+    # Combine all parts
+    full_sql = f"{select_from}\n{where}\n{group_order}"
+    return full_sql
+
+def interactive_paginated_query(sql_base, db_execute_fn, page_size=100):
+    page_num = 1
+    for page in fetch_paginated_results(sql_base, db_execute_fn, page_size):
+        print(f"\n--- Page {page_num} ---")
+        for row in page:
+            print(row)
+        page_num += 1
+        cont = input("Show next page? (y/n): ").strip().lower()
+        if cont != 'y':
+            break
+
+sql_base = "SELECT * FROM subscription_contract_v2 WHERE DATE(subcription_start_date) = '2025-04-24'"
+for page in fetch_paginated_results(sql_base, execute_sql, page_size=100):
+    for row in page:
+        print(row)
+    # Optionally, prompt user: "Show next page? (y/n)"
+
+def fetch_paginated_results(sql_base, db_execute_fn, page_size=100):
+    """
+    Generator to fetch paginated results from the database.
+    - sql_base: The base SQL query (without LIMIT/OFFSET)
+    - db_execute_fn: Function to execute SQL and return results
+    - page_size: Number of rows per page
+    """
+    offset = 0
+    while True:
+        paginated_sql = f"{sql_base} LIMIT {page_size} OFFSET {offset}"
+        results = db_execute_fn(paginated_sql)
+        if not results or len(results) == 0:
+            break
+        yield results
+        offset += page_size
+
+import re  # Ensure re is always available
+
+if (not isinstance(result, list)
+    and isinstance(output, str)
+    and (
+        'No data found' in output
+        or 'Query executed but returned no data' in output
+        or result is None
+    )):
+    def broaden_query(original_query):
+        patterns = [
+            r'in the last \d+ days',
+            r'last \d+ days',
+            r'past \d+ days',
+            r'within the last \d+ days',
+            r'over the last \d+ days',
+            r'in the last \d+ months',
+            r'last \d+ months',
+            r'past \d+ months',
+            r'within the last \d+ months',
+            r'over the last \d+ months',
+            r'since [a-zA-Z]+ \d{4}',
+            r'between [^,]+ and [^,]+',
+            r'from [^,]+ to [^,]+'
+        ]
+        new_query = original_query
+        for pat in patterns:
+            new_query = re.sub(pat, '', new_query, flags=re.IGNORECASE)
+        new_query = re.sub(r'\s+', ' ', new_query).strip()
+        return new_query
+    broader_query = broaden_query(query)
+    if broader_query != query:
+        print("\nNo data found for your original query. Attempting a broader search without date filters...")
+        broader_result = await client.query(broader_query)
+        broader_output = client.formatter.format_result(broader_result.data if hasattr(broader_result, 'data') else broader_result, show_details=args.show_details)
+        print(f"\n{broader_output}")
+        result = broader_result
+        output = broader_output
